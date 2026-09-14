@@ -61,11 +61,12 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     app.state.cfg, app.state.factory = cfg, factory
 
     def db_dep() -> Generator[Session, None, None]:
+        # All consumers use function scope: commit must finish before HTTP success.
         with factory() as db, db.begin():
             yield db
 
     async def current(
-        db: Session = Depends(db_dep), authorization: str = Header(default="")
+        db: Session = Depends(db_dep, scope="function"), authorization: str = Header(default="")
     ) -> Player:
         if not authorization.startswith("Bearer "):
             raise svc.DomainError("Войдите через Telegram", 401)
@@ -106,12 +107,12 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         return response
 
     @app.get("/api/health")
-    def health(db: Session = Depends(db_dep)):
+    def health(db: Session = Depends(db_dep, scope="function")):
         db.execute(text("SELECT 1"))
         return {"status": "ok", "demo": cfg.env == "demo"}
 
     @app.post("/api/auth/telegram")
-    async def login(body: S.Login, db: Session = Depends(db_dep)):
+    async def login(body: S.Login, db: Session = Depends(db_dep, scope="function")):
         user = parse_telegram(cfg, body.init_data)
         await check_member(cfg, user.id)
         p = player_for_telegram(db, user.id, user.first_name)
@@ -120,7 +121,9 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     if cfg.env == "demo":
 
         @app.post("/api/auth/demo/{role}")
-        def demo_login(role: str, request: Request, db: Session = Depends(db_dep)):
+        def demo_login(
+            role: str, request: Request, db: Session = Depends(db_dep, scope="function")
+        ):
             if request.client.host not in ("127.0.0.1", "::1", "testclient") or role not in (
                 "admin",
                 "player",
@@ -134,21 +137,23 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
             return dict(token=create_session(db, cfg, p), player=public_player(p, cfg, own=True))
 
     @app.get("/api/me")
-    def me(p: Player = Depends(current), db: Session = Depends(db_dep)):
+    def me(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
         return {
             **public_player(p, cfg, own=True),
             "ratings": rt.public_averages(db, [p.id], p.telegram_id in cfg.admins)[p.id],
         }
 
     @app.patch("/api/me")
-    def update_me(body: S.Name, p: Player = Depends(current), db: Session = Depends(db_dep)):
+    def update_me(
+        body: S.Name, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
         old = p.alias
         p.alias = body.alias
         svc.audit(db, p.id, "player.renamed", old=old, new=p.alias)
         return public_player(p, cfg, own=True)
 
     @app.get("/api/players")
-    def players(p: Player = Depends(current), db: Session = Depends(db_dep)):
+    def players(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
         people = list(
             db.scalars(select(Player).where(Player.merged_into.is_(None)).order_by(Player.alias))
         )
@@ -160,7 +165,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         player_id: int,
         position: S.Position,
         p: Player = Depends(current),
-        db: Session = Depends(db_dep),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         return rt.review_data(db, p.id, player_id, position, p.telegram_id in cfg.admins)
 
@@ -169,13 +174,15 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         player_id: int,
         body: S.RatingEdit,
         p: Player = Depends(current),
-        db: Session = Depends(db_dep),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         rt.save_rating(db, p.id, player_id, body)
         return rt.review_data(db, p.id, player_id, body.position, p.telegram_id in cfg.admins)
 
     @app.post("/api/players/guests", status_code=201)
-    def guest(body: S.Name, p: Player = Depends(admin), db: Session = Depends(db_dep)):
+    def guest(
+        body: S.Name, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
+    ):
         new = Player(alias=body.alias)
         db.add(new)
         db.flush()
@@ -184,32 +191,44 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
 
     @app.post("/api/players/{guest_id}/link")
     def link(
-        guest_id: int, body: S.LinkGuest, p: Player = Depends(admin), db: Session = Depends(db_dep)
+        guest_id: int,
+        body: S.LinkGuest,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         svc.merge_guest(db, p.id, guest_id, body.target_id)
         return {"ok": True}
 
     @app.get("/api/matches")
-    def matches(p: Player = Depends(current), db: Session = Depends(db_dep)):
+    def matches(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
         query = select(Match).order_by(Match.starts_at.desc()).limit(200)
         if p.telegram_id not in cfg.admins:
             query = query.where(Match.status != "draft")
         return [svc.match_data(db, m) for m in db.scalars(query)]
 
     @app.get("/api/matches/{match_id}")
-    def detail(match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep)):
+    def detail(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
         m = svc.get_match(db, match_id)
         if m.status == "draft" and p.telegram_id not in cfg.admins:
             raise svc.DomainError("Игра не найдена", 404)
         return svc.match_data(db, m)
 
     @app.post("/api/matches", status_code=201)
-    def create(body: S.GameFields, p: Player = Depends(admin), db: Session = Depends(db_dep)):
+    def create(
+        body: S.GameFields,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
         return svc.match_data(db, svc.create_match(db, p.id, body.model_dump()))
 
     @app.put("/api/matches/{match_id}")
     def edit(
-        match_id: int, body: S.GameEdit, p: Player = Depends(admin), db: Session = Depends(db_dep)
+        match_id: int,
+        body: S.GameEdit,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         before = {key: str(getattr(m, key)) for key in S.GameFields.model_fields}
@@ -242,7 +261,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         action: str,
         body: S.Version,
         p: Player = Depends(admin),
-        db: Session = Depends(db_dep),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         if action == "open":
@@ -260,7 +279,10 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
 
     @app.post("/api/matches/{match_id}/join")
     def join(
-        match_id: int, body: S.Join, p: Player = Depends(current), db: Session = Depends(db_dep)
+        match_id: int,
+        body: S.Join,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, lock=True)
         svc.register(db, p.id, m, body.position)
@@ -268,7 +290,9 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         return svc.match_data(db, m)
 
     @app.delete("/api/matches/{match_id}/join")
-    def leave(match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep)):
+    def leave(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
         m = svc.get_match(db, match_id, lock=True)
         r = db.scalar(
             select(Registration).where(
@@ -292,7 +316,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         reg_id: int,
         body: S.Payment,
         p: Player = Depends(admin),
-        db: Session = Depends(db_dep),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         svc.confirm_payment(db, p.id, m, registration(db, match_id, reg_id), body.paid)
@@ -305,7 +329,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         reg_id: int,
         body: S.Version,
         p: Player = Depends(admin),
-        db: Session = Depends(db_dep),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         svc.cancel(db, p.id, m, registration(db, match_id, reg_id), admin=True)
@@ -314,7 +338,10 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
 
     @app.post("/api/matches/{match_id}/participants")
     def include(
-        match_id: int, body: S.Include, p: Player = Depends(admin), db: Session = Depends(db_dep)
+        match_id: int,
+        body: S.Include,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         svc.add_participant(db, p.id, m, body.player_id, body.position, body.replace_id)
@@ -323,7 +350,10 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
 
     @app.post("/api/matches/{match_id}/promote")
     def promote(
-        match_id: int, body: S.Promote, p: Player = Depends(admin), db: Session = Depends(db_dep)
+        match_id: int,
+        body: S.Promote,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         svc.promote(db, p.id, m, body.position)
@@ -332,7 +362,10 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
 
     @app.put("/api/matches/{match_id}/teams")
     def teams(
-        match_id: int, body: S.Teams, p: Player = Depends(admin), db: Session = Depends(db_dep)
+        match_id: int,
+        body: S.Teams,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         svc.save_teams(db, p.id, m, body.assignments, reset=body.reset)
@@ -345,7 +378,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         reg_id: int,
         body: S.MatchRatingEdit,
         p: Player = Depends(admin),
-        db: Session = Depends(db_dep),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         rt.set_temporary(db, p.id, m, registration(db, match_id, reg_id), body)
@@ -360,14 +393,16 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         match_id: int,
         body: S.BalanceGenerate,
         p: Player = Depends(admin),
-        db: Session = Depends(db_dep),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         run = rt.create_run(db, p.id, m, body.settings)
         return rt.run_data(db, m, run)
 
     @app.get("/api/matches/{match_id}/balance")
-    def balance_history(match_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep)):
+    def balance_history(
+        match_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
+    ):
         m = svc.get_match(db, match_id)
         runs = db.scalars(
             select(BalanceRun)
@@ -383,14 +418,16 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         run_id: int,
         body: S.BalanceApply,
         p: Player = Depends(admin),
-        db: Session = Depends(db_dep),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         rt.apply_run(db, p.id, m, run_id, body.variant)
         return svc.match_data(db, m)
 
     @app.get("/api/matches/{match_id}/history")
-    def history(match_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep)):
+    def history(
+        match_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
+    ):
         return dict(
             audit=[
                 dict(id=a.id, actor_id=a.actor_id, action=a.action, data=a.data, at=a.created_at)
@@ -417,13 +454,15 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         )
 
     @app.get("/api/template")
-    def template(p: Player = Depends(admin), db: Session = Depends(db_dep)):
+    def template(p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")):
         t = db.get(GameTemplate, 1)
         return {key: getattr(t, key) for key in S.TemplateEdit.model_fields}
 
     @app.put("/api/template")
     def edit_template(
-        body: S.TemplateEdit, p: Player = Depends(admin), db: Session = Depends(db_dep)
+        body: S.TemplateEdit,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         t = db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
         if t.version != body.version:
@@ -436,7 +475,9 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         return {key: getattr(t, key) for key in S.TemplateEdit.model_fields}
 
     @app.post("/api/publications/{pub_id}/retry")
-    def retry(pub_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep)):
+    def retry(
+        pub_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
+    ):
         pub = db.scalar(select(Publication).where(Publication.id == pub_id).with_for_update())
         if not pub or pub.stale or pub.status not in ("failed", "uncertain"):
             raise svc.DomainError("Повторная публикация недоступна")

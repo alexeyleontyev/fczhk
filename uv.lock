@@ -217,7 +217,7 @@ dev = [
 requires-dist = [
     { name = "aiogram", specifier = ">=3.17,<4" },
     { name = "alembic", specifier = ">=1.14,<2" },
-    { name = "fastapi", specifier = ">=0.115,<1" },
+    { name = "fastapi", specifier = ">=0.141,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pydantic-settings", specifier = ">=2.7,<3" },

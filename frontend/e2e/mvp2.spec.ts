@@ -16,7 +16,7 @@ async function login(page: Page, role = 'admin') {
       data,
       headers: { Authorization: `Bearer ${token}` },
     })
-    expect(response.ok(), await response.text()).toBeTruthy()
+    expect(response.ok(), `${method} ${path}: ${await response.text()}`).toBeTruthy()
     return response.json()
   }
 }
