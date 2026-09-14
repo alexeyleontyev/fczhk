@@ -1,4 +1,4 @@
-name: MVP 1 checks
+name: MVP 1 + MVP 2 checks
 on: [push, pull_request]
 jobs:
   test:

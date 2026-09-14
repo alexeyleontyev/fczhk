@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { api, hasToken, setToken } from './api'
+import { AutomaticTeams, RatingAverages, RatingFlow, TeamMeans, TemporaryRatings } from './ratings'
 import type { Entry, Match, Player, Position, Team, Template } from './types'
 import './style.css'
 
@@ -142,6 +143,7 @@ function App() {
   const [modal, setModal] = useState<string | null>(null)
   const [template, setTemplate] = useState<Template | null>(null)
   const [search, setSearch] = useState('')
+  const [ratingTarget, setRatingTarget] = useState<number | null>(null)
   const [history, setHistory] = useState<{
     audit: { id: number; action: string; data: unknown; at: string }[]
     teams: { version: number; teams: { alias: string; team: Team }[]; at: string }[]
@@ -194,6 +196,10 @@ function App() {
         if (hasToken()) await refresh()
         const param = tg?.initDataUnsafe?.start_param
         if (param?.startsWith('game_')) setSelectedId(Number(param.slice(5)))
+        else {
+          const game = Number(new URLSearchParams(window.location.search).get('game'))
+          if (Number.isInteger(game) && game > 0) setSelectedId(game)
+        }
       } catch (e) {
         setNotice({ text: (e as Error).message, error: true })
       } finally {
@@ -533,7 +539,11 @@ function App() {
                         )}
                       </div>
                       <Roster match={m} admin={isAdmin} busy={busy} run={run} />
+                      {isAdmin && <TemporaryRatings key={m.id} match={m} busy={busy} run={run} />}
                     </section>
+                    {isAdmin && ['finalized', 'approved'].includes(m.status) && (
+                      <AutomaticTeams key={m.id} match={m} busy={busy} run={run} />
+                    )}
                     {['finalized', 'approved'].includes(m.status) && (
                       <TeamBoard match={m} admin={isAdmin} busy={busy} run={run} />
                     )}
@@ -702,11 +712,21 @@ function App() {
                   Игроки <span className="muted">{players.length}</span>
                 </h1>
               </div>
-              {isAdmin && (
-                <Button onClick={() => setModal('guest')}>
-                  <Plus size={17} /> Гость
+              <div className="inline wrap">
+                <Button
+                  onClick={() => {
+                    setRatingTarget(null)
+                    setModal('ratings')
+                  }}
+                >
+                  Оценить игроков
                 </Button>
-              )}
+                {isAdmin && (
+                  <Button onClick={() => setModal('guest')}>
+                    <Plus size={17} /> Гость
+                  </Button>
+                )}
+              </div>
             </div>
             <input
               className="search"
@@ -724,6 +744,19 @@ function App() {
                     <div>
                       <h3>{p.alias}</h3>
                       <span className="muted">{p.guest ? 'Гость' : 'Игрок клуба'}</span>
+                      <RatingAverages player={p} />
+                      {!p.guest && (p.id !== me.id || isAdmin) && (
+                        <button
+                          className="button ghost compact"
+                          aria-label={`Оценки: ${p.alias}`}
+                          onClick={() => {
+                            setRatingTarget(p.id)
+                            setModal('ratings')
+                          }}
+                        >
+                          {p.id === me.id ? 'Посмотреть оценки' : 'Оценить'}
+                        </button>
+                      )}
                     </div>
                     {isAdmin && p.guest && (
                       <button
@@ -749,6 +782,7 @@ function App() {
               <span className="avatar large">{initial(me.alias)}</span>
               <h2>{me.alias}</h2>
               <span className="tag">{isAdmin ? 'Администратор' : 'Игрок клуба'}</span>
+              <RatingAverages player={me} />
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
@@ -816,6 +850,11 @@ function App() {
             <X size={16} />
           </button>
         </div>
+      )}
+      {modal === 'ratings' && (
+        <Modal title="Оценки игроков" close={() => setModal(null)}>
+          <RatingFlow me={me} players={players} target={ratingTarget} run={run} busy={busy} />
+        </Modal>
       )}
       {modal === 'create' && (
         <Modal title="Новая игра" close={() => setModal(null)}>
@@ -1153,9 +1192,25 @@ function TeamBoard({
       <div className="section-title">
         <h2>Составы команд</h2>
         <span className="tag">
-          {m.status === 'approved' ? 'Утверждены' : 'Ручное распределение'}
+          {m.status === 'approved'
+            ? 'Утверждены'
+            : m.team_ratings.method.startsWith('auto')
+              ? 'Автоподбор · черновик'
+              : 'Ручное распределение'}
         </span>
       </div>
+      <TeamMeans summary={m.team_ratings.summary} />
+      <p className="muted caption">
+        Расчетные средние только полевых, после уменьшения меньшего рейтинга.{' '}
+        {m.team_ratings.frozen
+          ? 'Зафиксированы при утверждении.'
+          : 'Исходные оценки игроков не изменяются.'}
+      </p>
+      {m.team_ratings.stale && (
+        <p className="alert error" role="alert">
+          Рейтинги изменились. Для утверждения пересчитайте варианты или начните вручную с нуля.
+        </p>
+      )}
       {admin && (
         <p className="muted caption">
           Выберите команду каждому игроку. Изменения сохраняются сразу. Для утверждения численность

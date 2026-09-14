@@ -1,7 +1,7 @@
 [project]
 name = "fczhk"
-version = "0.1.0"
-description = "Telegram football match organization — MVP 1"
+version = "0.2.0"
+description = "Telegram football organization, player ratings and balanced teams — MVP 2"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1",

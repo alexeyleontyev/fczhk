@@ -12,6 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from . import ratings as rt
 from . import schemas as S
 from . import services as svc
 from .auth import check_member, create_session, parse_telegram, player_for_telegram, public_player
@@ -19,12 +20,14 @@ from .config import Settings, settings
 from .db import database, now
 from .models import (
     Audit,
+    BalanceRun,
     GameTemplate,
     LoginSession,
     Match,
     Player,
     Publication,
     Registration,
+    TeamRatingSnapshot,
     TeamSnapshot,
 )
 
@@ -36,9 +39,9 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     async def lifespan(app):
         task = None
         if cfg.env == "demo":
-            from .worker import run_worker
+            from .worker import run_demo_worker
 
-            task = asyncio.create_task(run_worker(cfg))
+            task = asyncio.create_task(run_demo_worker(cfg, factory))
         try:
             yield
         finally:
@@ -47,7 +50,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
                 await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(
-        title="FCZHK · MVP 1",
+        title="FCZHK · MVP 2",
         docs_url="/api/docs" if cfg.env != "production" else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if cfg.env != "production" else None,
@@ -131,8 +134,11 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
             return dict(token=create_session(db, cfg, p), player=public_player(p, cfg, own=True))
 
     @app.get("/api/me")
-    def me(p: Player = Depends(current)):
-        return public_player(p, cfg, own=True)
+    def me(p: Player = Depends(current), db: Session = Depends(db_dep)):
+        return {
+            **public_player(p, cfg, own=True),
+            "ratings": rt.public_averages(db, [p.id], p.telegram_id in cfg.admins)[p.id],
+        }
 
     @app.patch("/api/me")
     def update_me(body: S.Name, p: Player = Depends(current), db: Session = Depends(db_dep)):
@@ -143,12 +149,30 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
 
     @app.get("/api/players")
     def players(p: Player = Depends(current), db: Session = Depends(db_dep)):
-        return [
-            public_player(x, cfg)
-            for x in db.scalars(
-                select(Player).where(Player.merged_into.is_(None)).order_by(Player.alias)
-            )
-        ]
+        people = list(
+            db.scalars(select(Player).where(Player.merged_into.is_(None)).order_by(Player.alias))
+        )
+        averages = rt.public_averages(db, [x.id for x in people], p.telegram_id in cfg.admins)
+        return [{**public_player(x, cfg), "ratings": averages[x.id]} for x in people]
+
+    @app.get("/api/players/{player_id}/ratings/{position}")
+    def rating_detail(
+        player_id: int,
+        position: S.Position,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep),
+    ):
+        return rt.review_data(db, p.id, player_id, position, p.telegram_id in cfg.admins)
+
+    @app.put("/api/players/{player_id}/ratings")
+    def rate(
+        player_id: int,
+        body: S.RatingEdit,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep),
+    ):
+        rt.save_rating(db, p.id, player_id, body)
+        return rt.review_data(db, p.id, player_id, body.position, p.telegram_id in cfg.admins)
 
     @app.post("/api/players/guests", status_code=201)
     def guest(body: S.Name, p: Player = Depends(admin), db: Session = Depends(db_dep)):
@@ -311,8 +335,58 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         match_id: int, body: S.Teams, p: Player = Depends(admin), db: Session = Depends(db_dep)
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
-        svc.save_teams(db, p.id, m, body.assignments)
+        svc.save_teams(db, p.id, m, body.assignments, reset=body.reset)
         db.flush()
+        return svc.match_data(db, m)
+
+    @app.put("/api/matches/{match_id}/registrations/{reg_id}/rating")
+    def temporary_rating(
+        match_id: int,
+        reg_id: int,
+        body: S.MatchRatingEdit,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep),
+    ):
+        m = svc.get_match(db, match_id, body.version, lock=True)
+        rt.set_temporary(db, p.id, m, registration(db, match_id, reg_id), body)
+        return svc.match_data(db, m)
+
+    @app.get("/api/balance/settings")
+    def balance_settings(p: Player = Depends(admin)):
+        return S.BalanceSettings().model_dump(mode="json")
+
+    @app.post("/api/matches/{match_id}/balance", status_code=201)
+    def generate_balance(
+        match_id: int,
+        body: S.BalanceGenerate,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep),
+    ):
+        m = svc.get_match(db, match_id, body.version, lock=True)
+        run = rt.create_run(db, p.id, m, body.settings)
+        return rt.run_data(db, m, run)
+
+    @app.get("/api/matches/{match_id}/balance")
+    def balance_history(match_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep)):
+        m = svc.get_match(db, match_id)
+        runs = db.scalars(
+            select(BalanceRun)
+            .where(BalanceRun.match_id == m.id)
+            .order_by(BalanceRun.id.desc())
+            .limit(10)
+        )
+        return [rt.run_data(db, m, run) for run in runs]
+
+    @app.post("/api/matches/{match_id}/balance/{run_id}/apply")
+    def apply_balance(
+        match_id: int,
+        run_id: int,
+        body: S.BalanceApply,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep),
+    ):
+        m = svc.get_match(db, match_id, body.version, lock=True)
+        rt.apply_run(db, p.id, m, run_id, body.variant)
         return svc.match_data(db, m)
 
     @app.get("/api/matches/{match_id}/history")
@@ -328,7 +402,12 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
                 )
             ],
             teams=[
-                dict(version=t.version, teams=t.teams, at=t.created_at)
+                dict(
+                    version=t.version,
+                    teams=t.teams,
+                    at=t.created_at,
+                    ratings=s.data if (s := db.get(TeamRatingSnapshot, t.id)) else None,
+                )
                 for t in db.scalars(
                     select(TeamSnapshot)
                     .where(TeamSnapshot.match_id == match_id)
@@ -386,7 +465,8 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     if not dist.exists():
         dist = Path("frontend/dist")
     if dist.exists():
-        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+        # A dev rebuild briefly replaces assets; don't couple API startup/tests to it.
+        app.mount("/assets", StaticFiles(directory=dist / "assets", check_dir=False), name="assets")
 
         @app.get("/{path:path}")
         def frontend(path: str):
