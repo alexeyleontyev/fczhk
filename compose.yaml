@@ -1,0 +1,72 @@
+name: fczhk
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: fczhk
+      POSTGRES_DB: fczhk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fczhk -d fczhk"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    profiles: [production]
+    build: .
+    env_file: .env
+    command: ["sh", "-c", "uv run --frozen --no-dev fczhk migrate && uv run --frozen --no-dev fczhk serve"]
+    expose: ["8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    profiles: [production]
+    build: .
+    env_file: .env
+    command: ["uv", "run", "--frozen", "--no-dev", "fczhk", "worker"]
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  bot:
+    profiles: [polling]
+    build: .
+    env_file: .env
+    command: ["uv", "run", "--frozen", "--no-dev", "fczhk", "bot"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  proxy:
+    profiles: [production]
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  caddy_data:

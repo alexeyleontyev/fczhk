@@ -1,0 +1,73 @@
+import hashlib
+import secrets
+from datetime import timedelta
+
+from aiogram import Bot
+from aiogram.utils.web_app import safe_parse_webapp_init_data
+from sqlalchemy import select
+
+from .db import now
+from .models import LoginSession, Player
+from .services import DomainError, audit
+
+
+async def check_member(cfg, telegram_id: int):
+    if cfg.env in ("demo", "test"):
+        return
+    try:
+        async with Bot(cfg.bot_token) as bot:
+            member = await bot.get_chat_member(cfg.community_chat_id, telegram_id)
+        allowed = member.status in ("creator", "administrator", "member") or (
+            member.status == "restricted" and getattr(member, "is_member", False)
+        )
+    except Exception as exc:
+        raise DomainError(
+            "Не удалось проверить участие в сообществе. Попробуйте позже.", 503
+        ) from exc
+    if not allowed:
+        raise DomainError("Доступ только для участников нашего чата или канала", 403)
+
+
+def parse_telegram(cfg, init_data: str):
+    try:
+        parsed = safe_parse_webapp_init_data(cfg.bot_token, init_data)
+    except (ValueError, TypeError) as exc:
+        raise DomainError("Неверные данные Telegram. Откройте приложение через бота.", 401) from exc
+    age = (now() - parsed.auth_date).total_seconds()
+    if not parsed.user or not -30 <= age <= cfg.auth_max_age_seconds:
+        raise DomainError("Ссылка входа устарела. Откройте приложение заново.", 401)
+    return parsed.user
+
+
+def create_session(db, cfg, player: Player) -> str:
+    token = secrets.token_urlsafe(32)
+    db.add(
+        LoginSession(
+            token_hash=hashlib.sha256(token.encode()).hexdigest(),
+            player_id=player.id,
+            expires_at=now() + timedelta(hours=cfg.session_hours),
+        )
+    )
+    return token
+
+
+def player_for_telegram(db, telegram_id: int, name: str) -> Player:
+    # Serialize first registration across concurrent bot / web requests on PostgreSQL.
+    if db.bind.dialect.name == "postgresql":
+        from sqlalchemy import text
+
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": telegram_id})
+    player = db.scalar(select(Player).where(Player.telegram_id == telegram_id))
+    if not player:
+        player = Player(telegram_id=telegram_id, alias=name[:60].strip() or "Игрок")
+        db.add(player)
+        db.flush()
+        audit(db, player.id, "player.registered")
+    return player
+
+
+def public_player(player: Player, cfg, own=False):
+    data = dict(id=player.id, alias=player.alias, guest=player.telegram_id is None)
+    if own:
+        data["is_admin"] = player.telegram_id in cfg.admins
+    return data

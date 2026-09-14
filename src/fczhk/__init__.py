@@ -1,0 +1,1 @@
+"""FCZHK football community application."""
