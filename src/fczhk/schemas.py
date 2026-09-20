@@ -179,3 +179,10 @@ class AuctionControl(Payload):
     auction_id: int = Field(gt=0)
     revision: int = Field(ge=1)
     action: Literal["pause", "resume", "cancel", "manual"]
+
+
+class PredictionEdit(Payload):
+    white_score: int = Field(ge=0, le=200, strict=True)
+    black_score: int = Field(ge=0, le=200, strict=True)
+    revision: int = Field(ge=0)
+    approved_version: int = Field(ge=1)

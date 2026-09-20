@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import auctions as auc
+from . import predictions as pred
 from . import ratings as rt
 from . import results as res
 from . import schemas as S
@@ -52,7 +53,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
                 await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(
-        title="FCZHK · MVP 4",
+        title="FCZHK · MVP 5",
         docs_url="/api/docs" if cfg.env != "production" else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if cfg.env != "production" else None,
@@ -178,6 +179,32 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         db: Session = Depends(db_dep, scope="function"),
     ):
         return res.player_stats(db, player_id)
+
+    @app.get("/api/predictions/standings")
+    def prediction_standings(
+        p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        return pred.standings(db)
+
+    @app.get("/api/matches/{match_id}/predictions")
+    def prediction_detail(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        m = svc.get_match(db, match_id, lock=True)
+        if m.status == "draft" and p.telegram_id not in cfg.admins:
+            raise svc.DomainError("Игра не найдена", 404)
+        return pred.match_predictions(db, m, p.id)
+
+    @app.put("/api/matches/{match_id}/prediction")
+    def prediction_save(
+        match_id: int,
+        body: S.PredictionEdit,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = svc.get_match(db, match_id, lock=True)
+        pred.save(db, p.id, m, body)
+        return pred.match_predictions(db, m, p.id)
 
     @app.get("/api/matches/{match_id}/result")
     def result(
@@ -316,6 +343,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         before = {key: str(getattr(m, key)) for key in S.GameFields.model_fields}
+        pred.validate_reschedule(db, m, body.starts_at)
         if db.get(res.MatchResult, m.id) and body.starts_at != m.starts_at:
             raise svc.DomainError("Время матча с результатом изменять нельзя")
         for key, value in body.model_dump(exclude={"version"}).items():

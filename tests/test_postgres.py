@@ -309,3 +309,98 @@ def test_simultaneous_auction_bids_resolve_once_and_persist(pg):
         assert a.white_budget == 99 and a.black_budget == 100
         assert len(a.state["assignments"]) == 4
         assert len(list(db.scalars(select(AuctionLot)))) == 1
+
+
+def test_concurrent_prediction_edit_rejects_stale_revision(pg):
+    from datetime import timedelta
+
+    from fczhk.db import now
+    from fczhk.models import Prediction
+    from fczhk.predictions import save
+    from fczhk.schemas import PredictionEdit
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        m = Match(
+            game_day="2030-01-03",
+            starts_at=now() + timedelta(days=1),
+            location="Поле",
+            status="approved",
+            approved_version=1,
+        )
+        db.add(m)
+        db.flush()
+        mid = m.id
+
+    def submit(amount):
+        try:
+            with factory() as db, db.begin():
+                save(
+                    db,
+                    actor,
+                    get_match(db, mid, lock=True),
+                    PredictionEdit(
+                        white_score=amount, black_score=0, revision=0, approved_version=1
+                    ),
+                )
+            return "ok"
+        except DomainError as exc:
+            assert exc.status == 409
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(submit, [1, 2])) == ["conflict", "ok"]
+    with factory() as db:
+        predictions = list(db.scalars(select(Prediction)))
+        assert len(predictions) == 1 and predictions[0].revision == 1
+
+
+def test_prediction_deadline_is_checked_after_waiting_for_match_lock(pg, monkeypatch):
+    from datetime import timedelta
+    from threading import Event
+
+    from fczhk.db import now
+    from fczhk.models import Prediction
+    from fczhk.predictions import save
+    from fczhk.schemas import PredictionEdit
+
+    factory, actor = pg
+    start = now() + timedelta(minutes=1)
+    clock = [start - timedelta(seconds=1)]
+    monkeypatch.setattr("fczhk.predictions.now", lambda: clock[0])
+    with factory() as db, db.begin():
+        m = Match(
+            game_day="2030-01-03",
+            starts_at=start,
+            location="Поле",
+            status="approved",
+            approved_version=1,
+        )
+        db.add(m)
+        db.flush()
+        mid = m.id
+    waiting = Event()
+
+    def submit():
+        try:
+            with factory() as db, db.begin():
+                waiting.set()
+                save(
+                    db,
+                    actor,
+                    get_match(db, mid, lock=True),
+                    PredictionEdit(white_score=1, black_score=0, revision=0, approved_version=1),
+                )
+        except DomainError as exc:
+            return exc.status
+        return 200
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with factory() as lock, lock.begin():
+            get_match(lock, mid, lock=True)
+            future = pool.submit(submit)
+            assert waiting.wait(5)
+            clock[0] = start
+        assert future.result(timeout=5) == 409
+    with factory() as db:
+        assert list(db.scalars(select(Prediction))) == []
