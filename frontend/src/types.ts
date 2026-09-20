@@ -41,8 +41,9 @@ export type Match = {
   payment_details: string
   field_limit: number
   keeper_limit: number
-  status: 'draft' | 'open' | 'finalized' | 'approved'
+  status: 'draft' | 'open' | 'finalized' | 'approved' | 'completed'
   version: number
+  result: import('./results').Result | null
   roster_version: number
   registrations: Entry[]
   publications: Publication[]

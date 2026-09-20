@@ -1459,3 +1459,87 @@ footer > span:first-child {
     align-items: flex-start;
   }
 }
+
+/* Results and personal statistics */
+.scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 24px 0;
+}
+.scoreboard strong {
+  font-size: 2rem;
+  white-space: nowrap;
+}
+.actual-teams,
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.actual-teams p {
+  overflow-wrap: anywhere;
+}
+.stats-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 20px 0;
+}
+.stats-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stats-grid strong {
+  font-size: 1.7rem;
+}
+.stats-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.stat-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  width: 100%;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.result-editor {
+  padding: 0;
+  margin: 20px 0 0;
+  border: 0;
+  min-width: 0;
+}
+.actual-row,
+.goal-editor {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.goal-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.goal-editor > strong,
+.goal-editor > button {
+  grid-column: 1 / -1;
+}
+.statistics {
+  text-align: left;
+  width: 100%;
+}
+.statistics h3 {
+  margin-top: 24px;
+}
+.status-pill.completed {
+  background: #e1efdf;
+  color: #284b25;
+}
