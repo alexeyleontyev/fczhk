@@ -249,3 +249,43 @@ class ResultGoal(Base):
     kind: Mapped[str] = mapped_column(String(10))
     author_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
     assist_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
+
+
+class Auction(Base):
+    __tablename__ = "auctions"
+    __table_args__ = (
+        CheckConstraint("white_budget BETWEEN 0 AND 100 AND black_budget BETWEEN 0 AND 100"),
+        CheckConstraint("white_captain <> black_captain"),
+        CheckConstraint("white_limit >= 1 AND black_limit >= 1"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    roster_version: Mapped[int] = mapped_column()
+    revision: Mapped[int] = mapped_column(default=1)
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    white_captain: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    black_captain: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    white_budget: Mapped[int] = mapped_column(default=100)
+    black_budget: Mapped[int] = mapped_column(default=100)
+    white_limit: Mapped[int] = mapped_column()
+    black_limit: Mapped[int] = mapped_column()
+    state: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class AuctionLot(Base):
+    __tablename__ = "auction_lots"
+    __table_args__ = (
+        UniqueConstraint("auction_id", "number"),
+        CheckConstraint("white_bid IS NULL OR white_bid BETWEEN 0 AND 100"),
+        CheckConstraint("black_bid IS NULL OR black_bid BETWEEN 0 AND 100"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    auction_id: Mapped[int] = mapped_column(ForeignKey("auctions.id"), index=True)
+    registration_id: Mapped[int] = mapped_column(ForeignKey("registrations.id"))
+    number: Mapped[int] = mapped_column()
+    round: Mapped[int] = mapped_column()
+    status: Mapped[str] = mapped_column(String(15), default="pending")
+    white_bid: Mapped[int | None] = mapped_column()
+    black_bid: Mapped[int | None] = mapped_column()
+    winner: Mapped[str | None] = mapped_column(String(10))

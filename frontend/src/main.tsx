@@ -19,6 +19,7 @@ import { api, hasToken, setToken } from './api'
 import { AutomaticTeams, RatingAverages, RatingFlow, TeamMeans, TemporaryRatings } from './ratings'
 import type { Entry, Match, Player, Position, Team, Template } from './types'
 import { MatchResult, PlayerStats } from './results'
+import { AuctionPanel } from './auctions'
 import './style.css'
 
 const date = (s: string) =>
@@ -241,6 +242,7 @@ function App() {
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0]
   const m = matches.find((x) => x.id === selectedId) || upcoming || matches[0]
   const isAdmin = Boolean(me?.is_admin)
+  const auctionRunning = ['active', 'paused'].includes(m?.auction_status || '')
   const mine = m?.registrations.find((r) => r.player_id === me?.id)
 
   async function loginDemo(role: string) {
@@ -446,9 +448,19 @@ function App() {
                 </section>
                 <div className="content-grid">
                   <div className="primary-column">
+                    {(m.auction_status ||
+                      (!m.result && ['finalized', 'approved'].includes(m.status))) && (
+                      <AuctionPanel
+                        key={`auction-${m.id}`}
+                        match={m}
+                        admin={isAdmin}
+                        busy={busy}
+                        run={run}
+                      />
+                    )}
                     {['approved', 'completed'].includes(m.status) && (
                       <MatchResult
-                        key={m.id}
+                        key={`result-${m.id}`}
                         match={m}
                         players={players}
                         admin={isAdmin}
@@ -581,10 +593,13 @@ function App() {
                         <TemporaryRatings key={m.id} match={m} busy={busy} run={run} />
                       )}
                     </section>
-                    {isAdmin && !m.result && ['finalized', 'approved'].includes(m.status) && (
-                      <AutomaticTeams key={m.id} match={m} busy={busy} run={run} />
-                    )}
-                    {['finalized', 'approved'].includes(m.status) && (
+                    {isAdmin &&
+                      !m.result &&
+                      !auctionRunning &&
+                      ['finalized', 'approved'].includes(m.status) && (
+                        <AutomaticTeams key={m.id} match={m} busy={busy} run={run} />
+                      )}
+                    {['finalized', 'approved'].includes(m.status) && !auctionRunning && (
                       <TeamBoard match={m} admin={isAdmin && !m.result} busy={busy} run={run} />
                     )}
                   </div>
@@ -627,7 +642,7 @@ function App() {
                             Финализировать сбор <Flag size={16} />
                           </Button>
                         )}
-                        {m.status === 'finalized' && (
+                        {m.status === 'finalized' && !auctionRunning && (
                           <Button disabled={busy} onClick={() => void action('approve')}>
                             Утвердить команды
                           </Button>
@@ -1251,7 +1266,9 @@ function TeamBoard({
             ? 'Утверждены'
             : m.team_ratings.method.startsWith('auto')
               ? 'Автоподбор · черновик'
-              : 'Ручное распределение'}
+              : m.team_ratings.method.startsWith('auction')
+                ? 'Аукцион'
+                : 'Ручное распределение'}
         </span>
       </div>
       <TeamMeans summary={m.team_ratings.summary} />

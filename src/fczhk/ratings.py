@@ -331,6 +331,8 @@ def apply_run(db: Session, actor: int, match: Match, run_id: int, variant: int):
 
 
 def team_rating_data(db: Session, match: Match, approval=False) -> dict:
+    from .auctions import formation_method
+
     if match.status in ("approved", "completed") and not approval:
         snapshot = db.scalar(
             select(TeamRatingSnapshot)
@@ -361,7 +363,9 @@ def team_rating_data(db: Session, match: Match, approval=False) -> dict:
         inputs=inputs,
         fingerprint=run.fingerprint if run else fingerprint,
         roster_version=match.roster_version,
-        method=("auto-edited" if draft.edited else "auto") if draft else "manual",
+        method=("auto-edited" if draft.edited else "auto")
+        if draft
+        else formation_method(db, match, assignments),
         run_id=run.id if run else None,
         variant=draft.variant if draft else None,
         settings=run.settings if run else None,

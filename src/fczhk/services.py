@@ -68,12 +68,17 @@ def selection(match: Match, regs: list[Registration]) -> set[int]:
 
 
 def invalidate(db: Session, match: Match, roster_changed=True):
+    from .auctions import guard, invalidate_roster
+
     ensure_pregame(db, match)
     if roster_changed:
+        invalidate_roster(db, match)
         match.roster_version += 1
         draft = db.get(TeamRatingDraft, match.id)
         if draft:
             db.delete(draft)
+    else:
+        guard(db, match)
     match.approved_version = None
     if match.status == "approved":
         match.status = "finalized"
@@ -92,6 +97,7 @@ def invalidate(db: Session, match: Match, roster_changed=True):
 
 
 def match_data(db: Session, match: Match) -> dict:
+    from .auctions import latest
     from .ratings import effective, public_team_data
     from .results import result_data
 
@@ -133,6 +139,7 @@ def match_data(db: Session, match: Match) -> dict:
             .order_by(Publication.id.desc())
         )
     )
+    auction = latest(db, match)
     return dict(
         id=match.id,
         starts_at=match.starts_at,
@@ -149,6 +156,7 @@ def match_data(db: Session, match: Match) -> dict:
         registrations=rows,
         team_ratings=public_team_data(db, match),
         result=result_data(db, match) if db.get(MatchResult, match.id) else None,
+        auction_status=auction.status if auction else None,
         publications=[
             dict(
                 id=p.id,
@@ -387,8 +395,10 @@ def save_teams(
 
 
 def approve(db: Session, actor: int, match: Match, cfg: Settings):
+    from .auctions import guard
     from .ratings import lock_ratings, team_rating_data
 
+    guard(db, match)
     if match.status == "approved":
         return
     if match.status != "finalized":

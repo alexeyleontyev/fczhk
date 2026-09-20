@@ -12,6 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from . import auctions as auc
 from . import ratings as rt
 from . import results as res
 from . import schemas as S
@@ -51,7 +52,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
                 await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(
-        title="FCZHK · MVP 3",
+        title="FCZHK · MVP 4",
         docs_url="/api/docs" if cfg.env != "production" else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if cfg.env != "production" else None,
@@ -196,6 +197,61 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         return res.save_result(db, p.id, m, body)
+
+    @app.get("/api/matches/{match_id}/auction")
+    def auction_detail(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        m = svc.get_match(db, match_id, lock=True)
+        if m.status == "draft" and p.telegram_id not in cfg.admins:
+            raise svc.DomainError("Игра не найдена", 404)
+        return auc.data(db, auc.latest(db, m), p.id)
+
+    @app.get("/api/matches/{match_id}/auctions/history")
+    def auction_history(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        m = svc.get_match(db, match_id, lock=True)
+        if m.status == "draft" and p.telegram_id not in cfg.admins:
+            raise svc.DomainError("Игра не найдена", 404)
+        return [
+            auc.data(db, a, p.id)
+            for a in db.scalars(
+                select(auc.Auction)
+                .where(auc.Auction.match_id == match_id)
+                .order_by(auc.Auction.id.desc())
+            )
+        ]
+
+    @app.post("/api/matches/{match_id}/auction", status_code=201)
+    def auction_start(
+        match_id: int,
+        body: S.AuctionStart,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = svc.get_match(db, match_id, body.version, lock=True)
+        return auc.data(db, auc.start(db, p.id, m, body), p.id)
+
+    @app.post("/api/matches/{match_id}/auction/bids")
+    def auction_bid(
+        match_id: int,
+        body: S.AuctionBid,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = svc.get_match(db, match_id, lock=True)
+        return auc.data(db, auc.bid(db, p.id, m, body), p.id)
+
+    @app.post("/api/matches/{match_id}/auction/control")
+    def auction_control(
+        match_id: int,
+        body: S.AuctionControl,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = svc.get_match(db, match_id, lock=True)
+        return auc.data(db, auc.control(db, p.id, m, body), p.id)
 
     @app.put("/api/players/{player_id}/ratings")
     def rate(
