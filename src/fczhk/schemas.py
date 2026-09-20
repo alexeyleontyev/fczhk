@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 from typing import Literal
+from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -140,3 +141,23 @@ class BalanceGenerate(Version):
 
 class BalanceApply(Version):
     variant: int = Field(ge=0, le=2)
+
+
+class ActualParticipant(Payload):
+    player_id: int = Field(gt=0)
+    team: Team
+    position: Position
+
+
+class GoalEvent(Payload):
+    id: UUID
+    team: Team
+    kind: Literal["goal", "own_goal"] = "goal"
+    author_id: int | None = Field(default=None, gt=0)
+    assist_id: int | None = Field(default=None, gt=0)
+
+
+class ResultEdit(Version):
+    participants: list[ActualParticipant] = Field(max_length=100)
+    goals: list[GoalEvent] = Field(max_length=200)
+    completed: bool = False

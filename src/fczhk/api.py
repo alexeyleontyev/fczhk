@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import ratings as rt
+from . import results as res
 from . import schemas as S
 from . import services as svc
 from .auth import check_member, create_session, parse_telegram, player_for_telegram, public_player
@@ -50,7 +51,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
                 await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(
-        title="FCZHK · MVP 2",
+        title="FCZHK · MVP 3",
         docs_url="/api/docs" if cfg.env != "production" else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if cfg.env != "production" else None,
@@ -169,6 +170,33 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     ):
         return rt.review_data(db, p.id, player_id, position, p.telegram_id in cfg.admins)
 
+    @app.get("/api/players/{player_id}/stats")
+    def statistics(
+        player_id: int,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        return res.player_stats(db, player_id)
+
+    @app.get("/api/matches/{match_id}/result")
+    def result(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        m = svc.get_match(db, match_id)
+        if m.status not in ("approved", "completed"):
+            raise svc.DomainError("Результат доступен после утверждения команд", 404)
+        return res.result_data(db, m)
+
+    @app.put("/api/matches/{match_id}/result")
+    def edit_result(
+        match_id: int,
+        body: S.ResultEdit,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = svc.get_match(db, match_id, body.version, lock=True)
+        return res.save_result(db, p.id, m, body)
+
     @app.put("/api/players/{player_id}/ratings")
     def rate(
         player_id: int,
@@ -232,6 +260,8 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
         before = {key: str(getattr(m, key)) for key in S.GameFields.model_fields}
+        if db.get(res.MatchResult, m.id) and body.starts_at != m.starts_at:
+            raise svc.DomainError("Время матча с результатом изменять нельзя")
         for key, value in body.model_dump(exclude={"version"}).items():
             setattr(m, key, value)
         m.game_day = m.starts_at.astimezone(svc.MOSCOW).date().isoformat()

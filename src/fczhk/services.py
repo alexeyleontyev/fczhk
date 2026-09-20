@@ -10,9 +10,11 @@ from .models import (
     Audit,
     GameTemplate,
     Match,
+    MatchResult,
     Player,
     Publication,
     Registration,
+    ResultParticipant,
     TeamRatingDraft,
     TeamRatingSnapshot,
     TeamSnapshot,
@@ -66,6 +68,7 @@ def selection(match: Match, regs: list[Registration]) -> set[int]:
 
 
 def invalidate(db: Session, match: Match, roster_changed=True):
+    ensure_pregame(db, match)
     if roster_changed:
         match.roster_version += 1
         draft = db.get(TeamRatingDraft, match.id)
@@ -90,6 +93,7 @@ def invalidate(db: Session, match: Match, roster_changed=True):
 
 def match_data(db: Session, match: Match) -> dict:
     from .ratings import effective, public_team_data
+    from .results import result_data
 
     regs = entries(db, match.id)
     ratings = effective(db, regs)
@@ -144,6 +148,7 @@ def match_data(db: Session, match: Match) -> dict:
         roster_version=match.roster_version,
         registrations=rows,
         team_ratings=public_team_data(db, match),
+        result=result_data(db, match) if db.get(MatchResult, match.id) else None,
         publications=[
             dict(
                 id=p.id,
@@ -252,6 +257,7 @@ def register(db: Session, actor: int, match: Match, position: str):
 
 
 def cancel(db: Session, actor: int, match: Match, r: Registration, admin=False):
+    ensure_pregame(db, match)
     if not admin and match.status != "open":
         raise DomainError("После финализации изменения вносит администратор")
     if not r.active:
@@ -506,5 +512,23 @@ def merge_guest(db: Session, actor: int, guest_id: int, target_id: int):
             )
     for r in regs:
         r.player_id = target_id
+    # Historical events retain their original IDs; read models resolve linked guests.
+    linked_ids = list(db.scalars(select(Player.id).where(Player.merged_into == target_id))) + [
+        target_id
+    ]
+    guest_games = select(ResultParticipant.match_id).where(ResultParticipant.player_id == guest_id)
+    if db.scalar(
+        select(ResultParticipant.match_id).where(
+            ResultParticipant.match_id.in_(guest_games), ResultParticipant.player_id.in_(linked_ids)
+        )
+    ):
+        raise DomainError(
+            "Обе карточки есть в фактическом составе одной игры. Сначала исправьте результат.", 409
+        )
     guest.merged_into = target_id
     audit(db, actor, "guest.linked", guest_id=guest_id, target_id=target_id)
+
+
+def ensure_pregame(db: Session, match: Match):
+    if db.get(MatchResult, match.id):
+        raise DomainError("Результат уже внесен. Изменяйте фактический состав в результате матча.")

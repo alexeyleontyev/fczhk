@@ -221,3 +221,50 @@ def test_upgrade_from_mvp1_preserves_data_and_matches_metadata(pg):
         assert db.get(RatingState, 1).revision == 0
         differences = compare_metadata(MigrationContext.configure(conn), Base.metadata)
         assert differences == []
+
+
+def test_concurrent_result_edits_are_atomic(pg):
+    from datetime import timedelta
+
+    from fczhk.db import now
+    from fczhk.models import MatchResult, ResultGoal, ResultParticipant
+    from fczhk.results import save_result
+    from fczhk.schemas import ResultEdit
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        other = Player(alias="Соперник", telegram_id=9999)
+        match = Match(
+            game_day="2020-01-03",
+            starts_at=now() - timedelta(days=1),
+            location="Поле",
+            status="approved",
+        )
+        db.add_all([other, match])
+        db.flush()
+        mid, version, oid = match.id, match.version, other.id
+    body = ResultEdit(
+        version=version,
+        completed=True,
+        participants=[
+            dict(player_id=actor, team="white", position="field"),
+            dict(player_id=oid, team="black", position="keeper"),
+        ],
+        goals=[dict(id=str(uuid4()), team="white", author_id=actor)],
+    )
+
+    def save(_):
+        try:
+            with factory() as db, db.begin():
+                save_result(db, actor, get_match(db, mid, version, lock=True), body)
+            return "ok"
+        except DomainError as exc:
+            assert exc.status == 409
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(save, range(2))) == ["conflict", "ok"]
+    with factory() as db:
+        assert db.get(MatchResult, mid).completed
+        assert len(list(db.scalars(select(ResultGoal)))) == 1
+        assert len(list(db.scalars(select(ResultParticipant)))) == 2

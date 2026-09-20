@@ -214,3 +214,38 @@ class TeamRatingSnapshot(Base):
     __tablename__ = "team_rating_snapshots"
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("team_snapshots.id"), primary_key=True)
     data: Mapped[dict] = mapped_column(JSON)
+
+
+class MatchResult(Base):
+    __tablename__ = "match_results"
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), primary_key=True)
+    completed: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class ResultParticipant(Base):
+    __tablename__ = "result_participants"
+    __table_args__ = (
+        CheckConstraint("team IN ('white', 'black')"),
+        CheckConstraint("position IN ('field', 'keeper')"),
+    )
+    match_id: Mapped[int] = mapped_column(ForeignKey("match_results.match_id"), primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), primary_key=True)
+    team: Mapped[str] = mapped_column(String(10))
+    position: Mapped[str] = mapped_column(String(10))
+
+
+class ResultGoal(Base):
+    __tablename__ = "result_goals"
+    __table_args__ = (
+        CheckConstraint("team IN ('white', 'black')"),
+        CheckConstraint("kind IN ('goal', 'own_goal')"),
+        CheckConstraint("author_id IS NULL OR assist_id IS NULL OR author_id <> assist_id"),
+        CheckConstraint("kind <> 'own_goal' OR (author_id IS NOT NULL AND assist_id IS NULL)"),
+    )
+    match_id: Mapped[int] = mapped_column(ForeignKey("match_results.match_id"), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    team: Mapped[str] = mapped_column(String(10))
+    kind: Mapped[str] = mapped_column(String(10))
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
+    assist_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"))

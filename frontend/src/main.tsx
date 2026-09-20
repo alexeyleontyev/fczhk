@@ -18,6 +18,7 @@ import {
 import { api, hasToken, setToken } from './api'
 import { AutomaticTeams, RatingAverages, RatingFlow, TeamMeans, TemporaryRatings } from './ratings'
 import type { Entry, Match, Player, Position, Team, Template } from './types'
+import { MatchResult, PlayerStats } from './results'
 import './style.css'
 
 const date = (s: string) =>
@@ -38,6 +39,7 @@ const status = {
   open: 'Запись открыта',
   finalized: 'Сбор завершен',
   approved: 'Команды готовы',
+  completed: 'Матч завершён',
 }
 const initial = (name: string) =>
   name
@@ -143,6 +145,16 @@ function App() {
   const [modal, setModal] = useState<string | null>(null)
   const [template, setTemplate] = useState<Template | null>(null)
   const [search, setSearch] = useState('')
+  const [statsTarget, setStatsTarget] = useState<number | null>(null)
+  const openStats = (id: number) => {
+    setStatsTarget(id)
+    setModal('stats')
+  }
+  const openGame = (id: number) => {
+    setSelectedId(id)
+    setModal(null)
+    setTab('game')
+  }
   const [ratingTarget, setRatingTarget] = useState<number | null>(null)
   const [history, setHistory] = useState<{
     audit: { id: number; action: string; data: unknown; at: string }[]
@@ -207,6 +219,22 @@ function App() {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    if (!me || !selectedId || matches.some((game) => game.id === selectedId)) return
+    let current = true
+    api<Match>(`/matches/${selectedId}`)
+      .then((game) => {
+        if (current)
+          setMatches((all) => (all.some((item) => item.id === game.id) ? all : [...all, game]))
+      })
+      .catch((error) => {
+        if (current) setNotice({ text: error.message, error: true })
+      })
+    return () => {
+      current = false
+    }
+  }, [me?.id, selectedId, matches])
 
   const upcoming = [...matches]
     .filter((m) => new Date(m.starts_at) > new Date())
@@ -418,6 +446,16 @@ function App() {
                 </section>
                 <div className="content-grid">
                   <div className="primary-column">
+                    {['approved', 'completed'].includes(m.status) && (
+                      <MatchResult
+                        key={m.id}
+                        match={m}
+                        players={players}
+                        admin={isAdmin}
+                        busy={busy}
+                        run={run}
+                      />
+                    )}
                     <section className="panel">
                       <div className="section-title">
                         <h2>Сбор на игру</h2>
@@ -532,20 +570,22 @@ function App() {
                     <section className="panel">
                       <div className="section-title">
                         <h2>Участники</h2>
-                        {isAdmin && (
+                        {isAdmin && !m.result && (
                           <Button className="ghost compact" onClick={() => setModal('include')}>
                             <Plus size={16} /> Добавить
                           </Button>
                         )}
                       </div>
-                      <Roster match={m} admin={isAdmin} busy={busy} run={run} />
-                      {isAdmin && <TemporaryRatings key={m.id} match={m} busy={busy} run={run} />}
+                      <Roster match={m} admin={isAdmin && !m.result} busy={busy} run={run} />
+                      {isAdmin && !m.result && (
+                        <TemporaryRatings key={m.id} match={m} busy={busy} run={run} />
+                      )}
                     </section>
-                    {isAdmin && ['finalized', 'approved'].includes(m.status) && (
+                    {isAdmin && !m.result && ['finalized', 'approved'].includes(m.status) && (
                       <AutomaticTeams key={m.id} match={m} busy={busy} run={run} />
                     )}
                     {['finalized', 'approved'].includes(m.status) && (
-                      <TeamBoard match={m} admin={isAdmin} busy={busy} run={run} />
+                      <TeamBoard match={m} admin={isAdmin && !m.result} busy={busy} run={run} />
                     )}
                   </div>
                   <aside>
@@ -685,6 +725,12 @@ function App() {
                     {status[game.status]}
                   </span>
                   <h2>{date(game.starts_at)}</h2>
+                  {game.result && (
+                    <strong>
+                      Белые {game.result.score.white} : {game.result.score.black} Чёрные
+                      {!game.result.completed && ' · черновик'}
+                    </strong>
+                  )}
                   <p>
                     {time(game.starts_at)} МСК · {game.location}
                   </p>
@@ -745,6 +791,9 @@ function App() {
                       <h3>{p.alias}</h3>
                       <span className="muted">{p.guest ? 'Гость' : 'Игрок клуба'}</span>
                       <RatingAverages player={p} />
+                      <button className="button ghost compact" onClick={() => openStats(p.id)}>
+                        Статистика
+                      </button>
                       {!p.guest && (p.id !== me.id || isAdmin) && (
                         <button
                           className="button ghost compact"
@@ -783,6 +832,7 @@ function App() {
               <h2>{me.alias}</h2>
               <span className="tag">{isAdmin ? 'Администратор' : 'Игрок клуба'}</span>
               <RatingAverages player={me} />
+              <PlayerStats playerId={me.id} onMatch={openGame} onPlayer={openStats} />
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
@@ -850,6 +900,11 @@ function App() {
             <X size={16} />
           </button>
         </div>
+      )}
+      {modal === 'stats' && statsTarget && (
+        <Modal title="Статистика игрока" close={() => setModal(null)}>
+          <PlayerStats playerId={statsTarget} onMatch={openGame} onPlayer={openStats} />
+        </Modal>
       )}
       {modal === 'ratings' && (
         <Modal title="Оценки игроков" close={() => setModal(null)}>
