@@ -161,3 +161,21 @@ class ResultEdit(Version):
     participants: list[ActualParticipant] = Field(max_length=100)
     goals: list[GoalEvent] = Field(max_length=200)
     completed: bool = False
+
+
+class AuctionStart(Version):
+    white_captain: int = Field(gt=0)
+    black_captain: int = Field(gt=0)
+    larger_team: Team | None = None
+
+
+class AuctionBid(Payload):
+    auction_id: int = Field(gt=0)
+    lot_id: UUID
+    amount: int = Field(ge=0, le=100, strict=True)
+
+
+class AuctionControl(Payload):
+    auction_id: int = Field(gt=0)
+    revision: int = Field(ge=1)
+    action: Literal["pause", "resume", "cancel", "manual"]

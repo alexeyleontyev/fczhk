@@ -268,3 +268,44 @@ def test_concurrent_result_edits_are_atomic(pg):
         assert db.get(MatchResult, mid).completed
         assert len(list(db.scalars(select(ResultGoal)))) == 1
         assert len(list(db.scalars(select(ResultParticipant)))) == 2
+
+
+def test_simultaneous_auction_bids_resolve_once_and_persist(pg):
+    from fczhk.auctions import bid, data, start
+    from fczhk.db import now
+    from fczhk.models import Auction, AuctionLot
+    from fczhk.schemas import AuctionBid, AuctionStart
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        people = [Player(alias=f"Торги {i}", telegram_id=6000 + i) for i in range(3)]
+        m = Match(game_day="2020-01-03", starts_at=now(), location="Поле", status="finalized")
+        db.add_all([m, *people])
+        db.flush()
+        ids = [actor, *[p.id for p in people]]
+        for pid in ids:
+            db.add(Registration(match_id=m.id, player_id=pid, position="field", selected=True))
+        db.flush()
+        a = start(
+            db, actor, m, AuctionStart(version=m.version, white_captain=actor, black_captain=ids[1])
+        )
+        view = data(db, a, actor)
+        mid, aid, lot, other = m.id, a.id, view["current"]["id"], ids[1]
+
+    def submit(player):
+        with factory() as db, db.begin():
+            bid(
+                db,
+                player,
+                get_match(db, mid, lock=True),
+                AuctionBid(auction_id=aid, lot_id=lot, amount=1 if player == actor else 0),
+            )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(submit, [actor, other, actor, other]))
+    with factory() as db:
+        a = db.get(Auction, aid)
+        assert a.status == "completed"
+        assert a.white_budget == 99 and a.black_budget == 100
+        assert len(a.state["assignments"]) == 4
+        assert len(list(db.scalars(select(AuctionLot)))) == 1
