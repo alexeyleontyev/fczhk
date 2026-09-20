@@ -36,9 +36,40 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
   await page.goto(`/?game=${m.id}`)
   await page.getByRole('button', { name: 'Войти администратором' }).click()
   const panel = page.locator('.auction-panel')
-  await panel.getByLabel('Капитан: ⚪ Белые', { exact: true }).selectOption(String(white.id))
-  await panel.getByLabel('Капитан: ⚫ Чёрные', { exact: true }).selectOption(String(black.id))
-  await panel.getByRole('button', { name: 'Начать аукцион', exact: true }).click()
+  const whiteCaptain = panel.getByLabel('Капитан: ⚪ Белые', { exact: true })
+  const blackCaptain = panel.getByLabel('Капитан: ⚫ Чёрные', { exact: true })
+  const startAuction = panel.getByRole('button', { name: 'Начать аукцион', exact: true })
+  await expect(startAuction).toBeDisabled()
+  await whiteCaptain.selectOption(String(black.id))
+  await expect(blackCaptain.locator(`option[value="${black.id}"]`)).toHaveJSProperty(
+    'disabled',
+    true,
+  )
+  await expect(startAuction).toBeDisabled()
+  await blackCaptain.selectOption(String(white.id))
+  await expect(whiteCaptain.locator(`option[value="${white.id}"]`)).toHaveJSProperty(
+    'disabled',
+    true,
+  )
+  await expect(startAuction).toBeEnabled()
+  await whiteCaptain.selectOption('')
+  await expect(blackCaptain.locator(`option[value="${black.id}"]`)).toHaveJSProperty(
+    'disabled',
+    false,
+  )
+  await expect(startAuction).toBeDisabled()
+  await blackCaptain.selectOption(String(black.id))
+  await expect(whiteCaptain.locator(`option[value="${white.id}"]`)).toHaveJSProperty(
+    'disabled',
+    false,
+  )
+  await expect(whiteCaptain.locator(`option[value="${black.id}"]`)).toHaveJSProperty(
+    'disabled',
+    true,
+  )
+  await whiteCaptain.selectOption(String(white.id))
+  await expect(startAuction).toBeEnabled()
+  await startAuction.click()
   await expect(panel.getByText('Торги идут', { exact: true })).toBeVisible()
   const second = await browser.newContext({ viewport: { width: 390, height: 844 } })
   try {

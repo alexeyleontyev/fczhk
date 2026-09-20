@@ -91,6 +91,10 @@ export function AuctionPanel({
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [history, setHistory] = useState<Auction[] | null>(null)
+  const [captainSelection, setCaptainSelection] = useState<Record<Team, string>>({
+    white: '',
+    black: '',
+  })
   useEffect(() => {
     let current = true,
       pending = false
@@ -120,6 +124,9 @@ export function AuctionPanel({
   }, [m.id, m.version, m.auction_status])
   const active = auction && ['active', 'paused'].includes(auction.status)
   const captains = m.registrations.filter((r) => r.selected && r.position === 'field' && !r.guest)
+  const hasDistinctCaptains =
+    captainSelection.white !== captainSelection.black &&
+    Object.values(captainSelection).every((id) => captains.some((r) => String(r.player_id) === id))
   const fieldCount = m.registrations.filter((r) => r.selected && r.position === 'field').length
   const control = (action: string) =>
     run(async () => {
@@ -290,17 +297,19 @@ export function AuctionPanel({
             По 100 баллов каждому капитану. Начало новых торгов сбросит текущее распределение и
             утверждение. История предыдущих торгов сохранится.
           </p>
+          <p className="muted">Капитанами команд должны быть разные игроки.</p>
           <form
             onSubmit={(e) => {
               e.preventDefault()
+              if (!hasDistinctCaptains) return
               const f = new FormData(e.currentTarget)
               void run(
                 async () =>
                   setAuction(
                     await api<Auction>(`/matches/${m.id}/auction`, 'POST', {
                       version: m.version,
-                      white_captain: Number(f.get('white')),
-                      black_captain: Number(f.get('black')),
+                      white_captain: Number(captainSelection.white),
+                      black_captain: Number(captainSelection.black),
                       larger_team: f.get('larger') || null,
                     }),
                   ),
@@ -311,10 +320,24 @@ export function AuctionPanel({
             {(['white', 'black'] as Team[]).map((t) => (
               <label key={t}>
                 Капитан: {teamName(t)}
-                <select aria-label={`Капитан: ${teamName(t)}`} name={t} required defaultValue="">
+                <select
+                  aria-label={`Капитан: ${teamName(t)}`}
+                  name={t}
+                  required
+                  value={captainSelection[t]}
+                  onChange={(e) =>
+                    setCaptainSelection({ ...captainSelection, [t]: e.currentTarget.value })
+                  }
+                >
                   <option value="">Выберите капитана</option>
                   {captains.map((r) => (
-                    <option key={r.id} value={r.player_id}>
+                    <option
+                      key={r.id}
+                      value={r.player_id}
+                      disabled={
+                        String(r.player_id) === captainSelection[t === 'white' ? 'black' : 'white']
+                      }
+                    >
                       {r.alias}
                     </option>
                   ))}
@@ -331,7 +354,7 @@ export function AuctionPanel({
                 </select>
               </label>
             )}
-            <button className="button" disabled={busy || captains.length < 2}>
+            <button className="button" disabled={busy || !hasDistinctCaptains}>
               Начать аукцион
             </button>
             {captains.length < 2 && (
