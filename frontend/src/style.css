@@ -183,7 +183,7 @@ p {
   bottom: -1px;
   width: 100%;
 }
-.navigation button:last-child:nth-child(5) {
+.navigation button[aria-label='Настройки'] {
   margin-left: auto;
 }
 .demo-banner {
@@ -1074,7 +1074,7 @@ footer > span:first-child {
     font-size: 9px;
     padding: 15px 8px 12px;
   }
-  .navigation button:last-child:nth-child(5) {
+  .navigation button[aria-label='Настройки'] {
     margin-left: 0;
   }
   .page-heading {
@@ -1559,4 +1559,79 @@ footer > span:first-child {
 }
 .auction-panel .actual-teams p {
   margin-top: 8px;
+}
+
+.prediction-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+.prediction-inputs input {
+  text-align: center;
+  font-size: 22px;
+}
+.prediction-own {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 20px 0;
+}
+.prediction-own > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.forecast-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 50px;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.forecast-row > span:first-child {
+  overflow-wrap: anywhere;
+}
+.standings-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 24px;
+  text-align: left;
+}
+.standings-table th {
+  font-size: 11px;
+  color: var(--muted);
+}
+.standings-table td,
+.standings-table th {
+  padding: 16px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.standings-table td:first-child {
+  width: 38px;
+}
+.standings-table td:last-child {
+  text-align: right;
+  font-size: 24px;
+}
+.standings-table td small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.standings-table tr.mine {
+  background: #f0f5e9;
+}
+@media (max-width: 420px) {
+  .navigation button {
+    font-size: 8px;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+  .standings-table td,
+  .standings-table th {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
 }

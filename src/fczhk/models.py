@@ -289,3 +289,18 @@ class AuctionLot(Base):
     white_bid: Mapped[int | None] = mapped_column()
     black_bid: Mapped[int | None] = mapped_column()
     winner: Mapped[str | None] = mapped_column(String(10))
+
+
+class Prediction(Base):
+    __tablename__ = "predictions"
+    __table_args__ = (
+        CheckConstraint("white_score BETWEEN 0 AND 200 AND black_score BETWEEN 0 AND 200"),
+        CheckConstraint("revision >= 1"),
+    )
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), primary_key=True)
+    white_score: Mapped[int] = mapped_column()
+    black_score: Mapped[int] = mapped_column()
+    revision: Mapped[int] = mapped_column(default=1)
+    approved_version: Mapped[int] = mapped_column()
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
