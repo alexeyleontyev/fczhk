@@ -43,7 +43,7 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
   const second = await browser.newContext({ viewport: { width: 390, height: 844 } })
   try {
     const other = await second.newPage()
-    await other.goto(`http://127.0.0.1:8000/?game=${m.id}`)
+    await other.goto(page.url())
     await other.getByRole('button', { name: 'Войти игроком', exact: true }).click()
     const blackPanel = other.locator('.auction-panel')
     await panel.getByLabel('Ваша закрытая ставка').fill('0')

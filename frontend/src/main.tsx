@@ -13,6 +13,7 @@ import {
   Settings2,
   Shield,
   Users,
+  Trophy,
   X,
 } from 'lucide-react'
 import { api, hasToken, setToken } from './api'
@@ -20,6 +21,7 @@ import { AutomaticTeams, RatingAverages, RatingFlow, TeamMeans, TemporaryRatings
 import type { Entry, Match, Player, Position, Team, Template } from './types'
 import { MatchResult, PlayerStats } from './results'
 import { AuctionPanel } from './auctions'
+import { PredictionPanel, PredictionStandings } from './predictions'
 import './style.css'
 
 const date = (s: string) =>
@@ -337,6 +339,7 @@ function App() {
           ['archive', Clock3, 'Архив'],
           ['players', Users, 'Игроки'],
           ['profile', CircleUserRound, 'Профиль'],
+          ['predictions', Trophy, 'Прогнозы'],
         ].map(([id, Icon, label]) => {
           const I = Icon as typeof Users
           return (
@@ -448,6 +451,15 @@ function App() {
                 </section>
                 <div className="content-grid">
                   <div className="primary-column">
+                    {m.status !== 'draft' && (
+                      <PredictionPanel
+                        key={`predictions-${m.id}`}
+                        match={m}
+                        busy={busy}
+                        run={run}
+                        onStandings={() => setTab('predictions')}
+                      />
+                    )}
                     {(m.auction_status ||
                       (!m.result && ['finalized', 'approved'].includes(m.status))) && (
                       <AuctionPanel
@@ -719,6 +731,7 @@ function App() {
             )}
           </>
         )}
+        {tab === 'predictions' && <PredictionStandings me={me.id} onPlayer={openStats} />}
         {tab === 'archive' && (
           <>
             <div className="page-heading">
