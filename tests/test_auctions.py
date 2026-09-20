@@ -63,6 +63,29 @@ def control(call, mid, a, action, expected=200):
     )
 
 
+def test_same_player_cannot_captain_both_teams(env, call, auction_game):
+    mid = auction_game
+    before = call("GET", f"/matches/{mid}")
+    response = call(
+        "POST",
+        f"/matches/{mid}/auction",
+        dict(
+            version=before["version"],
+            white_captain=env[4]["admin"],
+            black_captain=env[4]["admin"],
+        ),
+        expected=400,
+    )
+    assert "двух разных" in response["detail"]
+    assert call("GET", f"/matches/{mid}") == before
+    assert call("GET", f"/matches/{mid}/auction") is None
+    assert call("GET", f"/matches/{mid}/auctions/history") == []
+    assert start(call, env, mid)["captains"] == {
+        "white": env[4]["admin"],
+        "black": env[4]["player"],
+    }
+
+
 def test_secret_bids_reveal_only_after_resolution(env, call, auction_game):
     mid = auction_game
     a = start(call, env, mid)
