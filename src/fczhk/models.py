@@ -129,3 +129,88 @@ class Publication(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     next_attempt_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
     __table_args__ = (UniqueConstraint("match_id", "kind", "version"),)
+
+
+class RatingState(Base):
+    """Singleton serializes rating writes and immutable team-input captures."""
+
+    __tablename__ = "rating_state"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    revision: Mapped[int] = mapped_column(default=0)
+
+
+class Rating(Base):
+    __tablename__ = "ratings"
+    __table_args__ = (
+        UniqueConstraint("author_id", "player_id", "position"),
+        CheckConstraint("author_id <> player_id"),
+        CheckConstraint("defense BETWEEN 0 AND 50"),
+        CheckConstraint(
+            "(position = 'field' AND attack IS NOT NULL AND attack BETWEEN 0 AND 50) OR (position = 'keeper' AND attack IS NULL)"
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    position: Mapped[str] = mapped_column(String(10))
+    attack: Mapped[int | None] = mapped_column()
+    defense: Mapped[int] = mapped_column()
+    revision: Mapped[int] = mapped_column(default=1)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class RatingHistory(Base):
+    __tablename__ = "rating_history"
+    __table_args__ = (UniqueConstraint("rating_id", "revision"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rating_id: Mapped[int] = mapped_column(ForeignKey("ratings.id"), index=True)
+    revision: Mapped[int] = mapped_column()
+    attack: Mapped[int | None] = mapped_column()
+    defense: Mapped[int] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class MatchRating(Base):
+    """A fallback bound to a registration, never a permanent player rating."""
+
+    __tablename__ = "match_ratings"
+    __table_args__ = (
+        CheckConstraint("defense BETWEEN 0 AND 50"),
+        CheckConstraint(
+            "(position = 'field' AND attack IS NOT NULL AND attack BETWEEN 0 AND 50) OR (position = 'keeper' AND attack IS NULL)"
+        ),
+    )
+    registration_id: Mapped[int] = mapped_column(ForeignKey("registrations.id"), primary_key=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    position: Mapped[str] = mapped_column(String(10))
+    attack: Mapped[int | None] = mapped_column()
+    defense: Mapped[int] = mapped_column()
+    revision: Mapped[int] = mapped_column(default=1)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class BalanceRun(Base):
+    __tablename__ = "balance_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    roster_version: Mapped[int] = mapped_column()
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    inputs: Mapped[list] = mapped_column(JSON)
+    settings: Mapped[dict] = mapped_column(JSON)
+    result: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class TeamRatingDraft(Base):
+    __tablename__ = "team_rating_drafts"
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("balance_runs.id"))
+    variant: Mapped[int] = mapped_column()
+    edited: Mapped[bool] = mapped_column(default=False)
+
+
+class TeamRatingSnapshot(Base):
+    __tablename__ = "team_rating_snapshots"
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("team_snapshots.id"), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON)

@@ -173,3 +173,22 @@ async def run_worker(cfg, once=False):
     finally:
         if bot:
             await bot.session.close()
+
+
+async def run_demo_worker(cfg, factory):
+    """SQLite lock waits must not block the API event loop or its transaction cleanup."""
+    if cfg.env != "demo":
+        raise ValueError("Demo worker requires demo settings")
+
+    def tick():
+        with factory() as db, db.begin():
+            schedule_tick(db, cfg)
+        asyncio.run(deliver_one(cfg, factory))
+        asyncio.run(mark_stale(cfg, factory))
+
+    while True:
+        try:
+            await asyncio.to_thread(tick)
+        except Exception:
+            log.error("Demo worker iteration failed; retrying.")
+        await asyncio.sleep(3)

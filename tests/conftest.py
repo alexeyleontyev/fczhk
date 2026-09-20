@@ -5,7 +5,7 @@ from fczhk.api import create_app
 from fczhk.auth import create_session
 from fczhk.config import Settings
 from fczhk.db import Base, database
-from fczhk.models import GameTemplate, Player
+from fczhk.models import GameTemplate, Player, RatingState
 
 
 @pytest.fixture
@@ -17,6 +17,7 @@ def env(tmp_path):
     Base.metadata.create_all(engine)
     with factory() as db, db.begin():
         db.add(GameTemplate(id=1))
+        db.add(RatingState(id=1))
         admin = Player(alias="Администратор", telegram_id=101)
         player = Player(alias="Игрок", telegram_id=102)
         db.add_all([admin, player])

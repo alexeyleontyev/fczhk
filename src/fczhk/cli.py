@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from .config import Settings
 from .db import Base, database, now
-from .models import GameTemplate, Match, Player, Registration
+from .models import GameTemplate, Match, Player, RatingState, Registration
 from .services import MOSCOW
 
 
@@ -30,6 +30,8 @@ def seed_demo(cfg):
     engine, factory = database(cfg.database_url)
     Base.metadata.create_all(engine)
     with factory() as db, db.begin():
+        if db.get(RatingState, 1) is None:
+            db.add(RatingState(id=1))
         if db.get(GameTemplate, 1) is None:
             db.add(GameTemplate(id=1, location="Манеж «Север» · демонстрация", cost=80000))
         if db.scalar(select(Player.id)):

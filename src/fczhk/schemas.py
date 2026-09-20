@@ -1,6 +1,7 @@
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Position = Literal["field", "keeper"]
 Team = Literal["white", "black"]
@@ -54,6 +55,7 @@ class Promote(Version):
 
 class Teams(Version):
     assignments: dict[int, Team | None]
+    reset: bool = False
 
 
 class LinkGuest(Payload):
@@ -74,3 +76,67 @@ class TemplateEdit(Version):
         if info.data.get("enabled") and len(value) < 2:
             raise ValueError("Укажите место до включения расписания")
         return value
+
+
+class RatingValues(Payload):
+    position: Position
+    attack: int | None = None
+    defense: int
+
+    @field_validator("attack", "defense", mode="before")
+    @classmethod
+    def score_in_tenths(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            raise ValueError("Оценка должна быть числом от 0 до 5 с шагом 0,1")
+        try:
+            score = Decimal(str(value).replace(",", "."))
+            if (
+                not score.is_finite()
+                or not 0 <= score <= 5
+                or score * 10 != (score * 10).to_integral_value()
+            ):
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            raise ValueError("Оценка должна быть числом от 0 до 5 с шагом 0,1") from None
+        return int(score * 10)
+
+    @model_validator(mode="after")
+    def complete_pair(self):
+        if self.position == "field" and self.attack is None:
+            raise ValueError("Полевому игроку нужны обе оценки: атака и защита")
+        if self.position == "keeper" and self.attack is not None:
+            raise ValueError("Вратарю выставляется только защита")
+        return self
+
+
+class RatingEdit(RatingValues):
+    revision: int = Field(ge=0)
+
+
+class MatchRatingEdit(RatingValues, Version):
+    pass
+
+
+class BalanceSettings(Payload):
+    epsilon: Decimal = Field(default=Decimal("0.10"), ge=0, le=10, decimal_places=2)
+    max_epsilon: Decimal = Field(default=Decimal("0.50"), ge=0, le=10, decimal_places=2)
+    epsilon_step: Decimal = Field(default=Decimal("0.10"), gt=0, le=10, decimal_places=2)
+    min_distance: int | None = Field(default=None, ge=1, le=8)
+
+    @model_validator(mode="after")
+    def valid_interval(self):
+        if self.max_epsilon < self.epsilon:
+            raise ValueError("Максимальный допуск не может быть меньше начального")
+        if (self.max_epsilon - self.epsilon) / self.epsilon_step > 20:
+            raise ValueError("Не более 20 шагов расширения допуска")
+        return self
+
+
+class BalanceGenerate(Version):
+    settings: BalanceSettings = Field(default_factory=BalanceSettings)
+
+
+class BalanceApply(Version):
+    variant: int = Field(ge=0, le=2)

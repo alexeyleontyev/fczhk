@@ -6,7 +6,17 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .db import now
-from .models import Audit, GameTemplate, Match, Player, Publication, Registration, TeamSnapshot
+from .models import (
+    Audit,
+    GameTemplate,
+    Match,
+    Player,
+    Publication,
+    Registration,
+    TeamRatingDraft,
+    TeamRatingSnapshot,
+    TeamSnapshot,
+)
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -39,6 +49,7 @@ def entries(db: Session, match_id: int) -> list[Registration]:
             select(Registration)
             .where(Registration.match_id == match_id, Registration.active.is_(True))
             .order_by(Registration.registered_at, Registration.id)
+            .execution_options(populate_existing=True)
         )
     )
 
@@ -54,8 +65,12 @@ def selection(match: Match, regs: list[Registration]) -> set[int]:
     return selected
 
 
-def invalidate(db: Session, match: Match):
-    match.roster_version += 1
+def invalidate(db: Session, match: Match, roster_changed=True):
+    if roster_changed:
+        match.roster_version += 1
+        draft = db.get(TeamRatingDraft, match.id)
+        if draft:
+            db.delete(draft)
     match.approved_version = None
     if match.status == "approved":
         match.status = "finalized"
@@ -74,7 +89,10 @@ def invalidate(db: Session, match: Match):
 
 
 def match_data(db: Session, match: Match) -> dict:
+    from .ratings import effective, public_team_data
+
     regs = entries(db, match.id)
+    ratings = effective(db, regs)
     chosen = selection(match, regs)
     players = {
         p.id: p
@@ -97,6 +115,7 @@ def match_data(db: Session, match: Match) -> dict:
                 forced=r.forced,
                 selected=r.id in chosen,
                 team=r.team,
+                rating={k: ratings[r.id][k] for k in ("attack", "defense", "source")},
                 queue=queues[r.position],
                 state=("selected" if match.status not in ("draft", "open") else "provisional")
                 if r.id in chosen
@@ -124,6 +143,7 @@ def match_data(db: Session, match: Match) -> dict:
         keeper_limit=match.keeper_limit,
         roster_version=match.roster_version,
         registrations=rows,
+        team_ratings=public_team_data(db, match),
         publications=[
             dict(
                 id=p.id,
@@ -337,26 +357,38 @@ def promote(db: Session, actor: int, match: Match, position: str):
     audit(db, actor, "reserve.promoted", match.id, registration_id=r.id)
 
 
-def save_teams(db: Session, actor: int, match: Match, assignments: dict[int, str | None]):
+def save_teams(
+    db: Session, actor: int, match: Match, assignments: dict[int, str | None], reset=False
+):
     if match.status not in ("finalized", "approved"):
         raise DomainError("Сначала финализируйте список")
     regs = [r for r in entries(db, match.id) if r.selected]
     if set(assignments) != {r.id for r in regs}:
         raise DomainError("Список участников изменился. Обновите составы.", 409)
-    if all(r.team == assignments[r.id] for r in regs):
+    if not reset and all(r.team == assignments[r.id] for r in regs):
         return
-    invalidate(db, match)
+    draft = db.get(TeamRatingDraft, match.id)
+    if draft:
+        if reset or match.status == "approved":
+            db.delete(draft)
+        elif any(r.position == "field" and r.team != assignments[r.id] for r in regs):
+            draft.edited = True
+    invalidate(db, match, roster_changed=False)
     for r in regs:
         r.team = assignments[r.id]
     match.version += 1
-    audit(db, actor, "teams.saved", match.id, assignments=assignments)
+    audit(db, actor, "teams.saved", match.id, assignments=assignments, reset=reset)
 
 
 def approve(db: Session, actor: int, match: Match, cfg: Settings):
+    from .ratings import lock_ratings, team_rating_data
+
     if match.status == "approved":
         return
     if match.status != "finalized":
         raise DomainError("Сначала финализируйте список")
+    # Read participants only after concurrent guest links / rating edits finish.
+    lock_ratings(db)
     regs = [r for r in entries(db, match.id) if r.selected]
     if any(r.team not in ("white", "black") for r in regs):
         raise DomainError("Распределите всех участников по командам")
@@ -375,24 +407,27 @@ def approve(db: Session, actor: int, match: Match, cfg: Settings):
         raise DomainError(
             "Назначьте вратаря так, чтобы общая численность отличалась не более чем на одного"
         )
+    ratings = team_rating_data(db, match, approval=True)
+    ratings["frozen"] = True
     match.version += 1
     match.approved_version = match.version
     match.status = "approved"
-    db.add(
-        TeamSnapshot(
-            match_id=match.id,
-            version=match.version,
-            teams=[
-                dict(
-                    player_id=r.player_id,
-                    alias=db.get(Player, r.player_id).alias,
-                    position=r.position,
-                    team=r.team,
-                )
-                for r in regs
-            ],
-        )
+    snapshot = TeamSnapshot(
+        match_id=match.id,
+        version=match.version,
+        teams=[
+            dict(
+                player_id=r.player_id,
+                alias=db.get(Player, r.player_id).alias,
+                position=r.position,
+                team=r.team,
+            )
+            for r in regs
+        ],
     )
+    db.add(snapshot)
+    db.flush()
+    db.add(TeamRatingSnapshot(snapshot_id=snapshot.id, data=ratings))
     audit(db, actor, "teams.approved", match.id, version=match.version)
 
 
@@ -437,6 +472,9 @@ def schedule_tick(db: Session, cfg: Settings, at: datetime | None = None) -> int
 
 
 def merge_guest(db: Session, actor: int, guest_id: int, target_id: int):
+    from .ratings import lock_ratings
+
+    lock_ratings(db)
     players = list(
         db.scalars(
             select(Player)

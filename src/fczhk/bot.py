@@ -6,6 +6,7 @@ from sqlalchemy import select
 from .auth import check_member, player_for_telegram
 from .db import database, now
 from .models import BotCallbackReceipt, Match, Player
+from .ratings import public_averages
 from .services import MOSCOW, DomainError, get_match, match_data, register
 from .worker import app_link, chunks
 
@@ -39,7 +40,7 @@ def dispatcher(cfg, factory):
             await message.answer(
                 "ФКЖК · футбол по пятницам\n\n"
                 "Запись открывается во вторник в 12:00 МСК. Приоритет — время записи среди оплативших.\n"
-                "В приложении: alias, текущая игра, участники и составы.\n\n"
+                "В приложении: alias, текущая игра, оценки игроков и подбор составов.\n\n"
                 "/game — текущая игра\n/players — игроки",
                 reply_markup=menu(),
             )
@@ -92,15 +93,25 @@ def dispatcher(cfg, factory):
         try:
             await identify(message.from_user)
             with factory() as db:
-                names = [
-                    p.alias
-                    for p in db.scalars(
+                people = list(
+                    db.scalars(
                         select(Player)
                         .where(Player.merged_into.is_(None), Player.telegram_id.is_not(None))
                         .order_by(Player.alias)
                     )
-                ]
-            for part in chunks("Игроки\n\n" + "\n".join(names)):
+                )
+                averages = public_averages(db, [p.id for p in people])
+
+                def score(value):
+                    return "—" if value is None else f"{value:.2f}".rstrip("0").rstrip(".")
+
+                names = []
+                for p in people:
+                    r = averages[p.id]
+                    names.append(
+                        f"{p.alias} · А {score(r['field']['attack'])} / З {score(r['field']['defense'])} · вратарь З {score(r['keeper']['defense'])}"
+                    )
+            for part in chunks("Игроки · средние оценки\n\n" + "\n".join(names)):
                 await message.answer(part)
         except DomainError as exc:
             await message.answer(exc.message)

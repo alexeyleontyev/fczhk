@@ -12,7 +12,15 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
 from fczhk.config import Settings
-from fczhk.models import GameTemplate, Match, Player, Registration
+from fczhk.models import (
+    GameTemplate,
+    Match,
+    Player,
+    Rating,
+    RatingHistory,
+    RatingState,
+    Registration,
+)
 from fczhk.services import MOSCOW, DomainError, finalize, get_match, register, schedule_tick
 
 URL = os.environ.get("FCZHK_TEST_DATABASE_URL")
@@ -22,7 +30,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def pg():
+def pg(request):
     namespace = "test_mvp1_" + uuid4().hex
     control = create_engine(URL)
     with control.begin() as conn:
@@ -32,7 +40,7 @@ def pg():
     # Run the real migration on the test connection, not metadata.create_all.
     with engine.begin() as conn:
         config.attributes["connection"] = conn
-        command.upgrade(config, "head")
+        command.upgrade(config, getattr(request, "param", "head"))
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory() as db, db.begin():
         db.add(GameTemplate(id=1, enabled=True, location="Стадион"))
@@ -96,3 +104,120 @@ def test_parallel_finalization_rejects_stale_version(pg):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(finish, range(2)))
     assert sorted(results) == ["conflict", "ok"]
+
+
+def test_concurrent_rating_edits_do_not_lose_history(pg):
+    from fczhk.ratings import aggregate, save_rating
+    from fczhk.schemas import RatingEdit
+
+    factory, pid = pg
+    with factory() as db, db.begin():
+        assert db.get(RatingState, 1) is not None
+        target = Player(alias="Оцениваемый", telegram_id=5679)
+        db.add(target)
+        db.flush()
+        target_id = target.id
+
+    def rate(value):
+        try:
+            with factory() as db, db.begin():
+                save_rating(
+                    db,
+                    pid,
+                    target_id,
+                    RatingEdit(position="field", attack=value, defense=3, revision=0),
+                )
+            return "ok"
+        except DomainError as exc:
+            assert exc.status == 409
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(rate, [2, 4]))
+    assert sorted(results) == ["conflict", "ok"]
+    with factory() as db:
+        assert len(list(db.scalars(select(Rating)))) == 1
+        assert len(list(db.scalars(select(RatingHistory)))) == 1
+        assert aggregate(db, [target_id])[(target_id, "field")][2] == 1
+
+
+@pytest.mark.parametrize("operation", ["approve", "temporary"])
+def test_guest_link_between_request_read_and_rating_lock_uses_current_identity(pg, operation):
+    from fczhk.models import TeamRatingSnapshot, TeamSnapshot
+    from fczhk.ratings import save_rating, set_temporary
+    from fczhk.schemas import RatingEdit, RatingValues
+    from fczhk.services import approve, merge_guest
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        guest = Player(alias="Гость")
+        target = Player(alias="Зарегистрированный", telegram_id=9876)
+        m = Match(
+            game_day="2026-10-02",
+            starts_at=datetime(2026, 10, 2, 20, tzinfo=MOSCOW),
+            location="Стадион",
+            status="finalized",
+        )
+        db.add_all([guest, target, m])
+        db.flush()
+        reg = Registration(
+            match_id=m.id, player_id=guest.id, position="field", selected=True, team="white"
+        )
+        db.add_all(
+            [
+                reg,
+                Registration(
+                    match_id=m.id, player_id=actor, position="field", selected=True, team="black"
+                ),
+            ]
+        )
+        save_rating(
+            db, actor, target.id, RatingEdit(position="field", attack=5, defense=3, revision=0)
+        )
+        mid, rid, guest_id, target_id = m.id, reg.id, guest.id, target.id
+
+    with factory() as request, request.begin():
+        match = get_match(request, mid, lock=True)
+        cached = request.get(Registration, rid)
+        assert cached.player_id == guest_id
+        # A different request links the card while this request has already read it.
+        with factory() as linking, linking.begin():
+            merge_guest(linking, actor, guest_id, target_id)
+        if operation == "temporary":
+            with pytest.raises(DomainError, match="Есть оценки сообщества"):
+                set_temporary(
+                    request,
+                    actor,
+                    match,
+                    cached,
+                    RatingValues(position="field", attack=1, defense=1),
+                )
+        else:
+            approve(request, actor, match, Settings(_env_file=None, env="test"))
+            request.flush()
+            teams = request.scalar(select(TeamSnapshot))
+            assert {p["player_id"] for p in teams.teams} == {actor, target_id}
+            ratings = request.get(TeamRatingSnapshot, teams.id)
+            assert {p["player_id"] for p in ratings.data["inputs"]} == {actor, target_id}
+            assert ratings.data["frozen"] is True
+
+
+@pytest.mark.parametrize("pg", ["990662d3f1e7"], indirect=True)
+def test_upgrade_from_mvp1_preserves_data_and_matches_metadata(pg):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from fczhk.db import Base
+
+    factory, pid = pg
+    with factory() as db, db.begin():
+        # Both the old player and the new singleton survive a migration rerun.
+        conn = db.connection()
+        config = Config("alembic.ini")
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        assert db.get(Player, pid).alias == "Тестовый игрок"
+        assert db.get(RatingState, 1).revision == 0
+        differences = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+        assert differences == []
