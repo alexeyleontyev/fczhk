@@ -1543,3 +1543,20 @@ footer > span:first-child {
   background: #e1efdf;
   color: #284b25;
 }
+
+.auction-current,
+.auction-controls {
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+}
+.auction-panel details {
+  margin: 18px 0;
+}
+.auction-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.auction-panel .actual-teams p {
+  margin-top: 8px;
+}

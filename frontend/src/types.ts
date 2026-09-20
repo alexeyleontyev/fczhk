@@ -44,6 +44,7 @@ export type Match = {
   status: 'draft' | 'open' | 'finalized' | 'approved' | 'completed'
   version: number
   result: import('./results').Result | null
+  auction_status: string | null
   roster_version: number
   registrations: Entry[]
   publications: Publication[]

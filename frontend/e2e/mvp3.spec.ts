@@ -47,7 +47,9 @@ test('mobile result: unknown goals, actual rosters, corrections and player stati
   await result.getByRole('button', { name: 'Сохранить черновик' }).click()
   await expect(result.getByText('Черновик', { exact: true })).toBeVisible()
   await result.getByRole('button', { name: 'Исправить результат' }).click()
-  await result.getByRole('combobox', { name: 'Автор гола', exact: true }).selectOption(String(white.id))
+  await result
+    .getByRole('combobox', { name: 'Автор гола', exact: true })
+    .selectOption(String(white.id))
   await result.getByRole('button', { name: 'Завершить матч', exact: true }).click()
   await expect(page.getByText('Матч завершён', { exact: true })).toBeVisible()
   await expect(result.getByLabel('Счёт матча')).toContainText('1 : 0')
