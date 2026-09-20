@@ -331,7 +331,7 @@ def apply_run(db: Session, actor: int, match: Match, run_id: int, variant: int):
 
 
 def team_rating_data(db: Session, match: Match, approval=False) -> dict:
-    if match.status == "approved" and not approval:
+    if match.status in ("approved", "completed") and not approval:
         snapshot = db.scalar(
             select(TeamRatingSnapshot)
             .join(TeamSnapshot, TeamSnapshot.id == TeamRatingSnapshot.snapshot_id)
