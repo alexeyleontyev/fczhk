@@ -5,7 +5,15 @@ import pytest
 from sqlalchemy import select
 
 from fczhk.db import now
-from fczhk.models import Match, Player, Prediction, Registration
+from fczhk.models import (
+    Match,
+    Player,
+    Prediction,
+    Publication,
+    Registration,
+    TeamRatingSnapshot,
+    TeamSnapshot,
+)
 from fczhk.predictions import points
 
 
@@ -157,6 +165,105 @@ def test_approval_gate_roster_changes_and_existing_forecasts(env, call, predicte
     view = forecast(call, mid, 1, 1)
     assert not view["mine"]["teams_changed"]
     assert view["mine"]["approved_version"] != 3
+
+
+def test_admin_swaps_only_team_colors_before_game(env, call, predicted_game, monkeypatch):
+    mid, starts = predicted_game
+    path = f"/matches/{mid}"
+    with env[1]() as db, db.begin():
+        snapshot = TeamSnapshot(
+            match_id=mid,
+            version=3,
+            teams=[
+                dict(
+                    player_id=r.player_id,
+                    position=r.position,
+                    team=r.team,
+                    alias=db.get(Player, r.player_id).alias,
+                )
+                for r in db.scalars(select(Registration).where(Registration.match_id == mid))
+            ],
+        )
+        db.add(snapshot)
+        db.flush()
+        db.add(
+            TeamRatingSnapshot(
+                snapshot_id=snapshot.id,
+                data=dict(
+                    method="manual",
+                    summary=dict(
+                        white=dict(count=1, attack=4),
+                        black=dict(count=1, attack=2),
+                        attack_gap=2,
+                        cost=2,
+                    ),
+                ),
+            )
+        )
+    forecast(call, mid, 2, 0)
+    before = call("GET", path)
+    call(
+        "POST",
+        path + "/teams/swap-colors",
+        {"version": before["version"]},
+        role="player",
+        expected=403,
+    )
+    call("POST", path + "/actions/publish", {"version": before["version"]})
+    changed = call("POST", path + "/teams/swap-colors", {"version": before["version"]})
+    assert changed["status"] == "approved"
+    assert changed["version"] == before["version"] + 1
+    assert changed["roster_version"] == before["roster_version"]
+    assert changed["team_ratings"]["frozen"]
+    assert changed["team_ratings"]["summary"]["white"]["attack"] == 2
+    assert changed["team_ratings"]["summary"]["black"]["attack"] == 4
+    assert all(
+        after["team"] == ("black" if old["team"] == "white" else "white")
+        for old, after in zip(before["registrations"], changed["registrations"])
+    )
+    assert any(p["kind"] == "teams" and p["stale"] for p in changed["publications"])
+    call("POST", path + "/actions/publish", {"version": changed["version"]})
+    with env[1]() as db:
+        posts = list(
+            db.scalars(
+                select(Publication).where(Publication.match_id == mid).order_by(Publication.version)
+            )
+        )
+        assert posts[0].stale and posts[0].status == "cancelled"
+        assert not posts[1].stale and posts[1].version == changed["version"]
+        assert f"⚪ Белые\n{changed['registrations'][1]['alias']}" in posts[1].text
+        assert f"⚫ Черные\n{changed['registrations'][0]['alias']}" in posts[1].text
+    history = call("GET", path + "/history")
+    assert history["teams"][0]["teams"] == [
+        {**r, "team": "black" if r["team"] == "white" else "white"}
+        for r in history["teams"][1]["teams"]
+    ]
+    assert call("GET", path + "/predictions", role="player")["mine"]["teams_changed"]
+    call("POST", path + "/teams/swap-colors", {"version": before["version"]}, expected=409)
+    monkeypatch.setattr("fczhk.services.now", lambda: starts)
+    call("POST", path + "/teams/swap-colors", {"version": changed["version"]}, expected=409)
+    assert call("GET", path)["registrations"] == changed["registrations"]
+
+
+def test_color_swap_in_unapproved_draft_requires_two_teams(env, call, predicted_game):
+    mid, _ = predicted_game
+    path = f"/matches/{mid}"
+    with env[1]() as db, db.begin():
+        match = db.get(Match, mid)
+        match.status = "finalized"
+        match.approved_version = None
+        regs = list(db.scalars(select(Registration).where(Registration.match_id == mid)))
+        regs[1].team = None
+    call("POST", path + "/teams/swap-colors", {"version": 3}, expected=400)
+    before = call("GET", path)
+    assert before["registrations"][1]["team"] is None
+    with env[1]() as db, db.begin():
+        regs = list(db.scalars(select(Registration).where(Registration.match_id == mid)))
+        regs[1].team = "black"
+    changed = call("POST", path + "/teams/swap-colors", {"version": 3})
+    assert changed["status"] == "finalized"
+    assert changed["registrations"][0]["team"] == "black"
+    assert changed["registrations"][1]["team"] == "white"
 
 
 def test_reschedule_cannot_reopen_after_start_or_retroactively_close(

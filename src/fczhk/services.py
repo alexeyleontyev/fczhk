@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -392,6 +393,79 @@ def save_teams(
         r.team = assignments[r.id]
     match.version += 1
     audit(db, actor, "teams.saved", match.id, assignments=assignments, reset=reset)
+
+
+def swap_team_colors(db: Session, actor: int, match: Match):
+    from .auctions import guard
+
+    if match.status not in ("finalized", "approved"):
+        raise DomainError("Сначала финализируйте список")
+    if now() >= match.starts_at:
+        raise DomainError("Цвета команд можно менять только до начала игры", 409)
+    ensure_pregame(db, match)
+    guard(db, match)
+    regs = [r for r in entries(db, match.id) if r.selected]
+    if {r.team for r in regs if r.team} != {"white", "black"}:
+        raise DomainError("Сначала распределите игроков по двум командам")
+
+    old_snapshot = None
+    old_ratings = None
+    if match.status == "approved":
+        old_snapshot = db.scalar(
+            select(TeamSnapshot).where(
+                TeamSnapshot.match_id == match.id,
+                TeamSnapshot.version == match.approved_version,
+            )
+        )
+        if old_snapshot:
+            old_ratings = db.get(TeamRatingSnapshot, old_snapshot.id)
+
+    for r in regs:
+        if r.team in ("white", "black"):
+            r.team = "black" if r.team == "white" else "white"
+    match.version += 1
+    if match.status == "approved":
+        match.approved_version = match.version
+        teams = (
+            deepcopy(old_snapshot.teams)
+            if old_snapshot
+            else [
+                dict(
+                    player_id=r.player_id,
+                    alias=db.get(Player, r.player_id).alias,
+                    position=r.position,
+                    team=r.team,
+                )
+                for r in regs
+            ]
+        )
+        if old_snapshot:
+            for row in teams:
+                row["team"] = "black" if row["team"] == "white" else "white"
+        snapshot = TeamSnapshot(match_id=match.id, version=match.version, teams=teams)
+        db.add(snapshot)
+        db.flush()
+        if old_ratings:
+            data = deepcopy(old_ratings.data)
+            summary = data.get("summary")
+            if summary:
+                summary["white"], summary["black"] = summary["black"], summary["white"]
+            db.add(TeamRatingSnapshot(snapshot_id=snapshot.id, data=data))
+    else:
+        draft = db.get(TeamRatingDraft, match.id)
+        if draft:
+            draft.edited = True
+    for pub in db.scalars(
+        select(Publication).where(
+            Publication.match_id == match.id,
+            Publication.kind == "teams",
+            Publication.stale.is_(False),
+        )
+    ):
+        pub.stale = True
+        if pub.status == "pending":
+            pub.status = "cancelled"
+    audit(db, actor, "teams.colors_swapped", match.id)
 
 
 def approve(db: Session, actor: int, match: Match, cfg: Settings):

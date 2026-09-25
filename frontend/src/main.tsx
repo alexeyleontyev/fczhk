@@ -1302,6 +1302,23 @@ function TeamBoard({
           полевых должна отличаться не более чем на одного.
         </p>
       )}
+      {admin &&
+        Date.now() < new Date(m.starts_at).getTime() &&
+        regs.some((r) => r.team === 'white') &&
+        regs.some((r) => r.team === 'black') && (
+          <Button
+            className="secondary compact"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () => api(`/matches/${m.id}/teams/swap-colors`, 'POST', { version: m.version }),
+                'Цвета команд поменяны. Если составы уже публиковались, опубликуйте их снова.',
+              )
+            }
+          >
+            Поменять цвета команд
+          </Button>
+        )}
       <div className="team-grid">
         {(['white', 'black', null] as (Team | null)[]).map((team) => {
           const list = regs.filter((r) => r.team === team)

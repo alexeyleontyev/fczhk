@@ -44,6 +44,10 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
   await expect(page.getByRole('button', { name: 'Утвердить команды' })).toBeEnabled()
   await page.getByRole('button', { name: 'Утвердить команды' }).click()
   await expect(page.getByText('Команды готовы', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Поменять цвета команд' }).click()
+  await expect(page.getByLabel('Команда: Алексей', { exact: true })).toHaveValue('black')
+  await expect(page.getByLabel('Команда: Михаил', { exact: true })).toHaveValue('white')
+  await expect(page.getByText('Команды готовы', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Опубликовать составы' }).click()
   await expect(
     page.getByRole('status').filter({ hasText: 'Публикация поставлена в очередь' }),

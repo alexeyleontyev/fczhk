@@ -486,6 +486,18 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         db.flush()
         return svc.match_data(db, m)
 
+    @app.post("/api/matches/{match_id}/teams/swap-colors")
+    def swap_team_colors(
+        match_id: int,
+        body: S.Version,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = svc.get_match(db, match_id, body.version, lock=True)
+        svc.swap_team_colors(db, p.id, m)
+        db.flush()
+        return svc.match_data(db, m)
+
     @app.put("/api/matches/{match_id}/registrations/{reg_id}/rating")
     def temporary_rating(
         match_id: int,
