@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { percentTone } from './percent'
-import { DEFAULT_MIN_GAMES, filterPlayers, PlayerListFilters } from './player-list-filters'
+import {
+  DEFAULT_MIN_GAMES,
+  filterPlayerNames,
+  filterPlayers,
+  PlayerListFilters,
+} from './player-list-filters'
 import { score } from './ratings'
 
 type ResultMetric = 'points' | 'win_rate' | 'goals' | 'assists' | 'goal_assist'
@@ -133,6 +138,7 @@ export function Leaderboards({
   const [resultMetric, setResultMetric] = useState<ResultMetric>('points')
   const [communityMetric, setCommunityMetric] = useState<CommunityMetric>('field_total')
   const [resultName, setResultName] = useState('')
+  const [communityName, setCommunityName] = useState('')
   const [resultMinimumGames, setResultMinimumGames] = useState(DEFAULT_MIN_GAMES)
   useEffect(() => {
     let active = true
@@ -151,7 +157,8 @@ export function Leaderboards({
   const allResultRows = data?.results.boards[resultMetric] ?? []
   const qualifiedResultRows = filterPlayers(allResultRows, '', resultMinimumGames)
   const resultRows = filterPlayers(qualifiedResultRows, resultName, '0')
-  const communityRows = data?.community.boards[communityMetric] ?? []
+  const allCommunityRows = data?.community.boards[communityMetric] ?? []
+  const communityRows = filterPlayerNames(allCommunityRows, communityName)
   return (
     <>
       <section className="panel leaderboard-board">
@@ -225,17 +232,26 @@ export function Leaderboards({
           selected={communityMetric}
           select={setCommunityMetric}
         />
+        <PlayerListFilters
+          name={communityName}
+          setName={setCommunityName}
+          scope="Поиск по рейтингу сообщества"
+        />
         {error && (
           <p role="alert" className="alert error">
             {error}
           </p>
         )}
         {!data && !error && <p className="muted">Загрузка…</p>}
-        {data && !communityRows.length && <p>По этому показателю оценок пока нет.</p>}
+        {data && !allCommunityRows.length && <p>По этому показателю оценок пока нет.</p>}
+        {data && allCommunityRows.length > 0 && !communityRows.length && (
+          <p>Игроки с таким именем не найдены.</p>
+        )}
         {data && communityRows.length > 0 && (
           <LeaderboardRows
             key={communityMetric}
             rows={communityRows}
+            rankingRows={allCommunityRows}
             onPlayer={onPlayer}
             value={(row) => row.score}
             formatValue={(row) => row.score.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}

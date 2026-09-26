@@ -840,7 +840,7 @@ p {
 .player-list-filters label:first-child {
   flex: 1 1 170px;
 }
-.player-list-filters label:last-child {
+.player-list-filters label:nth-child(2) {
   flex: 0 0 110px;
 }
 .player-list-filters input {

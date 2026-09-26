@@ -1,19 +1,25 @@
-type PlayerRow = { alias: string; games: number }
+type NamedPlayer = { alias: string }
+type PlayerRow = NamedPlayer & { games: number }
 
 export const DEFAULT_MIN_GAMES = '5'
+
+export function filterPlayerNames<T extends NamedPlayer>(rows: T[], name: string): T[] {
+  const query = name.trim().toLocaleLowerCase('ru-RU').replaceAll('ё', 'е')
+  return rows.filter((row) =>
+    row.alias.toLocaleLowerCase('ru-RU').replaceAll('ё', 'е').includes(query),
+  )
+}
 
 export function filterPlayers<T extends PlayerRow>(
   rows: T[],
   name: string,
   minimumGames: string,
 ): T[] {
-  const query = name.trim().toLocaleLowerCase('ru-RU').replaceAll('ё', 'е')
   const parsed = Number(minimumGames)
   const threshold = Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
-  return rows.filter(
-    (row) =>
-      row.games > threshold &&
-      row.alias.toLocaleLowerCase('ru-RU').replaceAll('ё', 'е').includes(query),
+  return filterPlayerNames(
+    rows.filter((row) => row.games > threshold),
+    name,
   )
 }
 
@@ -26,8 +32,8 @@ export function PlayerListFilters({
 }: {
   name: string
   setName: (value: string) => void
-  minimumGames: string
-  setMinimumGames: (value: string) => void
+  minimumGames?: string
+  setMinimumGames?: (value: string) => void
   scope: string
 }) {
   return (
@@ -41,17 +47,19 @@ export function PlayerListFilters({
           placeholder="Найти игрока"
         />
       </label>
-      <label>
-        Игр больше
-        <input
-          type="number"
-          min="0"
-          step="1"
-          inputMode="numeric"
-          value={minimumGames}
-          onChange={(event) => setMinimumGames(event.target.value)}
-        />
-      </label>
+      {minimumGames !== undefined && setMinimumGames && (
+        <label>
+          Игр больше
+          <input
+            type="number"
+            min="0"
+            step="1"
+            inputMode="numeric"
+            value={minimumGames}
+            onChange={(event) => setMinimumGames(event.target.value)}
+          />
+        </label>
+      )}
     </div>
   )
 }
