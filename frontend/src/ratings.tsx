@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { DEFAULT_MIN_GAMES, filterPlayers, PlayerListFilters } from './player-list-filters'
 import type {
   Average,
   BalanceRun,
@@ -34,6 +35,8 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
   const [board, setBoard] = useState<GameRatingBoard | null>(null)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(false)
+  const [playerName, setPlayerName] = useState('')
+  const [minimumGames, setMinimumGames] = useState(DEFAULT_MIN_GAMES)
   useEffect(() => {
     let active = true
     void api<GameRatingBoard>('/game-ratings')
@@ -47,6 +50,8 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
       active = false
     }
   }, [])
+  const qualifiedPlayers = filterPlayers(board?.players ?? [], '', minimumGames)
+  const players = filterPlayers(qualifiedPlayers, playerName, '0')
   return (
     <section className="panel game-rating-board">
       <div className="section-title">
@@ -65,14 +70,28 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
         Шкала начинается с 1500: рейтинг = 1500 + 10 × (μ − 3σ). μ — оценка силы, σ —
         неопределённость.
       </p>
+      <PlayerListFilters
+        name={playerName}
+        setName={setPlayerName}
+        minimumGames={minimumGames}
+        setMinimumGames={setMinimumGames}
+        scope="Фильтры OpenSkill"
+      />
       {error && <p className="alert error">{error}</p>}
       {board?.players.length === 0 && <p>Истории завершённых матчей пока нет.</p>}
-      {board && board.players.length > 0 && (
+      {board && board.players.length > 0 && !players.length && (
+        <p>По выбранным фильтрам игроки не найдены.</p>
+      )}
+      {players.length > 0 && (
         <>
           <div className="game-rating-list">
-            {(expanded ? board.players : board.players.slice(0, 10)).map((player, index) => (
+            {(expanded ? players : players.slice(0, 10)).map((player) => (
               <div className="game-rating-row" key={player.player_id}>
-                <span className="muted">{index + 1}</span>
+                <span className="muted">
+                  {qualifiedPlayers.findIndex(
+                    (candidate) => candidate.player_id === player.player_id,
+                  ) + 1}
+                </span>
                 <button className="button ghost compact" onClick={() => onPlayer(player.player_id)}>
                   {player.alias}
                 </button>
@@ -84,9 +103,9 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
               </div>
             ))}
           </div>
-          {board.players.length > 10 && (
+          {players.length > 10 && (
             <button className="button ghost compact" onClick={() => setExpanded(!expanded)}>
-              {expanded ? 'Свернуть' : `Показать всех (${board.players.length})`}
+              {expanded ? 'Свернуть' : `Показать всех (${players.length})`}
             </button>
           )}
         </>

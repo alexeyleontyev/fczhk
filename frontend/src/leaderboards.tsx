@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { percentTone } from './percent'
+import { DEFAULT_MIN_GAMES, filterPlayers, PlayerListFilters } from './player-list-filters'
 import { score } from './ratings'
 
 type ResultMetric = 'points' | 'win_rate' | 'goals' | 'assists' | 'goal_assist'
@@ -72,6 +73,7 @@ function Filters<T extends string>({
 
 function LeaderboardRows<T extends { player_id: number; alias: string }>({
   rows,
+  rankingRows = rows,
   value,
   formatValue,
   valueClassName,
@@ -79,6 +81,7 @@ function LeaderboardRows<T extends { player_id: number; alias: string }>({
   onPlayer,
 }: {
   rows: T[]
+  rankingRows?: T[]
   value: (row: T) => number
   formatValue?: (row: T) => string
   valueClassName?: (row: T) => string
@@ -91,7 +94,7 @@ function LeaderboardRows<T extends { player_id: number; alias: string }>({
     <>
       <div className="leaderboard-list">
         {shown.map((row) => {
-          const rank = rows.findIndex((candidate) => value(candidate) === value(row)) + 1
+          const rank = rankingRows.findIndex((candidate) => value(candidate) === value(row)) + 1
           return (
             <div className="leaderboard-row" key={row.player_id}>
               <span className="muted" aria-label={`Место ${rank}`}>
@@ -129,6 +132,8 @@ export function Leaderboards({
   const [error, setError] = useState('')
   const [resultMetric, setResultMetric] = useState<ResultMetric>('points')
   const [communityMetric, setCommunityMetric] = useState<CommunityMetric>('field_total')
+  const [resultName, setResultName] = useState('')
+  const [resultMinimumGames, setResultMinimumGames] = useState(DEFAULT_MIN_GAMES)
   useEffect(() => {
     let active = true
     setError('')
@@ -143,7 +148,9 @@ export function Leaderboards({
       active = false
     }
   }, [revision])
-  const resultRows = data?.results.boards[resultMetric] ?? []
+  const allResultRows = data?.results.boards[resultMetric] ?? []
+  const qualifiedResultRows = filterPlayers(allResultRows, '', resultMinimumGames)
+  const resultRows = filterPlayers(qualifiedResultRows, resultName, '0')
   const communityRows = data?.community.boards[communityMetric] ?? []
   return (
     <>
@@ -160,17 +167,28 @@ export function Leaderboards({
           не входят в зачёт бомбардиров.
         </p>
         <Filters options={resultOptions} selected={resultMetric} select={setResultMetric} />
+        <PlayerListFilters
+          name={resultName}
+          setName={setResultName}
+          minimumGames={resultMinimumGames}
+          setMinimumGames={setResultMinimumGames}
+          scope="Фильтры общих зачётов"
+        />
         {error && (
           <p role="alert" className="alert error">
             {error}
           </p>
         )}
         {!data && !error && <p className="muted">Загрузка…</p>}
-        {data && !resultRows.length && <p>Завершённых игр пока нет.</p>}
+        {data && !allResultRows.length && <p>Завершённых игр пока нет.</p>}
+        {data && allResultRows.length > 0 && !resultRows.length && (
+          <p>По выбранным фильтрам игроки не найдены.</p>
+        )}
         {data && resultRows.length > 0 && (
           <LeaderboardRows
             key={resultMetric}
             rows={resultRows}
+            rankingRows={qualifiedResultRows}
             onPlayer={onPlayer}
             value={(row) => row[resultMetric]}
             formatValue={

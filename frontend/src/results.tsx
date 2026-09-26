@@ -451,10 +451,35 @@ export function PlayerStats({
         <span className={percentTone(p.win_rate)}>
           {p.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
         </span>{' '}
-        (<span className="outcome-win">{p.wins}</span>–
-        <span className="outcome-draw">{p.draws}</span>–
-        <span className="outcome-loss">{p.losses}</span>)
+        <span className="partner-outcomes">
+          ({p.wins}–{p.draws}–{p.losses})
+        </span>
       </span>
+    </button>
+  )
+  const matchRow = (m: Stats['matches'][number]) => (
+    <button key={m.match_id} className="stat-link" onClick={() => onMatch(m.match_id)}>
+      <span>
+        {new Date(m.starts_at).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })} ·{' '}
+        {label(m.team)}
+        {(m.goals > 0 || m.assists > 0) && (
+          <span className="match-contributions">
+            {m.goals > 0 && (
+              <span title={`Голов: ${m.goals}`} aria-label={`Голов: ${m.goals}`}>
+                <span aria-hidden="true">⚽</span> {m.goals}
+              </span>
+            )}
+            {m.assists > 0 && (
+              <span title={`Передач: ${m.assists}`} aria-label={`Передач: ${m.assists}`}>
+                <span aria-hidden="true">👟</span> {m.assists}
+              </span>
+            )}
+          </span>
+        )}
+      </span>
+      <strong>
+        {m.score.white} : {m.score.black} →
+      </strong>
     </button>
   )
   return (
@@ -494,31 +519,13 @@ export function PlayerStats({
           </div>
           <h3>История игр</h3>
           {!data.matches.length && <p className="muted">Завершённых игр пока нет.</p>}
-          {data.matches.map((m) => (
-            <button key={m.match_id} className="stat-link" onClick={() => onMatch(m.match_id)}>
-              <span>
-                {new Date(m.starts_at).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })} ·{' '}
-                {label(m.team)}
-                {(m.goals > 0 || m.assists > 0) && (
-                  <span className="match-contributions">
-                    {m.goals > 0 && (
-                      <span title={`Голов: ${m.goals}`} aria-label={`Голов: ${m.goals}`}>
-                        <span aria-hidden="true">⚽</span> {m.goals}
-                      </span>
-                    )}
-                    {m.assists > 0 && (
-                      <span title={`Передач: ${m.assists}`} aria-label={`Передач: ${m.assists}`}>
-                        <span aria-hidden="true">👟</span> {m.assists}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </span>
-              <strong>
-                {m.score.white} : {m.score.black} →
-              </strong>
-            </button>
-          ))}
+          {data.matches.slice(0, 5).map(matchRow)}
+          {data.matches.length > 5 && (
+            <details className="history-more" key={playerId}>
+              <summary>Остальные игры ({data.matches.length - 5})</summary>
+              {data.matches.slice(5).map(matchRow)}
+            </details>
+          )}
           <h3>Частые партнёры</h3>
           <p className="muted caption">В скобках: победы — ничьи — поражения.</p>
           {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}

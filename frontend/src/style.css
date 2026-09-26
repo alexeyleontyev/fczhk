@@ -824,6 +824,29 @@ p {
   border-color: var(--green);
   color: white;
 }
+.player-list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0 18px;
+}
+.player-list-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.player-list-filters label:first-child {
+  flex: 1 1 170px;
+}
+.player-list-filters label:last-child {
+  flex: 0 0 110px;
+}
+.player-list-filters input {
+  margin-top: 0;
+  padding: 9px 10px;
+}
 .leaderboard-list {
   margin: 12px 0 18px;
   border-top: 1px solid #e8ece4;
@@ -1605,19 +1628,18 @@ footer > span:first-child {
 .partner-details {
   text-align: right;
 }
-.percent-high,
-.outcome-win {
+.percent-high {
   color: #17643e;
 }
-.percent-low,
-.outcome-loss {
+.percent-low {
   color: #ac2828;
 }
 .percent-even,
-.outcome-draw {
+.partner-outcomes {
   color: #000;
 }
-.partner-more summary {
+.partner-more summary,
+.history-more summary {
   padding: 12px 0;
   color: var(--green);
   cursor: pointer;
