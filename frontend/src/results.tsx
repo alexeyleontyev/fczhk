@@ -405,7 +405,16 @@ type Stats = {
     goals: number
     assists: number
   }[]
-  partners: { player_id: number; alias: string; games: number; wins: number; win_percent: number }[]
+  partners: {
+    player_id: number
+    alias: string
+    games: number
+    wins: number
+    draws: number
+    losses: number
+    points: number
+    points_percent: number
+  }[]
 }
 export function PlayerStats({
   playerId,
@@ -461,13 +470,17 @@ export function PlayerStats({
             ))}
           </div>
           <h3>Частые партнёры</h3>
+          <p className="muted caption">
+            Винрейт — доля набранных очков. В скобках: победы — ничьи — поражения.
+          </p>
           {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}
           {data.partners.map((p) => (
             <button key={p.player_id} className="stat-link" onClick={() => onPlayer(p.player_id)}>
               <span>{p.alias}</span>
               <span>
-                {p.games} совместных игр ·{' '}
-                {p.win_percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}% побед
+                {p.games} совместных игр · Винрейт{' '}
+                {p.points_percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}% ({p.wins}–
+                {p.draws}–{p.losses}) · {p.points}/{p.games * 3} очков
               </span>
             </button>
           ))}

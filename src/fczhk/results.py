@@ -125,7 +125,8 @@ def player_stats(db, player_id):
         raise DomainError("Игрок не найден", 404)
     player_id = canonical[player_id]
     total = dict(games=0, wins=0, losses=0, draws=0, goals=0, assists=0)
-    history, partners, partner_wins = [], Counter(), Counter()
+    history, partners, partner_points = [], Counter(), Counter()
+    partner_outcomes = {outcome: Counter() for outcome in ("wins", "draws", "losses")}
     completed = list(
         db.scalars(
             select(Match)
@@ -177,8 +178,9 @@ def player_stats(db, player_id):
             if p.team == mine.team and canonical[p.player_id] != player_id
         }
         partners.update(teammates)
-        if outcome == "wins":
-            partner_wins.update(teammates)
+        partner_outcomes[outcome].update(teammates)
+        earned = 3 if outcome == "wins" else 1 if outcome == "draws" else 0
+        partner_points.update({pid: earned for pid in teammates})
         history.append(
             dict(
                 match_id=match.id,
@@ -199,8 +201,11 @@ def player_stats(db, player_id):
                 player_id=pid,
                 alias=people[pid].alias,
                 games=count,
-                wins=partner_wins[pid],
-                win_percent=100 * partner_wins[pid] / count,
+                wins=partner_outcomes["wins"][pid],
+                draws=partner_outcomes["draws"][pid],
+                losses=partner_outcomes["losses"][pid],
+                points=partner_points[pid],
+                points_percent=100 * partner_points[pid] / (3 * count),
             )
             for pid, count in sorted(
                 partners.items(), key=lambda item: (-item[1], people[item[0]].alias, item[0])
