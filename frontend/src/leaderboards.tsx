@@ -3,7 +3,7 @@ import { api } from './api'
 import { percentTone } from './percent'
 import { score } from './ratings'
 
-type ResultMetric = 'points' | 'points_percent' | 'goals' | 'assists' | 'goal_assist'
+type ResultMetric = 'points' | 'win_rate' | 'goals' | 'assists' | 'goal_assist'
 type CommunityMetric = 'field_total' | 'field_attack' | 'field_defense' | 'keeper_defense'
 type ResultRow = {
   player_id: number
@@ -13,7 +13,7 @@ type ResultRow = {
   draws: number
   losses: number
   points: number
-  points_percent: number
+  win_rate: number
   goals: number
   assists: number
   goal_assist: number
@@ -32,7 +32,7 @@ type Boards = {
 
 const resultOptions: { key: ResultMetric; label: string }[] = [
   { key: 'points', label: 'Очки' },
-  { key: 'points_percent', label: '% очков' },
+  { key: 'win_rate', label: 'Винрейт' },
   { key: 'goals', label: 'Голы' },
   { key: 'assists', label: 'Передачи' },
   { key: 'goal_assist', label: 'Гол + пас' },
@@ -155,9 +155,9 @@ export function Leaderboards({
           </div>
         </div>
         <p className="muted caption">
-          {data ? `${data.results.matches} завершённых игр. ` : ''}Победа — 3 очка, ничья — 1,
-          поражение — 0. Процент считается от 3 очков за каждую игру. Автоголы не входят в зачёт
-          бомбардиров.
+          {data ? `${data.results.matches} завершённых игр. ` : ''}В зачёте очков: победа — 3, ничья
+          — 1, поражение — 0. Винрейт: победа — 2, ничья — 1, поражение — 0 из 2 за игру. Автоголы
+          не входят в зачёт бомбардиров.
         </p>
         <Filters options={resultOptions} selected={resultMetric} select={setResultMetric} />
         {error && (
@@ -174,21 +174,18 @@ export function Leaderboards({
             onPlayer={onPlayer}
             value={(row) => row[resultMetric]}
             formatValue={
-              resultMetric === 'points_percent'
-                ? (row) =>
-                    `${row.points_percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} %`
+              resultMetric === 'win_rate'
+                ? (row) => `${row.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
                 : undefined
             }
             valueClassName={
-              resultMetric === 'points_percent'
-                ? (row) => percentTone(row.points_percent)
-                : undefined
+              resultMetric === 'win_rate' ? (row) => percentTone(row.win_rate) : undefined
             }
             details={(row) =>
               resultMetric === 'points'
                 ? `${row.games} игр · ${row.wins} побед · ${row.draws} ничьих`
-                : resultMetric === 'points_percent'
-                  ? `${row.points} из ${row.games * 3} очков · ${row.games} игр`
+                : resultMetric === 'win_rate'
+                  ? `${row.games} игр`
                   : `${row.games} игр · ${row.goals} голов · ${row.assists} передач`
             }
           />

@@ -6,6 +6,13 @@ from sqlalchemy import select
 
 from fczhk.db import now
 from fczhk.models import Match, MatchResult, Player, Registration, ResultGoal, ResultParticipant
+from fczhk.results import win_rate
+
+
+def test_win_rate_examples():
+    assert win_rate(1, 1, 3) == 50
+    assert win_rate(3, 1, 5) == 70
+    assert win_rate(0, 0, 0) is None
 
 
 @pytest.fixture
@@ -70,7 +77,7 @@ def test_draft_completed_corrections_and_partners(env, call, played):
     stats = call("GET", f"/players/{admin}/stats", role="player")
     assert (stats["games"], stats["wins"], stats["goals"], stats["assists"]) == (1, 1, 1, 0)
     assert [p["player_id"] for p in stats["partners"]] == [mate]
-    assert (stats["partners"][0]["points"], stats["partners"][0]["points_percent"]) == (3, 100)
+    assert stats["win_rate"] == stats["partners"][0]["win_rate"] == 100
     assert tuple(stats["partners"][0][key] for key in ("wins", "draws", "losses")) == (1, 0, 0)
     assert (stats["matches"][0]["goals"], stats["matches"][0]["assists"]) == (1, 0)
     mate_stats = call("GET", f"/players/{mate}/stats")
@@ -81,8 +88,7 @@ def test_draft_completed_corrections_and_partners(env, call, played):
     corrected = call("PUT", f"/matches/{mid}/result", body)
     stats = call("GET", f"/players/{admin}/stats")
     assert (stats["games"], stats["wins"], stats["draws"]) == (1, 0, 1)
-    assert stats["partners"][0]["points"] == 1
-    assert stats["partners"][0]["points_percent"] == pytest.approx(100 / 3)
+    assert stats["win_rate"] == stats["partners"][0]["win_rate"] == 50
     assert tuple(stats["partners"][0][key] for key in ("wins", "draws", "losses")) == (0, 1, 0)
     assert call("GET", f"/players/{guest}/stats")["goals"] == 1
     call("PUT", f"/matches/{mid}/result", body, expected=409)
@@ -93,7 +99,7 @@ def test_draft_completed_corrections_and_partners(env, call, played):
     call("PUT", f"/matches/{mid}/result", body, expected=400)
 
 
-def test_partner_points_percent_and_per_match_contributions(env, call, played):
+def test_partner_win_rate_and_per_match_contributions(env, call, played):
     mid, guest, mate = played
     admin = env[4]["admin"]
     body = payload(call, mid, completed=True)
@@ -139,6 +145,7 @@ def test_partner_points_percent_and_per_match_contributions(env, call, played):
         )
     stats = call("GET", f"/players/{admin}/stats", role="player")
     assert (stats["games"], stats["wins"], stats["draws"], stats["losses"]) == (3, 1, 1, 1)
+    assert stats["win_rate"] == 50
     assert stats["partners"][0] == {
         "player_id": mate,
         "alias": "Вратарь партнёр",
@@ -146,8 +153,7 @@ def test_partner_points_percent_and_per_match_contributions(env, call, played):
         "wins": 1,
         "draws": 1,
         "losses": 1,
-        "points": 4,
-        "points_percent": pytest.approx(100 * 4 / 9),
+        "win_rate": 50,
     }
     assert [(m["goals"], m["assists"]) for m in stats["matches"]] == [
         (0, 0),

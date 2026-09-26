@@ -71,7 +71,7 @@ def test_result_leaderboards_include_keepers_revisions_and_goal_events(env, call
     table = call("GET", "/leaderboards", role="player")["results"]
     assert table["matches"] == 1
     points = {row["player_id"]: row for row in table["boards"]["points"]}
-    assert (points[admin]["points"], points[admin]["points_percent"]) == (3, 100)
+    assert (points[admin]["points"], points[admin]["win_rate"]) == (3, 100)
     assert (points[keeper]["points"], points[keeper]["assists"]) == (3, 1)
     assert (points[guest]["points"], points[guest]["goals"]) == (0, 1)
     assert [r["player_id"] for r in table["boards"]["goals"]][:2] == [admin, guest]
@@ -84,11 +84,11 @@ def test_result_leaderboards_include_keepers_revisions_and_goal_events(env, call
     corrected = call("GET", "/leaderboards", role="player")["results"]
     points = {row["player_id"]: row for row in corrected["boards"]["points"]}
     assert all(row["points"] == 1 for row in points.values())
-    assert all(row["points_percent"] == 100 / 3 for row in points.values())
+    assert all(row["win_rate"] == 50 for row in points.values())
     assert points[guest]["goals"] == 2
 
 
-def test_points_percentage_uses_each_players_games_and_merged_identity(env, call, played_game):
+def test_win_rate_uses_each_players_games_and_merged_identity(env, call, played_game):
     mid, guest, keeper = played_game
     admin, target = env[4]["admin"], env[4]["player"]
     body = payload(call, mid, completed=True)
@@ -119,9 +119,9 @@ def test_points_percentage_uses_each_players_games_and_merged_identity(env, call
             ]
         )
     board = call("GET", "/leaderboards", role="player")["results"]["boards"]
-    assert board["points_percent"][0]["player_id"] == keeper
-    assert board["points_percent"][0]["points_percent"] == 100
-    assert {r["player_id"]: r["points_percent"] for r in board["points"]}[admin] == 50
+    assert board["win_rate"][0]["player_id"] == keeper
+    assert board["win_rate"][0]["win_rate"] == 100
+    assert {r["player_id"]: r["win_rate"] for r in board["points"]}[admin] == 50
     assert board["goals"][0]["player_id"] == admin  # Same total; more games wins the tie.
 
     call("POST", f"/players/{guest}/link", {"target_id": target})

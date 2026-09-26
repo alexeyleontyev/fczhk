@@ -396,6 +396,7 @@ type Stats = {
   wins: number
   losses: number
   draws: number
+  win_rate: number | null
   goals: number
   assists: number
   matches: {
@@ -413,8 +414,7 @@ type Stats = {
     wins: number
     draws: number
     losses: number
-    points: number
-    points_percent: number
+    win_rate: number
   }[]
 }
 export function PlayerStats({
@@ -447,9 +447,9 @@ export function PlayerStats({
     <button key={p.player_id} className="stat-link" onClick={() => onPlayer(p.player_id)}>
       <span>{p.alias}</span>
       <span className="partner-details">
-        Игр: {p.games} · % набранных очков:{' '}
-        <span className={percentTone(p.points_percent)}>
-          {p.points_percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
+        Игр: {p.games} · Винрейт:{' '}
+        <span className={percentTone(p.win_rate)}>
+          {p.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
         </span>{' '}
         (<span className="outcome-win">{p.wins}</span>–
         <span className="outcome-draw">{p.draws}</span>–
@@ -457,9 +457,6 @@ export function PlayerStats({
       </span>
     </button>
   )
-  const overallPercent = data?.games
-    ? (100 * (3 * data.wins + data.draws)) / (3 * data.games)
-    : null
   return (
     <section className="statistics">
       <h2>{data ? `Статистика: ${data.alias}` : 'Статистика'}</h2>
@@ -486,13 +483,13 @@ export function PlayerStats({
                 <span>{title}</span>
               </div>
             ))}
-            <div className="overall-percent-stat">
-              <strong className={overallPercent === null ? undefined : percentTone(overallPercent)}>
-                {overallPercent === null
+            <div className="overall-win-rate-stat">
+              <strong className={data.win_rate === null ? undefined : percentTone(data.win_rate)}>
+                {data.win_rate === null
                   ? '—'
-                  : `${overallPercent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}
+                  : `${data.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}
               </strong>
-              <span>% набранных очков</span>
+              <span>Винрейт</span>
             </div>
           </div>
           <h3>История игр</h3>

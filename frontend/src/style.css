@@ -1581,7 +1581,7 @@ footer > span:first-child {
   color: var(--muted);
   font-size: 12px;
 }
-.stats-grid .overall-percent-stat {
+.stats-grid .overall-win-rate-stat {
   grid-column: 1 / -1;
   flex-direction: row;
   align-items: baseline;
