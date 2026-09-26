@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { percentTone } from './percent'
 import { score } from './ratings'
 
 type ResultMetric = 'points' | 'points_percent' | 'goals' | 'assists' | 'goal_assist'
@@ -73,12 +74,14 @@ function LeaderboardRows<T extends { player_id: number; alias: string }>({
   rows,
   value,
   formatValue,
+  valueClassName,
   details,
   onPlayer,
 }: {
   rows: T[]
   value: (row: T) => number
   formatValue?: (row: T) => string
+  valueClassName?: (row: T) => string
   details: (row: T) => string
   onPlayer: (id: number) => void
 }) {
@@ -98,7 +101,7 @@ function LeaderboardRows<T extends { player_id: number; alias: string }>({
                 {row.alias}
               </button>
               <small className="muted">{details(row)}</small>
-              <strong>
+              <strong className={valueClassName?.(row)}>
                 {formatValue?.(row) ??
                   value(row).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}
               </strong>
@@ -174,6 +177,11 @@ export function Leaderboards({
               resultMetric === 'points_percent'
                 ? (row) =>
                     `${row.points_percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} %`
+                : undefined
+            }
+            valueClassName={
+              resultMetric === 'points_percent'
+                ? (row) => percentTone(row.points_percent)
                 : undefined
             }
             details={(row) =>

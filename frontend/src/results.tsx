@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { percentTone } from './percent'
 import type { Match, Player, Position, Run, Team } from './types'
 
 export type Participant = { player_id: number; alias: string; team: Team; position: Position }
@@ -442,6 +443,23 @@ export function PlayerStats({
       current = false
     }
   }, [playerId])
+  const partnerRow = (p: Stats['partners'][number]) => (
+    <button key={p.player_id} className="stat-link" onClick={() => onPlayer(p.player_id)}>
+      <span>{p.alias}</span>
+      <span className="partner-details">
+        Игр: {p.games} · % набранных очков:{' '}
+        <span className={percentTone(p.points_percent)}>
+          {p.points_percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
+        </span>{' '}
+        (<span className="outcome-win">{p.wins}</span>–
+        <span className="outcome-draw">{p.draws}</span>–
+        <span className="outcome-loss">{p.losses}</span>)
+      </span>
+    </button>
+  )
+  const overallPercent = data?.games
+    ? (100 * (3 * data.wins + data.draws)) / (3 * data.games)
+    : null
   return (
     <section className="statistics">
       <h2>{data ? `Статистика: ${data.alias}` : 'Статистика'}</h2>
@@ -468,22 +486,15 @@ export function PlayerStats({
                 <span>{title}</span>
               </div>
             ))}
+            <div className="overall-percent-stat">
+              <strong className={overallPercent === null ? undefined : percentTone(overallPercent)}>
+                {overallPercent === null
+                  ? '—'
+                  : `${overallPercent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}
+              </strong>
+              <span>% набранных очков</span>
+            </div>
           </div>
-          <h3>Частые партнёры</h3>
-          <p className="muted caption">
-            Винрейт — доля набранных очков. В скобках: победы — ничьи — поражения.
-          </p>
-          {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}
-          {data.partners.map((p) => (
-            <button key={p.player_id} className="stat-link" onClick={() => onPlayer(p.player_id)}>
-              <span>{p.alias}</span>
-              <span>
-                {p.games} совместных игр · Винрейт{' '}
-                {p.points_percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}% ({p.wins}–
-                {p.draws}–{p.losses}) · {p.points}/{p.games * 3} очков
-              </span>
-            </button>
-          ))}
           <h3>История игр</h3>
           {!data.matches.length && <p className="muted">Завершённых игр пока нет.</p>}
           {data.matches.map((m) => (
@@ -511,6 +522,16 @@ export function PlayerStats({
               </strong>
             </button>
           ))}
+          <h3>Частые партнёры</h3>
+          <p className="muted caption">В скобках: победы — ничьи — поражения.</p>
+          {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}
+          {data.partners.slice(0, 3).map(partnerRow)}
+          {data.partners.length > 3 && (
+            <details className="partner-more" key={playerId}>
+              <summary>Остальные партнёры ({data.partners.length - 3})</summary>
+              {data.partners.slice(3).map(partnerRow)}
+            </details>
+          )}
         </>
       )}
     </section>

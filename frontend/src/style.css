@@ -1581,6 +1581,13 @@ footer > span:first-child {
   color: var(--muted);
   font-size: 12px;
 }
+.stats-grid .overall-percent-stat {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: baseline;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
 .stat-link {
   display: flex;
   justify-content: space-between;
@@ -1593,6 +1600,26 @@ footer > span:first-child {
   border-bottom: 1px solid var(--line);
   background: none;
   color: inherit;
+  cursor: pointer;
+}
+.partner-details {
+  text-align: right;
+}
+.percent-high,
+.outcome-win {
+  color: #17643e;
+}
+.percent-low,
+.outcome-loss {
+  color: #ac2828;
+}
+.percent-even,
+.outcome-draw {
+  color: #000;
+}
+.partner-more summary {
+  padding: 12px 0;
+  color: var(--green);
   cursor: pointer;
 }
 .match-contributions {

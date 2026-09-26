@@ -95,6 +95,7 @@ def test_replay_uses_only_past_completed_games_and_field_players(env, call):
     assert board["matches"] == 2
     assert len(board["players"]) == 4
     assert all(row["games"] == 2 for row in board["players"])
+    assert all(row["rating"] == round(1500 + 10 * row["ordinal"]) for row in board["players"])
 
 
 def test_game_balance_is_optional_and_historical_changes_stale_it(env, call):

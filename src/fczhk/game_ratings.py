@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 from .models import Match, MatchResult, Player, ResultGoal, ResultParticipant
 
 MODEL_VERSION = "openskill-6.2.0/tmfull-field-v1"
+DISPLAY_BASE = 1500
+DISPLAY_SCALE = 10
 
 
 @dataclass(frozen=True)
@@ -147,6 +149,7 @@ def leaderboard(db: Session) -> dict:
             "mu": rating["mu"],
             "sigma": rating["sigma"],
             "ordinal": rating["mu"] - 3 * rating["sigma"],
+            "rating": round(DISPLAY_BASE + DISPLAY_SCALE * (rating["mu"] - 3 * rating["sigma"])),
             "games": rating["games"],
         }
         for pid, rating in run["players"].items()

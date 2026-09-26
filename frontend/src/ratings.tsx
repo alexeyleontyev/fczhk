@@ -25,6 +25,7 @@ type GameRatingBoard = {
     mu: number
     sigma: number
     ordinal: number
+    rating: number
     games: number
   }[]
 }
@@ -60,6 +61,10 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
         ничья. Разница мячей пока не влияет на рейтинг. Порядок учитывает неопределённость оценки;
         для надёжного подбора пока мало игр, поэтому этот способ помечен как эксперимент.
       </p>
+      <p className="muted caption">
+        Шкала начинается с 1500: рейтинг = 1500 + 10 × (μ − 3σ). μ — оценка силы, σ —
+        неопределённость.
+      </p>
       {error && <p className="alert error">{error}</p>}
       {board?.players.length === 0 && <p>Истории завершённых матчей пока нет.</p>}
       {board && board.players.length > 0 && (
@@ -73,7 +78,8 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
                 </button>
                 <span>{player.games} игр</span>
                 <span title={`μ ${score(player.mu)} · σ ${score(player.sigma)}`}>
-                  {score(player.ordinal)} · μ {score(player.mu)} · σ {score(player.sigma)}
+                  {player.rating.toLocaleString('ru-RU')} · μ {score(player.mu)} · σ{' '}
+                  {score(player.sigma)}
                 </span>
               </div>
             ))}
