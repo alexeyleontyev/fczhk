@@ -200,6 +200,7 @@ dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "openskill" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
@@ -219,6 +220,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.14,<2" },
     { name = "fastapi", specifier = ">=0.141,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "openskill", specifier = "==6.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pydantic-settings", specifier = ">=2.7,<3" },
     { name = "sqlalchemy", specifier = ">=2.0,<2.1" },
@@ -277,8 +279,10 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "platform_machine != 'aarch64' or sys_platform != 'linux'",
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/6e/0091f175ccd02b02bc8811bbcbcc6ac2e980be116e3b2f7a736ca322bf84/greenlet-3.5.6.tar.gz", hash = "sha256:8e67c43bdfc88d5fee6db0d3e40175b362fc95fb85f0412d233b9b203c53a575", size = 207653, upload-time = "2026-09-14T15:42:51.806Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/72/18/3fc6d951466ae9a2a688edcddde3b2e388da0a8244e0caf7117bbeb0eb95/greenlet-3.5.6-cp312-cp312-macosx_11_0_universal2.whl", hash = "sha256:a5876d0a60355af98d535c47f6cd6eb0f8a432396dab26845d380b92f8412422", size = 295668, upload-time = "2026-09-14T14:22:33.241Z" },
+    { url = "https://files.pythonhosted.org/packages/54/1c/07f133f865fd58ae593dd2bbec3144acaee9b04ffe2eb48c6e121747ceef/greenlet-3.5.6-cp312-cp312-manylinux_2_24_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:f0ba7c2a329d650628f4c8572fd1db29f0a59dd70a3e3e0710dcf18a35cce9d8", size = 624223, upload-time = "2026-09-14T15:20:42.459Z" },
     { url = "https://files.pythonhosted.org/packages/66/6a/1594f3869c57c149abdb380492529e04d4c0229b5e4d79572c5bd0aaa673/greenlet-3.5.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:975736b002ed080d124cf81a79cb7e05cb26d6b3f5c7a7b651c0fcce70353aa1", size = 621404, upload-time = "2026-09-14T14:35:59.027Z" },
     { url = "https://files.pythonhosted.org/packages/ef/31/9b4e140bc24d0ad7927ebd651f5608b0acc2334d061748c3b6ad19085cfa/greenlet-3.5.6-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:3dbb4596a6a4e5d47121a33ff20533a81e60f302d9e67b69909a8bc21a43f0a7", size = 1647568, upload-time = "2026-09-14T14:35:49.787Z" },
     { url = "https://files.pythonhosted.org/packages/c3/71/d79f1791f824f8ff15c2978746640467ae932a2365e0201069f7f272395f/greenlet-3.5.6-cp312-cp312-win_amd64.whl", hash = "sha256:7ac4abb3877c43af320392c664774eef6fa2cc063c79a55fc02d844a3cbe7395", size = 324203, upload-time = "2026-09-14T14:22:54.504Z" },
@@ -422,6 +426,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/29/00/1952f9f282aa71e7c3db3a6b47afb689d0ddf283dbded7e6326a91d421c9/multidict-6.8.0-cp312-cp312-win_amd64.whl", hash = "sha256:7d26dc8f070c0ec5579e987fa615ffd6883086106eefdff9e10d160fc5630630", size = 51723, upload-time = "2026-09-09T13:54:18.05Z" },
     { url = "https://files.pythonhosted.org/packages/49/b5/c9d57dbafe25b8f3460ce2961c968539a81ff7a70160c44dcfd4255cbcd1/multidict-6.8.0-cp312-cp312-win_arm64.whl", hash = "sha256:e6ec7d37841609a691b96a10b4fde386c7cd93ebbb939f59c9f23325ee788395", size = 48492, upload-time = "2026-09-09T13:54:19.42Z" },
     { url = "https://files.pythonhosted.org/packages/b1/ee/be4e1a4b7a2b27f4fb6936510d4bebcb41b0562c946930ad26916e069cf9/multidict-6.8.0-py3-none-any.whl", hash = "sha256:75daa15ca16d6285eb2e104b2f05ee6f8d9836c68da3ce5c85f615a0450eed0e", size = 16297, upload-time = "2026-09-09T13:57:56.106Z" },
+]
+
+[[package]]
+name = "openskill"
+version = "6.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/fb/1ce1702a8677729cde83cb7f5924953c0704e95620898d991711a0dc57e4/openskill-6.2.0.tar.gz", hash = "sha256:817c5192aaed489697a1703fc2a3f9ea84b4487b09d0c27fd270a04f08f13d67", size = 47848, upload-time = "2026-01-11T16:49:15.249Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/b6/02f8371f786efc2bf1aa153addf93f54cc2f16db1b7aec9c40493793c019/openskill-6.2.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:9d20c68481fbb3b2539abe1b910d20506fd4c1b325d74bc0cbacbb41a2440dcb", size = 494718, upload-time = "2026-01-11T16:48:47.787Z" },
+    { url = "https://files.pythonhosted.org/packages/69/de/d4973c906b45eac00caeda7f22c798f0feb4ff37cf5f60212b91b9eac6c0/openskill-6.2.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:75b1d728427623afe8ca94ca29d006c57236d2bbc9e84aaf3dcfc5c8f344ef5d", size = 460958, upload-time = "2026-01-11T16:48:49.193Z" },
+    { url = "https://files.pythonhosted.org/packages/50/95/96dcf49374d3b1488e37f892f0e61d138b9d301f74041195179a339a4c38/openskill-6.2.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:917bca0fe53cc374e12e2d9f8e87d1f10799c8b0bfb0ce6522c647977ff70403", size = 675166, upload-time = "2026-01-11T16:48:50.647Z" },
+    { url = "https://files.pythonhosted.org/packages/79/77/0ea4550ecb1e3d9ce0feccbfaad5b19cfcfd3d08c6191995f1b82201c0aa/openskill-6.2.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4d553768f2c536ca7d9d19cc7c4edc1bf6c4b65fb0300a643e41d060a3a899ee", size = 722625, upload-time = "2026-01-11T16:48:51.972Z" },
+    { url = "https://files.pythonhosted.org/packages/70/dd/f4a0639d1b274e08b0c1d8be194c07f0a1fa18114234b9b7f7048398b52e/openskill-6.2.0-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:6af41ec2a49e340fb1d7e2711c045e392c2d3c4b9fc09c9bce2ea3e9c8184cf5", size = 712337, upload-time = "2026-01-11T16:48:53.219Z" },
+    { url = "https://files.pythonhosted.org/packages/77/6c/088c717d8d63d8d6c87fa2650930eec60574950fb157cda993f70c076d60/openskill-6.2.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:2399c5d49e069c6dcce0c7d564198d8723bfc67031f7ace69402df4e89ae72ed", size = 701089, upload-time = "2026-01-11T16:48:54.461Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/21/fb84d62b5e3acfcf0d271e73eddefa0c332f9be5a17df2c4254a945a4763/openskill-6.2.0-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:caf288bbaa2484b094e014af7d5a3c60a44a548136d221d052b1b15fbd29d937", size = 717435, upload-time = "2026-01-11T16:48:55.728Z" },
+    { url = "https://files.pythonhosted.org/packages/49/3c/5c817b9825afe86a3ecdb13ec0252e5fc56ac39c2e0dc8cc7c3efebc6999/openskill-6.2.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:8b5767f4e681cd6a971f51a033547fe6938cb8da221ae2e04fb586140ae1daef", size = 716795, upload-time = "2026-01-11T16:48:57.11Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/b4/1a2ed3a9e3dbfd1c6ffe165f43e934118e18a09731fe593d09a797f93939/openskill-6.2.0-cp312-cp312-win32.whl", hash = "sha256:8a2923e553f96cf7b955ce1854c90ad59585d9e12408a66f952093f204ebc822", size = 317859, upload-time = "2026-01-11T16:48:58.254Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/d1/3b0e0975cf12d3e0fc2a1bea9c9854d4b236c7fd932a47c4c2fbfece367d/openskill-6.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:9c9d53b26b40bfe3132e8f2c759ce5d6c6cde99b7096cb3b28b11d49ff4a06d3", size = 356195, upload-time = "2026-01-11T16:48:59.417Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/11/2e0981f11153a06f6a6c7ae5bd84977e76c0e510af2d629288d4d5bdf81d/openskill-6.2.0-py3-none-any.whl", hash = "sha256:7c9cf8447181a5402793afe9230058ae1091ceb7fc0364b9ab3eb51e9eac1ac9", size = 48417, upload-time = "2026-01-11T16:49:14.274Z" },
 ]
 
 [[package]]

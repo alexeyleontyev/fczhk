@@ -35,6 +35,7 @@ export type Match = {
   id: number
   starts_at: string
   game_day: string
+  historical: boolean
   location: string
   description: string
   cost: number
@@ -50,6 +51,13 @@ export type Match = {
   publications: Publication[]
   team_ratings: {
     summary: BalanceSummary | null
+    game_summary?: {
+      white_mu: number
+      black_mu: number
+      white_total: number
+      black_total: number
+      mu_gap: number
+    } | null
     method: string
     frozen: boolean
     stale: boolean
@@ -71,6 +79,7 @@ export type BalanceRun = {
   roster_version: number
   created_at: string
   settings: {
+    method?: 'community' | 'game'
     epsilon: string
     max_epsilon: string
     epsilon_step: string
@@ -79,9 +88,12 @@ export type BalanceRun = {
   inputs: {
     registration_id: number
     alias: string
-    attack: number
-    defense: number
+    attack: number | null
+    defense: number | null
     source: string
+    game_mu?: number
+    game_sigma?: number
+    game_count?: number
   }[]
   result: {
     partition_count: number
@@ -91,7 +103,17 @@ export type BalanceRun = {
     min_distance: number
     distances: number[][]
     warnings: string[]
-    variants: { assignments: Record<string, Team>; summary: BalanceSummary }[]
+    variants: {
+      assignments: Record<string, Team>
+      summary: BalanceSummary
+      game_rating?: {
+        white_mu: number
+        black_mu: number
+        white_total: number
+        black_total: number
+        mu_gap: number
+      }
+    }[]
   }
 }
 export type Run = (work: () => Promise<unknown>, success?: string) => Promise<void>

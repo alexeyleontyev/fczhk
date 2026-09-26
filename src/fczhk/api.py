@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import auctions as auc
+from . import game_ratings as gr
 from . import predictions as pred
 from . import ratings as rt
 from . import results as res
@@ -136,7 +137,21 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
                 select(Player).where(Player.telegram_id == (1001 if role == "admin" else 1002))
             )
             if not p:
-                raise svc.DomainError("Сначала запустите uv run fczhk demo", 503)
+                # A history-only demo contains source players, not seeded demo users.
+                # Bind local demo identities to two of those records on first login.
+                p = db.scalar(
+                    select(Player)
+                    .join(res.ResultParticipant, res.ResultParticipant.player_id == Player.id)
+                    .where(Player.merged_into.is_(None))
+                    .where(res.ResultParticipant.position == "field")
+                    .distinct()
+                    .order_by(Player.id)
+                    .offset(0 if role == "admin" else 1)
+                    .limit(1)
+                )
+                if not p or p.telegram_id not in (None, 1001 if role == "admin" else 1002):
+                    raise svc.DomainError("Сначала запустите uv run fczhk demo", 503)
+                p.telegram_id = 1001 if role == "admin" else 1002
             return dict(token=create_session(db, cfg, p), player=public_player(p, cfg, own=True))
 
     @app.get("/api/me")
@@ -162,6 +177,14 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         )
         averages = rt.public_averages(db, [x.id for x in people], p.telegram_id in cfg.admins)
         return [{**public_player(x, cfg), "ratings": averages[x.id]} for x in people]
+
+    @app.get("/api/game-ratings")
+    def game_ratings(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
+        return gr.leaderboard(db)
+
+    @app.get("/api/leaderboards")
+    def leaderboards(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
+        return {"results": res.leaderboards(db), "community": rt.community_leaderboards(db)}
 
     @app.get("/api/players/{player_id}/ratings/{position}")
     def rating_detail(

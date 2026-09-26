@@ -17,9 +17,18 @@ import {
   X,
 } from 'lucide-react'
 import { api, hasToken, setToken } from './api'
-import { AutomaticTeams, RatingAverages, RatingFlow, TeamMeans, TemporaryRatings } from './ratings'
+import {
+  AutomaticTeams,
+  GameRatingLeaderboard,
+  RatingAverages,
+  RatingFlow,
+  TeamMeans,
+  TemporaryRatings,
+  score,
+} from './ratings'
 import type { Entry, Match, Player, Position, Team, Template } from './types'
 import { MatchResult, PlayerStats } from './results'
+import { Leaderboards } from './leaderboards'
 import { AuctionPanel } from './auctions'
 import { PredictionPanel, PredictionStandings } from './predictions'
 import './style.css'
@@ -139,6 +148,7 @@ function App() {
   const [me, setMe] = useState<Player | null>(null)
   const [matches, setMatches] = useState<Match[]>([])
   const [players, setPlayers] = useState<Player[]>([])
+  const [dataRevision, setDataRevision] = useState(0)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [tab, setTab] = useState('game')
   const [demo, setDemo] = useState(false)
@@ -173,6 +183,7 @@ function App() {
     setMe(u)
     setMatches(games)
     setPlayers(people)
+    setDataRevision((value) => value + 1)
   }
   const run: Run = async (work, success) => {
     if (busy) return
@@ -422,21 +433,31 @@ function App() {
                     <h2>
                       {date(m.starts_at)}
                       <span>
-                        {time(m.starts_at)} <small>МСК</small>
+                        {m.historical ? (
+                          'Время неизвестно'
+                        ) : (
+                          <>
+                            {time(m.starts_at)} <small>МСК</small>
+                          </>
+                        )}
                       </span>
                     </h2>
-                    <p>
-                      <MapPin size={17} />
-                      {m.location}
-                    </p>
-                    <div className="hero-bottom">
-                      <span>
-                        {money(m.cost)} <small>за игру</small>
-                      </span>
-                      <span>
-                        8 + 1 <small>в команде</small>
-                      </span>
-                    </div>
+                    {!m.historical && (
+                      <>
+                        <p>
+                          <MapPin size={17} />
+                          {m.location}
+                        </p>
+                        <div className="hero-bottom">
+                          <span>
+                            {money(m.cost)} <small>за игру</small>
+                          </span>
+                          <span>
+                            8 + 1 <small>в команде</small>
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="pitch" aria-hidden="true">
                     <div className="pitch-middle" />
@@ -760,10 +781,16 @@ function App() {
                     </strong>
                   )}
                   <p>
-                    {time(game.starts_at)} МСК · {game.location}
+                    {game.historical
+                      ? 'Время и место неизвестны'
+                      : `${time(game.starts_at)} МСК · ${game.location}`}
                   </p>
                   <div>
-                    <span>{game.registrations.filter((r) => r.selected).length} в составе</span>
+                    <span>
+                      {game.result?.participants.length ??
+                        game.registrations.filter((r) => r.selected).length}{' '}
+                      в составе
+                    </span>
                     <ArrowUpRight />
                   </div>
                 </button>
@@ -802,6 +829,8 @@ function App() {
                 )}
               </div>
             </div>
+            <Leaderboards onPlayer={openStats} revision={dataRevision} />
+            <GameRatingLeaderboard onPlayer={openStats} />
             <input
               className="search"
               placeholder="Найти по имени или alias"
@@ -1277,20 +1306,33 @@ function TeamBoard({
         <span className="tag">
           {m.status === 'approved'
             ? 'Утверждены'
-            : m.team_ratings.method.startsWith('auto')
-              ? 'Автоподбор · черновик'
-              : m.team_ratings.method.startsWith('auction')
-                ? 'Аукцион'
-                : 'Ручное распределение'}
+            : m.team_ratings.method.startsWith('auto-game')
+              ? 'OpenSkill · черновик'
+              : m.team_ratings.method.startsWith('auto')
+                ? 'Автоподбор · черновик'
+                : m.team_ratings.method.startsWith('auction')
+                  ? 'Аукцион'
+                  : 'Ручное распределение'}
         </span>
       </div>
-      <TeamMeans summary={m.team_ratings.summary} />
-      <p className="muted caption">
-        Расчетные средние только полевых, после уменьшения меньшего рейтинга.{' '}
-        {m.team_ratings.frozen
-          ? 'Зафиксированы при утверждении.'
-          : 'Исходные оценки игроков не изменяются.'}
-      </p>
+      {m.team_ratings.game_summary ? (
+        <p className="muted caption">
+          OpenSkill · сумма μ полевых: белые {score(m.team_ratings.game_summary.white_total)} ·
+          чёрные {score(m.team_ratings.game_summary.black_total)} · нормированная Δ силы{' '}
+          {score(m.team_ratings.game_summary.mu_gap)}.
+          {m.team_ratings.frozen ? ' Зафиксировано при утверждении.' : ' Экспериментальный расчёт.'}
+        </p>
+      ) : (
+        <>
+          <TeamMeans summary={m.team_ratings.summary} />
+          <p className="muted caption">
+            Расчетные средние только полевых, после уменьшения меньшего рейтинга.{' '}
+            {m.team_ratings.frozen
+              ? 'Зафиксированы при утверждении.'
+              : 'Исходные оценки игроков не изменяются.'}
+          </p>
+        </>
+      )}
       {m.team_ratings.stale && (
         <p className="alert error" role="alert">
           Рейтинги изменились. Для утверждения пересчитайте варианты или начните вручную с нуля.

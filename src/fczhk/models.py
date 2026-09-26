@@ -170,6 +170,30 @@ class RatingHistory(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 
 
+class ImportedRating(Base):
+    """Exact source vote; current app votes from the same author supersede it."""
+
+    __tablename__ = "imported_ratings"
+    __table_args__ = (
+        UniqueConstraint("source_id", "author_id", "player_id", "position"),
+        CheckConstraint("author_id <> player_id"),
+        CheckConstraint("position = 'field'"),
+        CheckConstraint("attack_milli BETWEEN 0 AND 5000"),
+        CheckConstraint("defense_milli BETWEEN 0 AND 5000"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(100))
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    author_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    position: Mapped[str] = mapped_column(String(10), default="field")
+    attack_milli: Mapped[int] = mapped_column()
+    defense_milli: Mapped[int] = mapped_column()
+    attack_cell: Mapped[str] = mapped_column(String(12))
+    defense_cell: Mapped[str] = mapped_column(String(12))
+    imported_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
 class MatchRating(Base):
     """A fallback bound to a registration, never a permanent player rating."""
 

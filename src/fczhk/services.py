@@ -141,10 +141,16 @@ def match_data(db: Session, match: Match) -> dict:
         )
     )
     auction = latest(db, match)
+    historical = db.scalar(
+        select(Audit.id)
+        .where(Audit.match_id == match.id, Audit.action == "history.imported")
+        .limit(1)
+    ) is not None
     return dict(
         id=match.id,
         starts_at=match.starts_at,
         game_day=match.game_day,
+        historical=historical,
         location=match.location,
         description=match.description,
         cost=match.cost,

@@ -121,6 +121,7 @@ class MatchRatingEdit(RatingValues, Version):
 
 
 class BalanceSettings(Payload):
+    method: Literal["community", "game"] = "community"
     epsilon: Decimal = Field(default=Decimal("0.10"), ge=0, le=10, decimal_places=2)
     max_epsilon: Decimal = Field(default=Decimal("0.50"), ge=0, le=10, decimal_places=2)
     epsilon_step: Decimal = Field(default=Decimal("0.10"), gt=0, le=10, decimal_places=2)

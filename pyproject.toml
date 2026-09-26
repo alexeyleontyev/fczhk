@@ -4,10 +4,15 @@ version = "0.5.0"
 description = "Telegram football organization, results, captain auctions and predictions — MVP 5"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "fastapi>=0.141,<1", "uvicorn[standard]>=0.34,<1",
-  "sqlalchemy>=2.0,<2.1", "alembic>=1.14,<2",
-  "psycopg[binary]>=3.2,<4", "aiogram>=3.17,<4",
-  "pydantic-settings>=2.7,<3", "httpx>=0.28,<1",
+  "fastapi>=0.141,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "sqlalchemy>=2.0,<2.1",
+  "alembic>=1.14,<2",
+  "psycopg[binary]>=3.2,<4",
+  "aiogram>=3.17,<4",
+  "pydantic-settings>=2.7,<3",
+  "httpx>=0.28,<1",
+  "openskill==6.2.0",
 ]
 
 [dependency-groups]

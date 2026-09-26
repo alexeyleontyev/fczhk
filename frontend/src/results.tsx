@@ -397,8 +397,15 @@ type Stats = {
   draws: number
   goals: number
   assists: number
-  matches: { match_id: number; starts_at: string; team: Team; score: Record<Team, number> }[]
-  partners: { player_id: number; alias: string; games: number }[]
+  matches: {
+    match_id: number
+    starts_at: string
+    team: Team
+    score: Record<Team, number>
+    goals: number
+    assists: number
+  }[]
+  partners: { player_id: number; alias: string; games: number; wins: number; win_percent: number }[]
 }
 export function PlayerStats({
   playerId,
@@ -458,7 +465,10 @@ export function PlayerStats({
           {data.partners.map((p) => (
             <button key={p.player_id} className="stat-link" onClick={() => onPlayer(p.player_id)}>
               <span>{p.alias}</span>
-              <span>{p.games} совместных игр</span>
+              <span>
+                {p.games} совместных игр ·{' '}
+                {p.win_percent.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}% побед
+              </span>
             </button>
           ))}
           <h3>История игр</h3>
@@ -468,6 +478,20 @@ export function PlayerStats({
               <span>
                 {new Date(m.starts_at).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })} ·{' '}
                 {label(m.team)}
+                {(m.goals > 0 || m.assists > 0) && (
+                  <span className="match-contributions">
+                    {m.goals > 0 && (
+                      <span title={`Голов: ${m.goals}`} aria-label={`Голов: ${m.goals}`}>
+                        <span aria-hidden="true">⚽</span> {m.goals}
+                      </span>
+                    )}
+                    {m.assists > 0 && (
+                      <span title={`Передач: ${m.assists}`} aria-label={`Передач: ${m.assists}`}>
+                        <span aria-hidden="true">🎯</span> {m.assists}
+                      </span>
+                    )}
+                  </span>
+                )}
               </span>
               <strong>
                 {m.score.white} : {m.score.black} →
