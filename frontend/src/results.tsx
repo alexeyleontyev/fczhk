@@ -487,7 +487,7 @@ export function PlayerStats({
                     )}
                     {m.assists > 0 && (
                       <span title={`Передач: ${m.assists}`} aria-label={`Передач: ${m.assists}`}>
-                        <span aria-hidden="true">🎯</span> {m.assists}
+                        <span aria-hidden="true">👟</span> {m.assists}
                       </span>
                     )}
                   </span>
