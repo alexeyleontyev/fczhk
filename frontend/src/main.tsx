@@ -87,16 +87,16 @@ function App() {
     await run(async () => {
       const data = await api<{ token: string }>(`/auth/demo/${role}`, 'POST')
       setToken(data.token)
-      await refresh(true)
       setTab('game')
+      await refresh(true)
     })
   }
   async function loginBrowser(token: string) {
     setToken(token)
     setNotice(null)
+    setTab('game')
     try {
       await refresh(true)
-      setTab('game')
     } catch (error) {
       setToken('')
       throw error
@@ -176,6 +176,7 @@ function App() {
         <div className="demo-banner">
           <span>Демо · без реальных платежей и публикаций</span>
           <button
+            disabled={busy}
             onClick={() => {
               void run(logout)
             }}
@@ -208,6 +209,7 @@ function App() {
           <button
             className={tab === 'settings' ? 'active' : ''}
             aria-label="Настройки"
+            disabled={busy}
             onClick={() =>
               void run(async () => {
                 setTemplate(await api<Template>('/template'))

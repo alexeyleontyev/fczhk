@@ -83,6 +83,41 @@ test('expired session returns to login and admin can cancel a future game', asyn
   await expect(page.getByRole('button', { name: 'Войти администратором' })).toBeVisible()
 })
 
+test('navigation during login survives a slower game response', async ({ page }) => {
+  let releaseGame!: () => void
+  const waiting = new Promise<void>((resolve) => {
+    releaseGame = resolve
+  })
+  await page.route(
+    '**/api/matches/current',
+    async (route) => {
+      await waiting
+      await route.continue()
+    },
+    { times: 1 },
+  )
+  const gameResponse = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/matches/current',
+  )
+  try {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Войти администратором' }).click()
+    const settings = page.getByRole('button', { name: 'Настройки', exact: true })
+    await expect(settings).toBeDisabled()
+    await page.getByRole('button', { name: 'Игроки', exact: true }).click()
+    releaseGame()
+    await gameResponse
+    // The login task has finished when its busy state is cleared.
+    await expect(settings).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Игроки', exact: true })).toHaveClass('active')
+    await settings.click()
+    await expect(page.getByRole('heading', { name: 'Доставка сообщений' })).toBeVisible()
+    await expect(settings).toHaveClass('active')
+  } finally {
+    releaseGame()
+  }
+})
+
 test('archive requests summaries only when opened and pages on demand', async ({ page }) => {
   const pages: string[] = []
   await page.route('**/api/matches?*', (route) => {
