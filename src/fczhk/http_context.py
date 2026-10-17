@@ -67,11 +67,16 @@ class HttpContext:
             return player
 
         def admin(player: Player = Depends(current)) -> Player:
-            if player.telegram_id not in cfg.admins:
+            if not auth.has_admin_access(player, cfg):
                 raise DomainError("Действие доступно администратору", 403)
             return player
 
-        self.db_dep, self.current, self.admin = db_dep, current, admin
+        def owner(player: Player = Depends(current)) -> Player:
+            if not auth.is_owner(player, cfg):
+                raise DomainError("Действие доступно только владельцу", 403)
+            return player
+
+        self.db_dep, self.current, self.admin, self.owner = db_dep, current, admin, owner
 
     @staticmethod
     def digest(authorization):

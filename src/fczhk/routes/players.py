@@ -8,7 +8,7 @@ from .. import ratings as rt
 from .. import results as res
 from .. import schemas as S
 from .. import services as svc
-from ..auth import public_player
+from ..auth import has_admin_access, public_player
 from ..models import (
     Player,
     ProfileClaim,
@@ -26,7 +26,7 @@ def router(ctx):
     def me(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
         return {
             **public_player(p, cfg, own=True),
-            "ratings": rt.public_averages(db, [p.id], p.telegram_id in cfg.admins)[p.id],
+            "ratings": rt.public_averages(db, [p.id], has_admin_access(p, cfg))[p.id],
         }
 
     @app.patch("/api/me")
@@ -46,7 +46,7 @@ def router(ctx):
         people = list(
             db.scalars(select(Player).where(Player.merged_into.is_(None)).order_by(Player.alias))
         )
-        averages = rt.public_averages(db, [x.id for x in people], p.telegram_id in cfg.admins)
+        averages = rt.public_averages(db, [x.id for x in people], has_admin_access(p, cfg))
         return [{**public_player(x, cfg), "ratings": averages[x.id]} for x in people]
 
     @app.get("/api/game-ratings")
@@ -64,7 +64,7 @@ def router(ctx):
         p: Player = Depends(current),
         db: Session = Depends(db_dep, scope="function"),
     ):
-        return rt.review_data(db, p.id, player_id, position, p.telegram_id in cfg.admins)
+        return rt.review_data(db, p.id, player_id, position, has_admin_access(p, cfg))
 
     @app.get("/api/players/{player_id}/stats")
     def statistics(
@@ -82,7 +82,7 @@ def router(ctx):
         db: Session = Depends(db_dep, scope="function"),
     ):
         rt.save_rating(db, p.id, player_id, body)
-        return rt.review_data(db, p.id, player_id, body.position, p.telegram_id in cfg.admins)
+        return rt.review_data(db, p.id, player_id, body.position, has_admin_access(p, cfg))
 
     @app.post("/api/players/guests", status_code=201)
     def guest(

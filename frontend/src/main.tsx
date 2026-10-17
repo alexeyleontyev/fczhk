@@ -24,6 +24,7 @@ import { ArchiveScreen } from './archive-screen'
 import { PlayersScreen } from './players-screen'
 import { ProfileScreen } from './profile-screen'
 import { OperationsPanel, ScheduleExceptions, ProfileClaims } from './operations'
+import { AdministratorsPanel } from './administrators'
 import type { Match, Template, History, Run } from './types'
 import './style.css'
 
@@ -168,7 +169,7 @@ function App() {
           <span className="avatar small">{initial(me.alias)}</span>
           <div>
             {me.alias}
-            <small>{isAdmin ? 'Администратор' : 'Игрок'}</small>
+            <small>{me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок'}</small>
           </div>
         </div>
       </header>
@@ -295,6 +296,7 @@ function App() {
               />
             </section>
             <ScheduleExceptions />
+            {me.is_owner && <AdministratorsPanel onChanged={() => refresh(true)} />}
             <ProfileClaims onResolved={() => refresh(true)} />
             <OperationsPanel onMatch={openGame} />
           </>

@@ -6,6 +6,7 @@ export type Player = {
   alias: string
   guest: boolean
   is_admin?: boolean
+  is_owner?: boolean
   ratings?: { field: Average; keeper: Average }
 }
 export type Entry = {

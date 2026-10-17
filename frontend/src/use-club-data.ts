@@ -36,7 +36,13 @@ export function useClubData() {
     dirty.current.clear()
     const peopleChanged =
       force ||
-      paths.some((p) => p.startsWith('/players') || p === '/me' || p.includes('profile-claim'))
+      paths.some(
+        (p) =>
+          p.startsWith('/players') ||
+          p.startsWith('/administrators') ||
+          p === '/me' ||
+          p.includes('profile-claim'),
+      )
     const matchChanged =
       force ||
       peopleChanged ||

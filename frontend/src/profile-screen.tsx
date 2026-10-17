@@ -33,7 +33,9 @@ export function ProfileScreen({
       <section className="panel profile-panel">
         <span className="avatar large">{initial(me.alias)}</span>
         <h2>{me.alias}</h2>
-        <span className="tag">{isAdmin ? 'Администратор' : 'Игрок клуба'}</span>
+        <span className="tag">
+          {me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок клуба'}
+        </span>
         <RatingAverages player={me} />
         <PlayerStats playerId={me.id} onMatch={openGame} onPlayer={openStats} />
         <form

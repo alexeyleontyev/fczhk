@@ -7,6 +7,7 @@ from .. import predictions as pred
 from .. import results as res
 from .. import schemas as S
 from .. import services as svc
+from ..auth import has_admin_access
 from ..models import (
     Player,
 )
@@ -30,7 +31,7 @@ def router(ctx):
         match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
     ):
         m = svc.get_match(db, match_id, lock=True)
-        if m.status == "draft" and p.telegram_id not in cfg.admins:
+        if m.status == "draft" and not has_admin_access(p, cfg):
             raise svc.DomainError("Игра не найдена", 404)
         return pred.match_predictions(db, m, p.id)
 
@@ -69,7 +70,7 @@ def router(ctx):
         match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
     ):
         m = svc.get_match(db, match_id, lock=True)
-        if m.status == "draft" and p.telegram_id not in cfg.admins:
+        if m.status == "draft" and not has_admin_access(p, cfg):
             raise svc.DomainError("Игра не найдена", 404)
         return auc.data(db, auc.latest(db, m), p.id)
 
@@ -78,7 +79,7 @@ def router(ctx):
         match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
     ):
         m = svc.get_match(db, match_id, lock=True)
-        if m.status == "draft" and p.telegram_id not in cfg.admins:
+        if m.status == "draft" and not has_admin_access(p, cfg):
             raise svc.DomainError("Игра не найдена", 404)
         return [
             auc.data(db, a, p.id)

@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import operations
+from .. import administrators, operations
 from .. import schemas as S
 from .. import services as svc
 from ..db import now
@@ -24,6 +24,21 @@ def router(ctx):
     factory = ctx.factory
     db_dep = ctx.db_dep
     admin = ctx.admin
+
+    @app.get("/api/administrators")
+    def administrators_list(
+        p: Player = Depends(ctx.owner), db: Session = Depends(db_dep, scope="function")
+    ):
+        return administrators.members(db, cfg)
+
+    @app.put("/api/administrators/{player_id}")
+    def administrator_access(
+        player_id: int,
+        body: S.AdminAccessEdit,
+        p: Player = Depends(ctx.owner),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        return administrators.change(db, cfg, p, player_id, body)
 
     @app.get("/api/template")
     def template(p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")):

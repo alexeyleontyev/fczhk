@@ -6,6 +6,7 @@ from .. import predictions as pred
 from .. import results as res
 from .. import schemas as S
 from .. import services as svc
+from ..auth import has_admin_access
 from ..db import now
 from ..match_list import summaries
 from ..models import (
@@ -41,7 +42,7 @@ def router(ctx):
             .offset(offset)
             .limit(limit)
         )
-        if p.telegram_id not in cfg.admins:
+        if not has_admin_access(p, cfg):
             query = query.where(Match.status != "draft")
         return summaries(db, list(db.scalars(query)))
 
@@ -50,7 +51,7 @@ def router(ctx):
         p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
     ):
         query = select(Match).where(Match.status != "cancelled")
-        if p.telegram_id not in cfg.admins:
+        if not has_admin_access(p, cfg):
             query = query.where(Match.status != "draft")
         match = db.scalar(
             query.where(Match.starts_at > now()).order_by(Match.starts_at, Match.id).limit(1)
@@ -64,7 +65,7 @@ def router(ctx):
         match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
     ):
         m = svc.get_match(db, match_id)
-        if m.status == "draft" and p.telegram_id not in cfg.admins:
+        if m.status == "draft" and not has_admin_access(p, cfg):
             raise svc.DomainError("Игра не найдена", 404)
         return svc.match_data(db, m)
 

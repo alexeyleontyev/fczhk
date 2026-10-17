@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +24,9 @@ class Player(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
     alias: Mapped[str] = mapped_column(String(60))
+    # NULL preserves legacy ADMIN_IDS until the owner explicitly changes access.
+    admin_access: Mapped[bool | None] = mapped_column(Boolean)
+    admin_access_revision: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     merged_into: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 

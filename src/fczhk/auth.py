@@ -81,8 +81,23 @@ def player_for_telegram(db, telegram_id: int, name: str) -> Player:
     return player
 
 
+def is_owner(player: Player, cfg) -> bool:
+    return bool(cfg.effective_owner_id and player.telegram_id == cfg.effective_owner_id)
+
+
+def has_admin_access(player: Player, cfg) -> bool:
+    if not player.telegram_id:
+        return False
+    if is_owner(player, cfg):
+        return True
+    if player.admin_access is not None:
+        return player.admin_access
+    return player.telegram_id in cfg.admins
+
+
 def public_player(player: Player, cfg, own=False):
     data = dict(id=player.id, alias=player.alias, guest=player.telegram_id is None)
     if own:
-        data["is_admin"] = player.telegram_id in cfg.admins
+        data["is_admin"] = has_admin_access(player, cfg)
+        data["is_owner"] = is_owner(player, cfg)
     return data

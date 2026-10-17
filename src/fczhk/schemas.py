@@ -25,6 +25,11 @@ class Name(Payload):
     alias: str = Field(min_length=2, max_length=60)
 
 
+class AdminAccessEdit(Payload):
+    is_admin: bool = Field(strict=True)
+    revision: int = Field(ge=0, strict=True)
+
+
 class Version(Payload):
     version: int = Field(ge=1)
 

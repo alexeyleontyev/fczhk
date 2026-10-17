@@ -11,7 +11,7 @@ from fczhk.models import GameTemplate, Player, RatingState
 @pytest.fixture
 def env(tmp_path):
     cfg = Settings(
-        _env_file=None, env="test", database_url=f"sqlite:///{tmp_path}/test.db", admin_ids="101"
+        _env_file=None, env="test", database_url=f"sqlite:///{tmp_path}/test.db", owner_id=101
     )
     engine, factory = database(cfg.database_url)
     Base.metadata.create_all(engine)
