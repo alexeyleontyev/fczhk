@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 from uuid import UUID
@@ -26,6 +27,24 @@ class Name(Payload):
 
 class Version(Payload):
     version: int = Field(ge=1)
+
+
+class Cancellation(Version):
+    reason: str = Field(min_length=2, max_length=300)
+
+
+class SkipDay(Payload):
+    game_day: date
+    reason: str = Field(min_length=2, max_length=300)
+
+
+class ClaimProfile(Payload):
+    guest_id: int = Field(gt=0)
+
+
+class ResolveClaim(Payload):
+    guest_id: int = Field(gt=0)
+    accept: bool
 
 
 class GameFields(Payload):

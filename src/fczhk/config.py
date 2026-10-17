@@ -6,7 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="FCZHK_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FCZHK_", env_file=".env", extra="ignore", hide_input_in_errors=True
+    )
     env: Literal["production", "demo", "test"] = "production"
     database_url: str = "sqlite:///./.local/fczhk.db"
     bot_token: str = ""
@@ -22,6 +24,13 @@ class Settings(BaseSettings):
     membership_cache_seconds: int = 300
     min_field_players: int = 2
     require_two_keepers: bool = False
+    auth_ip_limit: int = Field(default=30, ge=1)
+    auth_global_limit: int = Field(default=300, ge=1)
+    worker_stale_seconds: int = Field(default=120, ge=30)
+    publication_stale_seconds: int = Field(default=300, ge=30)
+    metrics_token: str = ""
+    # Docker gives only the reverse proxy access to the API port.
+    forwarded_allow_ips: str = "127.0.0.1"
 
     @property
     def admins(self) -> set[int]:

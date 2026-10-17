@@ -32,6 +32,7 @@ export type Publication = {
   error: string | null
 }
 export type Match = {
+  cancellation_reason?: string | null
   id: number
   starts_at: string
   game_day: string
@@ -42,7 +43,7 @@ export type Match = {
   payment_details: string
   field_limit: number
   keeper_limit: number
-  status: 'draft' | 'open' | 'finalized' | 'approved' | 'completed'
+  status: 'draft' | 'open' | 'finalized' | 'approved' | 'completed' | 'cancelled'
   version: number
   result: import('./results').Result | null
   auction_status: string | null
@@ -153,4 +154,16 @@ declare global {
       }
     }
   }
+}
+
+export type History = {
+  audit: { id: number; action: string; data: unknown; at: string }[]
+  teams: { version: number; teams: { alias: string; team: Team }[]; at: string }[]
+}
+export type MatchSummary = Pick<
+  Match,
+  'id' | 'starts_at' | 'game_day' | 'historical' | 'location' | 'status' | 'version'
+> & {
+  participant_count: number
+  result: { completed: boolean; score: Record<Team, number> } | null
 }

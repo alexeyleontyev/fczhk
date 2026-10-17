@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
@@ -28,8 +30,12 @@ def dispatcher(cfg, factory):
 
     async def identify(user):
         await check_member(cfg, user.id)
-        with factory() as db, db.begin():
-            return player_for_telegram(db, user.id, user.first_name).id
+
+        def save():
+            with factory() as db, db.begin():
+                return player_for_telegram(db, user.id, user.first_name).id
+
+        return await asyncio.to_thread(save)
 
     @router.message(Command("start", "help", "profile", "admin"))
     async def start(message: Message):
@@ -53,28 +59,42 @@ def dispatcher(cfg, factory):
             return
         try:
             await identify(message.from_user)
-            with factory() as db:
-                m = db.scalar(
-                    select(Match)
-                    .where(Match.status != "draft", Match.starts_at > now())
-                    .order_by(Match.starts_at)
-                    .limit(1)
-                )
-                if not m:
-                    await message.answer("Ближайшая игра еще не опубликована.", reply_markup=menu())
-                    return
-                data = match_data(db, m)
-                lines = [f"⚽ {m.starts_at.astimezone(MOSCOW):%d.%m · %H:%M} МСК", m.location, ""]
-                for position, label in (("field", "Полевые"), ("keeper", "Вратари")):
-                    lines.append(label)
-                    for r in data["registrations"]:
-                        if r["position"] == position:
-                            date = r["registered_at"].astimezone(MOSCOW).strftime("%d.%m %H:%M:%S")
-                            lines.append(
-                                f"{r['queue']}. {r['alias']} · {'оплачен' if r['paid'] else 'без оплаты'} · {date}"
-                                + (" · в составе" if r["selected"] else "")
-                            )
-                match_id, is_open = m.id, m.status == "open"
+
+            def read_game():
+                with factory() as db:
+                    m = db.scalar(
+                        select(Match)
+                        .where(Match.status.not_in(["draft", "cancelled"]), Match.starts_at > now())
+                        .order_by(Match.starts_at)
+                        .limit(1)
+                    )
+                    if not m:
+                        return None
+                    data = match_data(db, m)
+                    lines = [
+                        f"⚽ {m.starts_at.astimezone(MOSCOW):%d.%m · %H:%M} МСК",
+                        m.location,
+                        "",
+                    ]
+                    for position, label in (("field", "Полевые"), ("keeper", "Вратари")):
+                        lines.append(label)
+                        for r in data["registrations"]:
+                            if r["position"] == position:
+                                date = (
+                                    r["registered_at"].astimezone(MOSCOW).strftime("%d.%m %H:%M:%S")
+                                )
+                                lines.append(
+                                    f"{r['queue']}. {r['alias']} · {'оплачен' if r['paid'] else 'без оплаты'} · {date}"
+                                    + (" · в составе" if r["selected"] else "")
+                                )
+                    match_id, is_open = m.id, m.status == "open"
+                return lines, match_id, is_open
+
+            result = await asyncio.to_thread(read_game)
+            if result is None:
+                await message.answer("Ближайшая игра еще не опубликована.", reply_markup=menu())
+                return
+            lines, match_id, is_open = result
             parts = chunks("\n".join(lines))
             for i, part in enumerate(parts):
                 await message.answer(
@@ -92,25 +112,30 @@ def dispatcher(cfg, factory):
             return
         try:
             await identify(message.from_user)
-            with factory() as db:
-                people = list(
-                    db.scalars(
-                        select(Player)
-                        .where(Player.merged_into.is_(None), Player.telegram_id.is_not(None))
-                        .order_by(Player.alias)
-                    )
-                )
-                averages = public_averages(db, [p.id for p in people])
 
-                def score(value):
-                    return "—" if value is None else f"{value:.2f}".rstrip("0").rstrip(".")
-
-                names = []
-                for p in people:
-                    r = averages[p.id]
-                    names.append(
-                        f"{p.alias} · А {score(r['field']['attack'])} / З {score(r['field']['defense'])} · вратарь З {score(r['keeper']['defense'])}"
+            def read_players():
+                with factory() as db:
+                    people = list(
+                        db.scalars(
+                            select(Player)
+                            .where(Player.merged_into.is_(None), Player.telegram_id.is_not(None))
+                            .order_by(Player.alias)
+                        )
                     )
+                    averages = public_averages(db, [p.id for p in people])
+
+                    def score(value):
+                        return "—" if value is None else f"{value:.2f}".rstrip("0").rstrip(".")
+
+                    names = []
+                    for p in people:
+                        r = averages[p.id]
+                        names.append(
+                            f"{p.alias} · А {score(r['field']['attack'])} / З {score(r['field']['defense'])} · вратарь З {score(r['keeper']['defense'])}"
+                        )
+                return names
+
+            names = await asyncio.to_thread(read_players)
             for part in chunks("Игроки · средние оценки\n\n" + "\n".join(names)):
                 await message.answer(part)
         except DomainError as exc:
@@ -123,11 +148,15 @@ def dispatcher(cfg, factory):
             if position not in ("field", "keeper"):
                 raise DomainError("Неизвестное амплуа")
             pid = await identify(query.from_user)
-            with factory() as db, db.begin():
-                match = get_match(db, int(mid), lock=True)
-                if not db.get(BotCallbackReceipt, query.id):
-                    register(db, pid, match, position)
-                    db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=match.id))
+
+            def save_join():
+                with factory() as db, db.begin():
+                    match = get_match(db, int(mid), lock=True)
+                    if not db.get(BotCallbackReceipt, query.id):
+                        register(db, pid, match, position)
+                        db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=match.id))
+
+            await asyncio.to_thread(save_join)
             await query.answer("Вы записаны. Оплату подтверждает администратор.", show_alert=True)
         except (DomainError, ValueError) as exc:
             await query.answer(

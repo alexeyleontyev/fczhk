@@ -11,7 +11,7 @@ from fczhk.api import create_app
 from fczhk.db import now
 from fczhk.models import LoginSession, Player
 from fczhk.services import DomainError
-from tests.test_workflows import signed_data
+from tests.helpers import signed_data
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +30,7 @@ def browser(env, monkeypatch, signing_key):
     jwk.update(kid="test-key", use="sig", alg="RS256")
     monkeypatch.setattr(PyJWKClient, "fetch_data", lambda self: {"keys": [jwk]})
     member = AsyncMock()
-    monkeypatch.setattr("fczhk.api.check_member", member)
+    monkeypatch.setattr("fczhk.auth.check_member", member)
     with TestClient(create_app(cfg, factory), headers={"Origin": cfg.public_url}) as client:
         yield client, member
 

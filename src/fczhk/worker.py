@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 
 from .db import database, now
 from .models import Publication
+from .operations import cleanup_sessions, heartbeat
 from .services import schedule_tick
 
 log = logging.getLogger(__name__)
@@ -126,6 +127,7 @@ async def mark_stale(cfg, factory, bot=None):
             .where(
                 Publication.stale.is_(True),
                 Publication.stale_marked.is_(False),
+                Publication.next_attempt_at <= now(),
                 Publication.status.in_(["sent", "demo"]),
                 or_(
                     Publication.error.is_(None),
@@ -143,19 +145,29 @@ async def mark_stale(cfg, factory, bot=None):
             return
         try:
             for mid, part in zip(pub.message_ids, chunks(pub.text), strict=True):
-                await bot.edit_message_text(
-                    text="⚠️ НЕАКТУАЛЬНО — состав или параметры изменились\n\n" + part,
-                    chat_id=pub.chat_id,
-                    message_id=mid,
-                )
-            pub.stale_marked = True
+                try:
+                    await bot.edit_message_text(
+                        text="⚠️ НЕАКТУАЛЬНО — состав или параметры изменились\n\n" + part,
+                        chat_id=pub.chat_id,
+                        message_id=mid,
+                    )
+                except TelegramBadRequest as exc:
+                    if "message is not modified" not in str(exc):
+                        raise
+            pub.stale_marked, pub.error = True, None
+        except TelegramRetryAfter as exc:
+            pub.next_attempt_at = now() + timedelta(seconds=exc.retry_after + 1)
+            pub.error = "Telegram ограничил частоту редактирования"
+        except TelegramBadRequest:
+            pub.error = "Не удалось пометить старый пост. Проверьте сообщение и права бота."
         except Exception:
-            pub.error = "Не удалось пометить старый пост. Сообщите участникам об изменении и опубликуйте новый."
+            pub.error = "Не удалось пометить старый пост. Сообщите участникам об изменении и повторите пометку."
 
 
 async def run_worker(cfg, once=False):
     _, factory = database(cfg.database_url)
     bot = Bot(cfg.bot_token) if cfg.bot_token and cfg.env != "demo" else None
+    cleaned_at = None
     try:
         while True:
             try:
@@ -163,8 +175,18 @@ async def run_worker(cfg, once=False):
                     schedule_tick(db, cfg)
                 await deliver_one(cfg, factory, bot)
                 await mark_stale(cfg, factory, bot)
-            except Exception:
-                log.error("Worker iteration failed; retrying. Check database availability.")
+                if cleaned_at is None or now() - cleaned_at > timedelta(hours=1):
+                    cleanup_sessions(factory)
+                    cleaned_at = now()
+                heartbeat(factory)
+            except Exception as exc:
+                # Exception text from external libraries may contain credentials.
+                code = type(exc).__name__
+                log.error("Worker iteration failed (%s); retrying", code)
+                try:
+                    heartbeat(factory, code)
+                except Exception:
+                    log.error("Worker heartbeat unavailable")
                 if once:
                     raise
             if once:
@@ -185,6 +207,8 @@ async def run_demo_worker(cfg, factory):
             schedule_tick(db, cfg)
         asyncio.run(deliver_one(cfg, factory))
         asyncio.run(mark_stale(cfg, factory))
+        cleanup_sessions(factory)
+        heartbeat(factory)
 
     while True:
         try:

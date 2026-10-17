@@ -191,6 +191,7 @@ def test_admin_swaps_only_team_colors_before_game(env, call, predicted_game, mon
                 snapshot_id=snapshot.id,
                 data=dict(
                     method="manual",
+                    game_summary=dict(white_mu=22, black_mu=28, white_total=1400, black_total=1600),
                     summary=dict(
                         white=dict(count=1, attack=4),
                         black=dict(count=1, attack=2),
@@ -217,6 +218,9 @@ def test_admin_swaps_only_team_colors_before_game(env, call, predicted_game, mon
     assert changed["team_ratings"]["frozen"]
     assert changed["team_ratings"]["summary"]["white"]["attack"] == 2
     assert changed["team_ratings"]["summary"]["black"]["attack"] == 4
+    assert changed["team_ratings"]["game_summary"] == dict(
+        white_mu=28, black_mu=22, white_total=1600, black_total=1400
+    )
     assert all(
         after["team"] == ("black" if old["team"] == "white" else "white")
         for old, after in zip(before["registrations"], changed["registrations"])

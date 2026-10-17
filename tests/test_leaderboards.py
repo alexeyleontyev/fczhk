@@ -1,10 +1,10 @@
 from datetime import timedelta
 
 import pytest
-from test_results import event, payload
 
 from fczhk.db import now
 from fczhk.models import Match, MatchResult, Player, Registration, ResultGoal, ResultParticipant
+from tests.test_results import event, payload
 
 
 @pytest.fixture

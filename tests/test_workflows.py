@@ -1,8 +1,4 @@
-import hashlib
-import hmac
-import json
 from datetime import timedelta
-from urllib.parse import urlencode
 
 import pytest
 from sqlalchemy import select
@@ -14,6 +10,7 @@ from fczhk.models import Player, Registration
 from fczhk.services import (
     DomainError,
 )
+from tests.helpers import signed_data
 
 
 def populate(factory, mid, fields=18, keepers=3):
@@ -235,19 +232,6 @@ def test_match_edit_marks_post_stale_and_preserves_template(call, game):
     assert len(changed["publications"]) == 2
     assert sum(p["stale"] for p in changed["publications"]) == 1
     assert call("GET", "/template")["location"] == ""
-
-
-def signed_data(token, age=0, user_id=102):
-    values = {
-        "auth_date": str(int(now().timestamp()) - age),
-        "query_id": "abc",
-        "user": json.dumps({"id": user_id, "first_name": "Игрок"}),
-    }
-    secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
-    values["hash"] = hmac.new(
-        secret, "\n".join(f"{k}={v}" for k, v in sorted(values.items())).encode(), hashlib.sha256
-    ).hexdigest()
-    return urlencode(values)
 
 
 def test_telegram_auth_checks_signature_and_age():

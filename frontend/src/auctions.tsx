@@ -81,11 +81,13 @@ export function AuctionPanel({
   admin,
   busy,
   run,
+  onStatusChange,
 }: {
   match: Match
   admin: boolean
   busy: boolean
   run: Run
+  onStatusChange: () => void
 }) {
   const [auction, setAuction] = useState<Auction | null>(null)
   const [error, setError] = useState('')
@@ -107,7 +109,7 @@ export function AuctionPanel({
           setAuction(data)
           setError('')
           setLoaded(true)
-          if (data && data.status !== m.auction_status) void run(async () => {})
+          if (data && data.status !== m.auction_status) onStatusChange()
         }
       } catch (e) {
         if (current) setError((e as Error).message)

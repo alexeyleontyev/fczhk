@@ -267,6 +267,9 @@ def save_rating(db: Session, actor: int, target: int, body):
 
 
 def set_temporary(db: Session, actor: int, match: Match, reg: Registration, body: RatingValues):
+    from .services import ensure_pregame
+
+    ensure_pregame(db, match)
     lock_ratings(db)
     # The API may have loaded the guest card before a concurrent link committed.
     db.refresh(reg)

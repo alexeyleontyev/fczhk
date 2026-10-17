@@ -5,7 +5,10 @@ the first team-selection model. The result is reconstructed in date order so edi
 to historical results are reflected without mutating community ratings.
 """
 
+from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
+from functools import lru_cache
 
 from openskill.models import ThurstoneMostellerFull
 from sqlalchemy import select
@@ -37,13 +40,22 @@ def history(db: Session) -> list[HistoricalGame]:
         .where(MatchResult.completed.is_(True))
         .order_by(Match.game_day, Match.id)
     )
+    by_match = defaultdict(list)
+    for row in db.scalars(
+        select(ResultParticipant)
+        .join(MatchResult)
+        .where(MatchResult.completed.is_(True))
+        .order_by(ResultParticipant.match_id, ResultParticipant.player_id)
+    ):
+        by_match[row.match_id].append(row)
+    scores = defaultdict(lambda: {"white": 0, "black": 0})
+    for row in db.scalars(
+        select(ResultGoal).join(MatchResult).where(MatchResult.completed.is_(True))
+    ):
+        scores[row.match_id][row.team] += 1
     result = []
     for match in matches:
-        participants = list(
-            db.scalars(
-                select(ResultParticipant).where(ResultParticipant.match_id == match.id)
-            )
-        )
+        participants = by_match[match.id]
         teams = {
             (side, position): tuple(
                 canonical[p.player_id]
@@ -58,10 +70,7 @@ def history(db: Session) -> list[HistoricalGame]:
             continue
         if len(set(field["white"] + field["black"])) != sum(map(len, field.values())):
             raise ValueError(f"В игре {match.game_day} повторяется игрок")
-        goals = db.scalars(select(ResultGoal).where(ResultGoal.match_id == match.id))
-        counts = {"white": 0, "black": 0}
-        for goal in goals:
-            counts[goal.team] += 1
+        counts = scores[match.id]
         result.append(
             HistoricalGame(
                 match_id=match.id,
@@ -83,15 +92,21 @@ def replay(
     include_keepers: bool = False,
 ) -> dict:
     """Return chronological predictions; keeper mode keeps field and keeper skills separate."""
+    games = tuple(game for game in history(db) if before_day is None or game.day < before_day)
+    # Content-addressed cache: changed results, identities, or dates get a new key.
+    # It cannot serve an old revision after imports or edits, even across processes.
+    return deepcopy(_replay(games, margin, include_keepers))
+
+
+@lru_cache(maxsize=32)
+def _replay(games: tuple[HistoricalGame, ...], margin: float, include_keepers: bool):
     if margin < 0:
         raise ValueError("margin не может быть отрицательным")
     model = ThurstoneMostellerFull(margin=margin)
     ratings = {}
     appearances = {}
     predictions = []
-    for game in history(db):
-        if before_day is not None and game.day >= before_day:
-            break
+    for game in games:
         if include_keepers:
             ids = (
                 tuple((pid, "field") for pid in game.white)
@@ -101,10 +116,14 @@ def replay(
             )
         else:
             ids = (game.white, game.black)
-        teams = [[ratings.setdefault(pid, model.rating(name=str(pid))) for pid in side] for side in ids]
+        teams = [
+            [ratings.setdefault(pid, model.rating(name=str(pid))) for pid in side] for side in ids
+        ]
         win_white = model.predict_win(teams)[0]
-        outcome = 1.0 if game.score[0] > game.score[1] else (
-            0.0 if game.score[0] < game.score[1] else 0.5
+        outcome = (
+            1.0
+            if game.score[0] > game.score[1]
+            else (0.0 if game.score[0] < game.score[1] else 0.5)
         )
         predictions.append(
             {"day": game.day, "score": game.score, "p_white": win_white, "outcome": outcome}
@@ -139,8 +158,7 @@ def leaderboard(db: Session) -> dict:
     """Read-only preview; keep it separate from community ratings and team runs."""
     run = replay(db)
     aliases = {
-        p.id: p.alias
-        for p in db.scalars(select(Player).where(Player.id.in_(run["players"])))
+        p.id: p.alias for p in db.scalars(select(Player).where(Player.id.in_(run["players"])))
     }
     players = [
         {

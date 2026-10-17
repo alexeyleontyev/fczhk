@@ -29,7 +29,7 @@ class LoginSession(Base):
     __tablename__ = "login_sessions"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
-    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
     checked_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 
 
@@ -327,4 +327,29 @@ class Prediction(Base):
     black_score: Mapped[int] = mapped_column()
     revision: Mapped[int] = mapped_column(default=1)
     approved_version: Mapped[int] = mapped_column()
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class ServiceHeartbeat(Base):
+    __tablename__ = "service_heartbeats"
+    name: Mapped[str] = mapped_column(String(30), primary_key=True)
+    checked_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+    succeeded_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    error: Mapped[str | None] = mapped_column(String(100))
+
+
+class SkippedGameDay(Base):
+    __tablename__ = "skipped_game_days"
+    game_day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    reason: Mapped[str] = mapped_column(String(300))
+    actor_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class ProfileClaim(Base):
+    __tablename__ = "profile_claims"
+    __table_args__ = (CheckConstraint("status IN ('pending', 'accepted', 'rejected')"),)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), primary_key=True)
+    guest_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    status: Mapped[str] = mapped_column(String(15), default="pending")
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
