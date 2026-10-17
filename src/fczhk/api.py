@@ -5,7 +5,7 @@ from collections.abc import Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
@@ -20,6 +20,7 @@ from . import results as res
 from . import schemas as S
 from . import services as svc
 from .auth import check_member, create_session, parse_telegram, player_for_telegram, public_player
+from .browser_auth import BrowserAuth
 from .config import Settings, settings
 from .db import database, now
 from .models import (
@@ -63,6 +64,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     if factory is None:
         _, factory = database(cfg.database_url)
     app.state.cfg, app.state.factory = cfg, factory
+    browser_auth = BrowserAuth(cfg)
 
     def db_dep() -> Generator[Session, None, None]:
         # All consumers use function scope: commit must finish before HTTP success.
@@ -120,6 +122,32 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         user = parse_telegram(cfg, body.init_data)
         await check_member(cfg, user.id)
         p = player_for_telegram(db, user.id, user.first_name)
+        return dict(token=create_session(db, cfg, p), player=public_player(p, cfg, own=True))
+
+    @app.get("/api/auth/options")
+    def auth_options():
+        return {
+            "browser_login": browser_auth.enabled,
+            "bot_url": f"https://t.me/{cfg.bot_username.lstrip('@')}" if cfg.bot_username else None,
+        }
+
+    @app.post("/api/auth/telegram/browser/challenge")
+    def browser_challenge(request: Request, response: Response):
+        browser_auth.check_request(request)
+        return browser_auth.challenge(response)
+
+    @app.post("/api/auth/telegram/browser")
+    async def browser_login(
+        body: S.BrowserLogin,
+        request: Request,
+        response: Response,
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        browser_auth.check_request(request)
+        user = await browser_auth.verify(body.id_token, request.cookies.get(browser_auth.cookie_name))
+        await check_member(cfg, user.id)
+        p = player_for_telegram(db, user.id, user.first_name)
+        browser_auth.clear(response)
         return dict(token=create_session(db, cfg, p), player=public_player(p, cfg, own=True))
 
     if cfg.env == "demo":

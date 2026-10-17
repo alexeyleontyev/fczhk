@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./.local/fczhk.db"
     bot_token: str = ""
     bot_username: str = ""
+    telegram_login_client_id: int = Field(default=0, ge=0, le=2**52 - 1)
     community_chat_id: str = ""
     publication_chat_id: str = ""
     admin_ids: str = ""

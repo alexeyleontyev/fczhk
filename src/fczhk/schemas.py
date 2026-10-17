@@ -16,6 +16,10 @@ class Login(Payload):
     init_data: str = Field(max_length=16000)
 
 
+class BrowserLogin(Payload):
+    id_token: str = Field(min_length=1, max_length=16000)
+
+
 class Name(Payload):
     alias: str = Field(min_length=2, max_length=60)
 

@@ -31,6 +31,7 @@ import { MatchResult, PlayerStats } from './results'
 import { Leaderboards } from './leaderboards'
 import { AuctionPanel } from './auctions'
 import { PredictionPanel, PredictionStandings } from './predictions'
+import { BrowserLogin } from './browser-login'
 import './style.css'
 
 const date = (s: string) =>
@@ -265,6 +266,17 @@ function App() {
       setTab('game')
     })
   }
+  async function loginBrowser(token: string) {
+    setToken(token)
+    setNotice(null)
+    try {
+      await refresh()
+      setTab('game')
+    } catch (error) {
+      setToken('')
+      throw error
+    }
+  }
   const action = (name: string) =>
     run(
       () => api(`/matches/${m.id}/actions/${name}`, 'POST', { version: m.version }),
@@ -308,8 +320,10 @@ function App() {
             </Button>
             <small>Демонстрационные имена и игра. Сообщения в Telegram не отправляются.</small>
           </div>
-        ) : (
+        ) : window.Telegram?.WebApp?.initData ? (
           <div className="alert">Откройте Mini App через меню Telegram-бота вашего сообщества.</div>
+        ) : (
+          <BrowserLogin onLogin={loginBrowser} />
         )}
       </div>
     )

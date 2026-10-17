@@ -127,14 +127,29 @@ export type Template = {
   payment_details: string
 }
 
+export type TelegramLoginOptions = {
+  client_id: number
+  nonce: string
+  scope: ['profile']
+  lang: 'ru'
+}
+export type TelegramLoginResult = { id_token?: string; error?: string }
+
 declare global {
   interface Window {
     Telegram?: {
-      WebApp: {
+      WebApp?: {
         initData: string
         initDataUnsafe?: { start_param?: string }
         ready: () => void
         expand: () => void
+      }
+      Login?: {
+        auth: (
+          options: TelegramLoginOptions,
+          callback: (result: TelegramLoginResult) => void,
+        ) => void
+        close: () => void
       }
     }
   }

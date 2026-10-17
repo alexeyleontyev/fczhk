@@ -13,6 +13,7 @@ dependencies = [
   "pydantic-settings>=2.7,<3",
   "httpx>=0.28,<1",
   "openskill==6.2.0",
+  "pyjwt[crypto]>=2.10,<3",
 ]
 
 [dependency-groups]
