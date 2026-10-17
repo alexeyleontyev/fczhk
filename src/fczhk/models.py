@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -18,6 +19,7 @@ from .db import Base, UTCDateTime, now
 
 class Player(Base):
     __tablename__ = "players"
+    __table_args__ = (Index("uq_players_alias", "alias", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
     alias: Mapped[str] = mapped_column(String(60))
@@ -265,7 +267,7 @@ class ResultGoal(Base):
         CheckConstraint("team IN ('white', 'black')"),
         CheckConstraint("kind IN ('goal', 'own_goal')"),
         CheckConstraint("author_id IS NULL OR assist_id IS NULL OR author_id <> assist_id"),
-        CheckConstraint("kind <> 'own_goal' OR (author_id IS NOT NULL AND assist_id IS NULL)"),
+        CheckConstraint("kind <> 'own_goal' OR assist_id IS NULL", name="ck_own_goal_no_assist"),
     )
     match_id: Mapped[int] = mapped_column(ForeignKey("match_results.match_id"), primary_key=True)
     id: Mapped[str] = mapped_column(String(36), primary_key=True)

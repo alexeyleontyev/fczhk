@@ -33,6 +33,8 @@ def router(ctx):
     def update_me(
         body: S.Name, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
     ):
+        if db.scalar(select(Player.id).where(Player.alias == body.alias, Player.id != p.id)):
+            raise svc.DomainError("Это имя игрока уже используется. Выберите другое.", 409)
         p = db.get(Player, p.id)
         old = p.alias
         p.alias = body.alias
@@ -86,6 +88,8 @@ def router(ctx):
     def guest(
         body: S.Name, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
     ):
+        if db.scalar(select(Player.id).where(Player.alias == body.alias)):
+            raise svc.DomainError("Это имя игрока уже используется. Выберите другое.", 409)
         new = Player(alias=body.alias)
         db.add(new)
         db.flush()

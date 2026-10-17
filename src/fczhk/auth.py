@@ -5,6 +5,7 @@ from datetime import timedelta
 from aiogram import Bot
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from .db import now
 from .models import LoginSession, Player
@@ -59,9 +60,23 @@ def player_for_telegram(db, telegram_id: int, name: str) -> Player:
         db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": telegram_id})
     player = db.scalar(select(Player).where(Player.telegram_id == telegram_id))
     if not player:
-        player = Player(telegram_id=telegram_id, alias=name[:60].strip() or "Игрок")
-        db.add(player)
-        db.flush()
+        base = name[:60].strip() or "Игрок"
+        for attempt in range(10):
+            suffix = (
+                "" if attempt == 0 else f" · {telegram_id}" + (f".{attempt}" if attempt > 1 else "")
+            )
+            alias = base[: 60 - len(suffix)] + suffix
+            try:
+                with db.begin_nested():
+                    player = Player(telegram_id=telegram_id, alias=alias)
+                    db.add(player)
+                    db.flush()
+                break
+            except IntegrityError:
+                if not db.scalar(select(Player.id).where(Player.alias == alias)):
+                    raise
+        else:
+            raise DomainError("Не удалось выбрать свободное имя. Повторите вход.", 409)
         audit(db, player.id, "player.registered")
     return player
 

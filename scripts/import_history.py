@@ -48,7 +48,9 @@ def integer(cell: str, value: str) -> int:
             raise ValueError
         return int(number)
     except ValueError as exc:
-        raise ValueError(f"{cell}: ожидалось целое неотрицательное число, получено {value!r}") from exc
+        raise ValueError(
+            f"{cell}: ожидалось целое неотрицательное число, получено {value!r}"
+        ) from exc
 
 
 def own_goal_author(raw: str) -> str | None:
@@ -127,6 +129,11 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
         for item in corrections.get("unverified_assists", [])
         if item["sheet"] == name
     }
+    switched_assists = {
+        item["cell"]: item
+        for item in corrections.get("cross_team_assists", [])
+        if item["sheet"] == name
+    }
     goals = []
     score = {"white": 0, "black": 0}
     for row in range(15, 48):
@@ -149,13 +156,26 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
                 issues.append(f"{author_col}{row}:{assist_cell}: есть автор/передача без гола")
             if change == 1:
                 own_author = own_goal_author(author_raw)
-                kind = "own_goal" if own_author else "goal"
-                author = own_author or (None if author_raw.casefold() in UNKNOWN_AUTHORS else author_raw)
+                kind = "own_goal" if own_author or author_raw.casefold() == "автогол" else "goal"
+                author = (
+                    own_author
+                    if kind == "own_goal"
+                    else (None if author_raw.casefold() in UNKNOWN_AUTHORS else author_raw)
+                )
                 assist = assist_raw or None
                 if assist_cell in ignored_assists:
                     if assist_raw != ignored_assists[assist_cell]["source_value"]:
                         issues.append(f"{assist_cell}: спорная передача изменилась в источнике")
                     assist = None
+                switched = switched_assists.get(assist_cell)
+                if switched and (
+                    assist_raw != switched["source_value"]
+                    or author_raw != switched["goal_author"]
+                    or side != switched["team"]
+                ):
+                    issues.append(
+                        f"{assist_cell}: подтверждённая передача при смене команды изменилась"
+                    )
                 goals.append(
                     {
                         "team": side,
@@ -166,6 +186,7 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
                         "source_kind": "score_progression",
                         "raw_author": author_raw,
                         "raw_assist": assist_raw,
+                        "assist_team_switch": bool(switched),
                     }
                 )
             score[side] = current
@@ -190,17 +211,19 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
                     }
                 )
     for goal in goals:
-        side = "black" if goal["kind"] == "own_goal" and goal["team"] == "white" else (
-            "white" if goal["kind"] == "own_goal" else goal["team"]
+        side = (
+            "black"
+            if goal["kind"] == "own_goal" and goal["team"] == "white"
+            else ("white" if goal["kind"] == "own_goal" else goal["team"])
         )
-        if goal["author"] and goal["author"] not in (
-            teams[side]["field"] + teams[side]["keeper"]
-        ):
+        if goal["author"] and goal["author"] not in (teams[side]["field"] + teams[side]["keeper"]):
             issues.append(
                 f"Гол, строка {goal['source_row']}: автор {goal['author']!r} не в составе {side}"
             )
-        if goal["assist"] and goal["assist"] not in (
-            teams[goal["team"]]["field"] + teams[goal["team"]]["keeper"]
+        if (
+            goal["assist"]
+            and goal["assist"] not in (teams[goal["team"]]["field"] + teams[goal["team"]]["keeper"])
+            and not (goal.get("assist_team_switch") and goal["assist"] in all_names)
         ):
             issues.append(
                 f"Гол, строка {goal['source_row']}: ассистент {goal['assist']!r} "
@@ -215,7 +238,9 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
         "teams": teams,
         "final_score": final_score,
         "goals": goals,
-        "source_info": {key: raw.get(key, "") for key in ("A51", "B51", "C51", "D51", "E51", "F51")},
+        "source_info": {
+            key: raw.get(key, "") for key in ("A51", "B51", "C51", "D51", "E51", "F51")
+        },
         "source_cells": {
             cell: value
             for cell, value in raw.items()
@@ -226,7 +251,11 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
 
 
 def backup_sqlite(path: Path) -> Path:
-    output = path.parent / "backups" / f"{path.stem}-before-history-{datetime.now().strftime('%Y%m%dT%H%M%S')}.sqlite3"
+    output = (
+        path.parent
+        / "backups"
+        / f"{path.stem}-before-history-{datetime.now().strftime('%Y%m%dT%H%M%S')}.sqlite3"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     source = sqlite3.connect(path)
     target = sqlite3.connect(output)
@@ -238,7 +267,9 @@ def backup_sqlite(path: Path) -> Path:
     return output
 
 
-def import_games(games: list[dict], db_url: str, corrections: dict, source_hash: str, replace_demo: bool) -> dict:
+def import_games(
+    games: list[dict], db_url: str, corrections: dict, source_hash: str, replace_demo: bool
+) -> dict:
     if replace_demo and db_url != DEMO_URL:
         raise ValueError("--replace-demo разрешён только для sqlite:///./.local/demo.db")
     if replace_demo:
@@ -285,6 +316,9 @@ def import_games(games: list[dict], db_url: str, corrections: dict, source_hash:
                 keeper_limit=sum(len(team["keeper"]) for team in game["teams"].values()),
                 status="completed",
             )
+            notes = corrections.get("match_notes", {}).get(game["game_day"], [])
+            if notes:
+                match.description += "\n" + "\n".join(notes)
             db.add(match)
             db.flush()
             db.add(MatchResult(match_id=match.id, completed=True))
@@ -292,19 +326,30 @@ def import_games(games: list[dict], db_url: str, corrections: dict, source_hash:
                 for position in ("field", "keeper"):
                     db.add_all(
                         ResultParticipant(
-                            match_id=match.id, player_id=players[name].id, team=side, position=position
+                            match_id=match.id,
+                            player_id=players[name].id,
+                            team=side,
+                            position=position,
                         )
                         for name in team[position]
                     )
+            switched_assists = []
             for goal in game["goals"]:
                 key = (
                     f"{corrections['spreadsheet_id']}:{game['game_day']}:{goal['team']}:"
                     f"{goal['source_row']}:{goal['source_kind']}"
                 )
+                goal_id = str(uuid5(NAMESPACE_URL, key))
+                if goal.get("assist_team_switch"):
+                    switched_assists.append(
+                        dict(
+                            goal_id=goal_id, player_id=players[goal["assist"]].id, team=goal["team"]
+                        )
+                    )
                 db.add(
                     ResultGoal(
                         match_id=match.id,
-                        id=str(uuid5(NAMESPACE_URL, key)),
+                        id=goal_id,
                         team=goal["team"],
                         kind=goal["kind"],
                         author_id=players[goal["author"]].id if goal["author"] else None,
@@ -327,12 +372,18 @@ def import_games(games: list[dict], db_url: str, corrections: dict, source_hash:
                         "placeholder_players": corrections.get("placeholder_players", []),
                         "goals_source": game["goals"],
                         "source_cells": game["source_cells"],
+                        "assist_team_switches": switched_assists,
+                        "notes": notes,
                     },
                 )
             )
         db.flush()
-        return {"matches": len(games), "players_added": len(new_players), "players_total": len(players),
-                "goals": sum(len(game["goals"]) for game in games)}
+        return {
+            "matches": len(games),
+            "players_added": len(new_players),
+            "players_total": len(players),
+            "goals": sum(len(game["goals"]) for game in games),
+        }
 
 
 def main() -> int:
@@ -343,10 +394,16 @@ def main() -> int:
     )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--replace-demo", action="store_true")
+    parser.add_argument("--dates", nargs="+", help="Импортировать только указанные даты YYYY-MM-DD")
     args = parser.parse_args()
     source_hash = hashlib.sha256(args.xlsx.read_bytes()).hexdigest()
     corrections = source_corrections(args.corrections)
     sheets = read_sheets(args.xlsx)
+    if args.dates:
+        missing = set(args.dates) - sheets.keys()
+        if missing:
+            raise ValueError(f"В источнике нет дат: {sorted(missing)}")
+        sheets = {name: sheets[name] for name in args.dates}
     games = [parse_game(name, sheets[name], corrections) for name in sorted(sheets)]
     if not games:
         raise ValueError("В файле нет вкладок с датами YYYY-MM-DD")

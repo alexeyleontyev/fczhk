@@ -169,7 +169,6 @@ def test_partner_win_rate_and_per_match_contributions(env, call, played):
         "self_assist",
         "opponent_assist",
         "wrong_team",
-        "own_without_author",
         "own_assist",
         "duplicate",
         "remove_scorer",
@@ -189,8 +188,6 @@ def test_invalid_events_are_atomic(env, call, played, case):
         goal["assist_id"] = guest
     if case == "wrong_team":
         goal["author_id"] = guest
-    if case == "own_without_author":
-        goal.update(kind="own_goal", author_id=None, assist_id=None)
     if case == "own_assist":
         goal.update(kind="own_goal", author_id=guest)
     if case == "remove_scorer":

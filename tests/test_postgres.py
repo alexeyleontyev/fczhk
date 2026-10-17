@@ -229,6 +229,75 @@ def test_upgrade_from_mvp1_preserves_data_and_matches_metadata(pg):
         assert differences == []
 
 
+@pytest.mark.parametrize("pg", ["8b1d6a0c42ef"], indirect=True)
+def test_names_and_unknown_own_goal_migration_preserves_data_and_refuses_loss(pg):
+    from sqlalchemy.exc import IntegrityError
+
+    from fczhk.db import now
+    from fczhk.models import MatchResult, ResultGoal
+
+    factory, pid = pg
+    with factory() as db, db.begin():
+        duplicate = Player(alias="Тестовый игрок")
+        db.add(duplicate)
+        db.flush()
+        duplicate_id = duplicate.id
+    config = Config("alembic.ini")
+    with pytest.raises(ValueError, match="повторяющиеся имена"), factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
+    with factory() as db, db.begin():
+        db.delete(db.get(Player, duplicate_id))
+    with factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+    with factory() as db, db.begin():
+        assert db.get(Player, pid).alias == "Тестовый игрок"
+        match = Match(game_day="2026-10-09", starts_at=now(), location="Поле", status="completed")
+        db.add(match)
+        db.flush()
+        db.add(MatchResult(match_id=match.id, completed=True))
+        db.flush()
+        db.add(ResultGoal(match_id=match.id, id=str(uuid4()), team="white", kind="own_goal"))
+        db.flush()
+        with pytest.raises(IntegrityError), db.begin_nested():
+            db.add(Player(alias="Тестовый игрок"))
+            db.flush()
+        with pytest.raises(IntegrityError), db.begin_nested():
+            db.add(ResultGoal(match_id=match.id, id=str(uuid4()), team="white", kind="invalid"))
+            db.flush()
+    with pytest.raises(ValueError, match="уточните авторов"), factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.downgrade(config, "8b1d6a0c42ef")
+    with factory() as db:
+        assert db.scalar(select(ResultGoal)).author_id is None
+
+
+def test_concurrent_telegram_registration_keeps_names_unique(pg):
+    from threading import Barrier
+
+    from fczhk.auth import player_for_telegram
+
+    factory, _ = pg
+    ready = Barrier(2)
+
+    def register_user(tid):
+        ready.wait(timeout=5)
+        with factory() as db, db.begin():
+            player = player_for_telegram(db, tid, "Одинаковое имя")
+            return player.id, player.alias
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        created = list(pool.map(register_user, [7001, 7002]))
+    assert len({pid for pid, _ in created}) == len({alias for _, alias in created}) == 2
+    assert "Одинаковое имя" in {alias for _, alias in created}
+    with factory() as db, db.begin():
+        for tid, (pid, alias) in zip([7001, 7002], created, strict=True):
+            player = player_for_telegram(db, tid, "Теперь другое имя")
+            assert (player.id, player.alias) == (pid, alias)
+
+
 def test_concurrent_result_edits_are_atomic(pg):
     from datetime import timedelta
 

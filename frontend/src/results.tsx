@@ -18,6 +18,7 @@ export type Result = {
   score: Record<Team, number>
   participants: Participant[]
   goals: Goal[]
+  assist_team_switches?: { goal_id: string; player_id: number; team: Team }[]
 }
 const teams: Team[] = ['white', 'black']
 const label = (team: Team) => (team === 'white' ? '⚪ Белые' : '⚫ Чёрные')
@@ -141,8 +142,13 @@ export function MatchResult({
               {data.goals.map((g) => (
                 <p key={g.id}>
                   {label(g.team)} · {name(g.author_id)}
-                  {g.kind === 'own_goal' ? ' — автогол в пользу соперника' : ''}
+                  {g.kind === 'own_goal' ? ' — автогол' : ''}
                   {g.assist_id ? ` · передача: ${name(g.assist_id)}` : ''}
+                  {data.assist_team_switches?.some(
+                    (s) => s.goal_id === g.id && s.player_id === g.assist_id,
+                  )
+                    ? ' (играл за обе команды)'
+                    : ''}
                 </p>
               ))}
             </>
@@ -289,9 +295,7 @@ export function MatchResult({
                         })
                       }
                     >
-                      <option value="">
-                        {g.kind === 'own_goal' ? 'Укажите автора автогола' : 'Автор неизвестен'}
-                      </option>
+                      <option value="">Автор неизвестен</option>
                       {data.participants
                         .filter((p) =>
                           g.kind === 'own_goal' ? p.team !== g.team : p.team === g.team,
@@ -314,7 +318,17 @@ export function MatchResult({
                       >
                         <option value="">Без передачи / неизвестно</option>
                         {data.participants
-                          .filter((p) => p.team === g.team && p.player_id !== g.author_id)
+                          .filter(
+                            (p) =>
+                              p.player_id !== g.author_id &&
+                              (p.team === g.team ||
+                                data.assist_team_switches?.some(
+                                  (s) =>
+                                    s.goal_id === g.id &&
+                                    s.player_id === p.player_id &&
+                                    s.team === g.team,
+                                )),
+                          )
                           .map((p) => (
                             <option key={p.player_id} value={p.player_id}>
                               {p.alias}

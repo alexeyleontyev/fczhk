@@ -5,7 +5,7 @@ from collections import Counter
 from sqlalchemy import delete, select
 
 from .db import now
-from .models import Match, MatchResult, Player, ResultGoal, ResultParticipant
+from .models import Audit, Match, MatchResult, Player, ResultGoal, ResultParticipant
 from .ratings import lock_ratings
 from .services import DomainError, audit, entries
 
@@ -31,11 +31,22 @@ def result_data(db, match):
     else:
         participants = [r for r in entries(db, match.id) if r.selected and r.team]
         goals = []
+    source = db.scalar(
+        select(Audit)
+        .where(Audit.match_id == match.id, Audit.action == "history.imported")
+        .order_by(Audit.id.desc())
+        .limit(1)
+    )
+    switches = source.data.get("assist_team_switches", []) if source else []
     return dict(
         exists=result is not None,
         completed=bool(result and result.completed),
         version=match.version,
         score={team: sum(g.team == team for g in goals) for team in ("white", "black")},
+        assist_team_switches=[
+            {**item, "player_id": canonical.get(item["player_id"], item["player_id"])}
+            for item in switches
+        ],
         participants=[
             dict(
                 player_id=canonical[p.player_id],
@@ -66,6 +77,9 @@ def save_result(db, actor, match, body):
     # Serializes guest linking with identity validation and replacement of result rows.
     lock_ratings(db)
     old = result_data(db, match)
+    switches = {
+        (item["goal_id"], item["player_id"], item["team"]) for item in old["assist_team_switches"]
+    }
     if old["completed"] and not body.completed:
         raise DomainError("Исправления завершенного матча сохраняются как завершенный результат")
     participants = {p.player_id: p for p in body.participants}
@@ -84,13 +98,19 @@ def save_result(db, actor, match, body):
         if g.assist_id is not None and g.assist_id not in participants:
             raise DomainError("Автор передачи должен быть фактическим участником")
         if g.kind == "own_goal":
-            if not g.author_id or g.assist_id or participants[g.author_id].team == g.team:
-                raise DomainError("Автогол: укажите автора из команды соперника без передачи")
+            if g.assist_id or (g.author_id and participants[g.author_id].team == g.team):
+                raise DomainError(
+                    "Автогол: автор из команды соперника либо неизвестен; без передачи"
+                )
         else:
             if g.author_id and participants[g.author_id].team != g.team:
                 raise DomainError("Автор гола должен играть за команду, получившую гол")
             if g.assist_id and (
-                g.assist_id == g.author_id or participants[g.assist_id].team != g.team
+                g.assist_id == g.author_id
+                or (
+                    participants[g.assist_id].team != g.team
+                    and (str(g.id), g.assist_id, g.team) not in switches
+                )
             ):
                 raise DomainError("Передача допустима от другого участника той же команды")
     result = db.get(MatchResult, match.id)
