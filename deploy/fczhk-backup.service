@@ -1,0 +1,13 @@
+[Unit]
+Description=FCZHK verified offsite PostgreSQL backup
+Requires=docker.service
+After=docker.service network-online.target
+OnFailure=fczhk-backup-failure.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fczhk
+EnvironmentFile=/etc/fczhk-backup.env
+ExecStart=/bin/bash /opt/fczhk/scripts/backup-offsite.sh
+TimeoutStartSec=30min
+UMask=0077

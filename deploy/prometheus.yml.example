@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 30s
+rule_files: [prometheus-rules.yml]
+scrape_configs:
+  - job_name: fczhk
+    scheme: https
+    metrics_path: /api/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/fczhk-metrics-token
+    static_configs:
+      - targets: [football.example.com]
+# Connect your Alertmanager and notification receiver before production.
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: [alertmanager:9093]

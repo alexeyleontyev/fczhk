@@ -798,6 +798,113 @@ p {
   margin-top: 24px;
   font-size: 11px;
 }
+.game-rating-board {
+  margin-bottom: 24px;
+}
+.leaderboard-board {
+  margin-bottom: 24px;
+}
+.leaderboard-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 16px 0;
+}
+.leaderboard-filters button {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--paper);
+  color: var(--muted);
+  padding: 7px 11px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.leaderboard-filters button.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+}
+.player-list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0 18px;
+}
+.player-list-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.player-list-filters label:first-child {
+  flex: 1 1 170px;
+}
+.player-list-filters label:nth-child(2) {
+  flex: 0 0 110px;
+}
+.player-list-filters input {
+  margin-top: 0;
+  padding: 9px 10px;
+}
+.leaderboard-list {
+  margin: 12px 0 18px;
+  border-top: 1px solid #e8ece4;
+}
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 26px minmax(110px, 1fr) minmax(150px, 1fr) 68px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #e8ece4;
+  font-size: 12px;
+}
+.leaderboard-row .button {
+  justify-self: start;
+  text-align: left;
+}
+.leaderboard-row strong {
+  text-align: right;
+}
+@media (max-width: 560px) {
+  .leaderboard-row {
+    grid-template-columns: 18px minmax(80px, 1fr) 72px;
+    gap: 5px;
+    font-size: 10px;
+  }
+  .leaderboard-row small {
+    grid-column: 2 / 3;
+    grid-row: 2;
+  }
+  .leaderboard-row strong {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+}
+.game-rating-list {
+  margin: 18px 0;
+  border-top: 1px solid #e8ece4;
+}
+.game-rating-row {
+  display: grid;
+  grid-template-columns: 24px minmax(120px, 1fr) 70px minmax(140px, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid #e8ece4;
+  font-size: 12px;
+}
+.game-rating-row .button {
+  justify-self: start;
+}
+@media (max-width: 560px) {
+  .game-rating-row {
+    grid-template-columns: 18px minmax(80px, 1fr) 48px minmax(95px, 1fr);
+    gap: 5px;
+    font-size: 10px;
+  }
+}
 .player-card {
   display: flex;
   align-items: center;
@@ -1497,6 +1604,13 @@ footer > span:first-child {
   color: var(--muted);
   font-size: 12px;
 }
+.stats-grid .overall-win-rate-stat {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: baseline;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
 .stat-link {
   display: flex;
   justify-content: space-between;
@@ -1510,6 +1624,31 @@ footer > span:first-child {
   background: none;
   color: inherit;
   cursor: pointer;
+}
+.partner-details {
+  text-align: right;
+}
+.percent-high {
+  color: #17643e;
+}
+.percent-low {
+  color: #ac2828;
+}
+.percent-even,
+.partner-outcomes {
+  color: #000;
+}
+.partner-more summary,
+.history-more summary {
+  padding: 12px 0;
+  color: var(--green);
+  cursor: pointer;
+}
+.match-contributions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 8px;
+  white-space: nowrap;
 }
 .result-editor {
   padding: 0;

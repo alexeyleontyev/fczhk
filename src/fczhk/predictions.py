@@ -3,7 +3,7 @@
 from sqlalchemy import case, func, select
 
 from .db import now
-from .models import MatchResult, Player, Prediction, ResultGoal
+from .models import Match, MatchResult, Player, Prediction, ResultGoal
 from .services import DomainError, audit
 
 
@@ -36,6 +36,8 @@ def standings(db):
         select(Prediction, Player.alias, scores.c.white, scores.c.black)
         .join(Player, Player.id == Prediction.player_id)
         .outerjoin(scores, scores.c.match_id == Prediction.match_id)
+        .join(Match, Match.id == Prediction.match_id)
+        .where(Match.status != "cancelled")
     )
     totals = {}
     for prediction, alias, white, black in db.execute(query):

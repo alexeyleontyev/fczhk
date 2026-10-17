@@ -35,7 +35,13 @@ def pg(request):
     control = create_engine(URL)
     with control.begin() as conn:
         conn.execute(text(f'CREATE SCHEMA "{namespace}"'))
-    engine = create_engine(URL, connect_args={"options": f"-csearch_path={namespace}"})
+    engine = create_engine(
+        URL,
+        pool_timeout=1,
+        connect_args={
+            "options": f"-csearch_path={namespace} -clock_timeout=5000 -cstatement_timeout=10000"
+        },
+    )
     config = Config("alembic.ini")
     # Run the real migration on the test connection, not metadata.create_all.
     with engine.begin() as conn:
@@ -404,3 +410,86 @@ def test_prediction_deadline_is_checked_after_waiting_for_match_lock(pg, monkeyp
         assert future.result(timeout=5) == 409
     with factory() as db:
         assert list(db.scalars(select(Prediction))) == []
+
+
+async def test_parallel_api_reads_do_not_starve_connection_pool(pg):
+    import asyncio
+
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy import event
+
+    from fczhk.api import create_app
+    from fczhk.auth import create_session
+
+    factory, pid = pg
+    cfg = Settings(_env_file=None, env="test")
+    with factory() as db, db.begin():
+        token = create_session(db, cfg, db.get(Player, pid))
+    engine = factory.kw["bind"]
+
+    # Reproduce contention even on fast CI machines: each checked-out connection
+    # remains busy while the event loop must continue to release other requests.
+    def pause(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("SELECT"):
+            cursor.execute("SELECT pg_sleep(0.005)")
+
+    event.listen(engine, "before_cursor_execute", pause)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=create_app(cfg, factory)), base_url="http://test"
+        ) as client:
+            responses = await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+                        for _ in range(30)
+                    ]
+                ),
+                timeout=10,
+            )
+        assert all(response.status_code == 200 for response in responses)
+    finally:
+        event.remove(engine, "before_cursor_execute", pause)
+
+
+async def test_simultaneous_login_of_same_identity_commits_without_event_loop_lock(pg, monkeypatch):
+    import asyncio
+
+    from httpx import ASGITransport, AsyncClient
+
+    from fczhk.api import create_app
+    from fczhk.models import LoginSession
+    from tests.helpers import signed_data
+
+    factory, _ = pg
+    cfg = Settings(_env_file=None, env="test", bot_token="123:test")
+    reached = 0
+    ready = asyncio.Event()
+
+    async def check_member(*args):
+        nonlocal reached
+        reached += 1
+        if reached == 2:
+            ready.set()
+        await ready.wait()
+
+    monkeypatch.setattr("fczhk.auth.check_member", check_member)
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(cfg, factory)), base_url="http://test"
+    ) as client:
+        responses = await asyncio.wait_for(
+            asyncio.gather(
+                *[
+                    client.post(
+                        "/api/auth/telegram", json={"init_data": signed_data(cfg.bot_token)}
+                    )
+                    for _ in range(2)
+                ]
+            ),
+            timeout=10,
+        )
+    assert [r.status_code for r in responses] == [200, 200]
+    assert responses[0].json()["token"] != responses[1].json()["token"]
+    with factory() as db:
+        assert len(list(db.scalars(select(LoginSession)))) == 2
+        assert len(list(db.scalars(select(Player).where(Player.telegram_id == 102)))) == 1

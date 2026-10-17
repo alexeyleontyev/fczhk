@@ -2,13 +2,14 @@ import hashlib
 import json
 from fractions import Fraction
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import balancing
+from . import balancing, game_balancing, game_ratings
 from .db import now
 from .models import (
     BalanceRun,
+    ImportedRating,
     Match,
     MatchRating,
     Player,
@@ -45,20 +46,44 @@ def registered_player(db: Session, player_id: int) -> Player:
 
 
 def aggregate(db: Session, ids: list[int]) -> dict:
-    rows = db.execute(
-        select(
-            Rating.player_id,
-            Rating.position,
-            func.sum(Rating.attack),
-            func.sum(Rating.defense),
-            func.count(Rating.id),
-        )
-        .where(Rating.player_id.in_(ids))
-        .group_by(Rating.player_id, Rating.position)
+    if not ids:
+        return {}
+    canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
+    relevant = [pid for pid, target in canonical.items() if target in ids]
+    current = list(
+        db.scalars(select(Rating).where(Rating.player_id.in_(relevant)).order_by(Rating.id))
     )
+    imported = list(
+        db.scalars(
+            select(ImportedRating)
+            .where(ImportedRating.player_id.in_(relevant))
+            .order_by(ImportedRating.id)
+        )
+    )
+    # Guest links and later app edits must not turn one person's vote into two.
+    votes = {}
+    for row in imported:
+        key = (canonical[row.author_id], canonical[row.player_id], row.position)
+        if key[0] != key[1]:
+            votes[key] = (row.attack_milli, row.defense_milli)
+    for row in current:
+        key = (canonical[row.author_id], canonical[row.player_id], row.position)
+        if key[0] != key[1]:
+            votes[key] = (row.attack * 100 if row.attack is not None else None, row.defense * 100)
+    totals = {}
+    for (_, pid, pos), (attack, defense) in votes.items():
+        values = totals.setdefault((pid, pos), [0, 0, 0])
+        if attack is not None:
+            values[0] += attack
+        values[1] += defense
+        values[2] += 1
     return {
-        (pid, pos): (Fraction(a, n * 10) if a is not None else None, Fraction(d, n * 10), n)
-        for pid, pos, a, d, n in rows
+        key: (
+            Fraction(attack, count * 1000) if key[1] == "field" else None,
+            Fraction(defense, count * 1000),
+            count,
+        )
+        for key, (attack, defense, count) in totals.items()
     }
 
 
@@ -77,6 +102,44 @@ def public_averages(db: Session, ids: list[int], admin=False) -> dict:
                 row["count"] = n
             result[pid][pos] = row
     return result
+
+
+def community_leaderboards(db: Session) -> dict:
+    """Current mean community scores, excluding unrated positions."""
+    people = list(db.scalars(select(Player).where(Player.merged_into.is_(None))))
+    scores = aggregate(db, [p.id for p in people])
+    boards = {}
+    for metric, position in (
+        ("field_total", "field"),
+        ("field_attack", "field"),
+        ("field_defense", "field"),
+        ("keeper_defense", "keeper"),
+    ):
+        rows = []
+        for player in people:
+            attack, defense, _ = scores.get((player.id, position), (None, None, 0))
+            if defense is None:
+                continue
+            value = {
+                "field_total": attack + defense if attack is not None else None,
+                "field_attack": attack,
+                "field_defense": defense,
+                "keeper_defense": defense,
+            }[metric]
+            if value is not None:
+                rows.append(
+                    dict(
+                        player_id=player.id,
+                        alias=player.alias,
+                        score=float(value),
+                        attack=float(attack) if attack is not None else None,
+                        defense=float(defense),
+                    )
+                )
+        boards[metric] = sorted(
+            rows, key=lambda row: (-row["score"], row["alias"], row["player_id"])
+        )
+    return {"boards": boards}
 
 
 def rating_data(row: Rating | RatingHistory | None) -> dict | None:
@@ -100,8 +163,40 @@ def review_data(db: Session, actor: int, target: int, position: str, admin: bool
     result = dict(
         own=rating_data(own), averages=public_averages(db, [target], admin)[target][position]
     )
+    canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
+    target_ids = [pid for pid, resolved in canonical.items() if resolved == target]
+    imported = list(
+        db.scalars(
+            select(ImportedRating)
+            .where(ImportedRating.player_id.in_(target_ids), ImportedRating.position == position)
+            .order_by(ImportedRating.id)
+        )
+    )
+    if own is None:
+        previous = next(
+            (row for row in reversed(imported) if canonical[row.author_id] == actor), None
+        )
+        if previous:
+            result["imported_own"] = dict(
+                attack=previous.attack_milli / 1000,
+                defense=previous.defense_milli / 1000,
+            )
     if admin:
-        reviews = []
+        people = {p.id: p for p in db.scalars(select(Player))}
+        reviews = {}
+        for row in imported:
+            author_id = canonical[row.author_id]
+            if author_id != target:
+                reviews[author_id] = dict(
+                    author_id=author_id,
+                    author=people[author_id].alias,
+                    attack=row.attack_milli / 1000,
+                    defense=row.defense_milli / 1000,
+                    revision=0,
+                    at=row.imported_at,
+                    history=[],
+                    source="sheet",
+                )
         for rating, author in db.execute(
             select(Rating, Player)
             .join(Player, Player.id == Rating.author_id)
@@ -115,15 +210,16 @@ def review_data(db: Session, actor: int, target: int, position: str, admin: bool
                     .order_by(RatingHistory.revision.desc())
                 )
             )
-            reviews.append(
-                dict(
-                    author_id=author.id,
-                    author=author.alias,
-                    **rating_data(rating),
-                    history=[rating_data(h) for h in history],
-                )
+            author_id = canonical[author.id]
+            reviews[author_id] = dict(
+                author_id=author_id,
+                author=people[author_id].alias,
+                **rating_data(rating),
+                history=[rating_data(h) for h in history],
             )
-        result["reviews"] = reviews
+        result["reviews"] = sorted(
+            reviews.values(), key=lambda row: (row["author"], row["author_id"])
+        )
     return result
 
 
@@ -171,6 +267,9 @@ def save_rating(db: Session, actor: int, target: int, body):
 
 
 def set_temporary(db: Session, actor: int, match: Match, reg: Registration, body: RatingValues):
+    from .services import ensure_pregame
+
+    ensure_pregame(db, match)
     lock_ratings(db)
     # The API may have loaded the guest card before a concurrent link committed.
     db.refresh(reg)
@@ -253,16 +352,52 @@ def inputs_for(db: Session, match: Match) -> tuple[list[dict], str]:
     return inputs, fingerprint
 
 
+def game_inputs_for(db: Session, match: Match) -> tuple[list[dict], str]:
+    inputs, _ = inputs_for(db, match)
+    replayed = game_ratings.replay(db, before_day=match.game_day)
+    for row in inputs:
+        rating = replayed["players"].get(row["player_id"])
+        row["game_mu"] = rating["mu"] if rating else 25.0
+        row["game_sigma"] = rating["sigma"] if rating else 25.0 / 3.0
+        row["game_count"] = rating["games"] if rating else 0
+    prior = [
+        (game.match_id, game.day, game.white, game.black, game.score)
+        for game in game_ratings.history(db)
+        if game.day < match.game_day
+    ]
+    key = {
+        "model": game_ratings.MODEL_VERSION,
+        "margin": 0.0,
+        "game_day": match.game_day,
+        "prior": prior,
+        "roster": [
+            (row["registration_id"], row["player_id"], row["game_mu"], row["game_sigma"])
+            for row in inputs
+        ],
+    }
+    fingerprint = hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()
+    return inputs, fingerprint
+
+
 def create_run(db: Session, actor: int, match: Match, settings: BalanceSettings) -> BalanceRun:
     if match.status not in ("finalized", "approved"):
         raise DomainError("Сначала финализируйте список")
     lock_ratings(db)
-    inputs, fingerprint = inputs_for(db, match)
-    missing = [r["alias"] for r in inputs if r["source"] == "missing"]
-    if missing:
-        raise DomainError("Нужны рейтинги полевых: " + ", ".join(missing))
+    inputs, fingerprint = (
+        game_inputs_for(db, match) if settings.method == "game" else inputs_for(db, match)
+    )
+    if settings.method == "community":
+        missing = [r["alias"] for r in inputs if r["source"] == "missing"]
+        if missing:
+            raise DomainError("Нужны рейтинги полевых: " + ", ".join(missing))
     try:
-        result = balancing.generate(inputs, settings)
+        result = (
+            game_balancing.generate(inputs, settings)
+            if settings.method == "game"
+            else balancing.generate(inputs, settings)
+        )
+        if settings.method == "game":
+            result["rating_model_version"] = game_ratings.MODEL_VERSION
     except ValueError as exc:
         raise DomainError(str(exc)) from exc
     run = BalanceRun(
@@ -289,7 +424,11 @@ def create_run(db: Session, actor: int, match: Match, settings: BalanceSettings)
 
 
 def run_data(db: Session, match: Match, run: BalanceRun) -> dict:
-    _, fingerprint = inputs_for(db, match)
+    _, fingerprint = (
+        game_inputs_for(db, match)
+        if run.settings.get("method") == "game"
+        else inputs_for(db, match)
+    )
     return dict(
         id=run.id,
         roster_version=run.roster_version,
@@ -348,6 +487,8 @@ def team_rating_data(db: Session, match: Match, approval=False) -> dict:
     inputs, fingerprint = inputs_for(db, match)
     draft = db.get(TeamRatingDraft, match.id)
     run = db.get(BalanceRun, draft.run_id) if draft else None
+    if run and run.settings.get("method") == "game":
+        _, fingerprint = game_inputs_for(db, match)
     stale = bool(
         run and (run.fingerprint != fingerprint or run.roster_version != match.roster_version)
     )
@@ -359,17 +500,25 @@ def team_rating_data(db: Session, match: Match, approval=False) -> dict:
     if run:
         inputs = run.inputs
     assignments = {r.id: r.team for r in entries(db, match.id) if r.selected}
+    game_summary = (
+        game_balancing.game_summary(inputs, assignments)
+        if draft and run and run.settings.get("method") == "game"
+        else None
+    )
     return dict(
         inputs=inputs,
         fingerprint=run.fingerprint if run else fingerprint,
         roster_version=match.roster_version,
-        method=("auto-edited" if draft.edited else "auto")
+        method=("auto-game-edited" if draft.edited else "auto-game")
+        if draft and run and run.settings.get("method") == "game"
+        else ("auto-edited" if draft.edited else "auto")
         if draft
         else formation_method(db, match, assignments),
         run_id=run.id if run else None,
         variant=draft.variant if draft else None,
         settings=run.settings if run else None,
         summary=balancing.summary(inputs, assignments),
+        game_summary=game_summary,
         frozen=False,
         stale=stale,
     )
@@ -378,5 +527,6 @@ def team_rating_data(db: Session, match: Match, approval=False) -> dict:
 def public_team_data(db: Session, match: Match) -> dict:
     data = team_rating_data(db, match)
     return {
-        key: data.get(key) for key in ("summary", "method", "frozen", "stale", "run_id", "variant")
+        key: data.get(key)
+        for key in ("summary", "game_summary", "method", "frozen", "stale", "run_id", "variant")
     }

@@ -1,5 +1,7 @@
 import argparse
 import asyncio
+import json
+import signal
 from datetime import datetime, timedelta
 
 import uvicorn
@@ -103,7 +105,17 @@ def main():
     parser = argparse.ArgumentParser(description="FCZHK")
     parser.add_argument(
         "command",
-        choices=["demo", "serve", "migrate", "worker", "demo-worker", "bot", "configure-bot"],
+        choices=[
+            "demo",
+            "serve",
+            "migrate",
+            "worker",
+            "demo-worker",
+            "bot",
+            "configure-bot",
+            "worker-health",
+            "check-bot",
+        ],
     )
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--once", action="store_true")
@@ -114,7 +126,49 @@ def main():
     elif args.command in ("worker", "demo-worker"):
         from .worker import run_worker
 
-        asyncio.run(run_worker(cfg, once=args.once))
+        async def worker_main():
+            loop = asyncio.get_running_loop()
+            task = asyncio.current_task()
+            loop.add_signal_handler(signal.SIGTERM, task.cancel)
+            try:
+                await run_worker(cfg, once=args.once)
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.run(worker_main())
+    elif args.command == "worker-health":
+        from .operations import status
+
+        _, factory = database(cfg.database_url)
+        with factory() as db:
+            healthy = status(db, cfg)["worker"]["healthy"]
+        raise SystemExit(0 if healthy else 1)
+    elif args.command == "check-bot":
+        from aiogram import Bot
+
+        async def check_bot():
+            async with Bot(cfg.bot_token) as bot:
+                info = await bot.get_webhook_info()
+                # Do not print a URL or Telegram error text: these can contain secrets.
+                expected = cfg.public_url.rstrip("/") + "/api/telegram/webhook"
+                recent_error = info.last_error_date and now() - info.last_error_date < timedelta(
+                    minutes=5
+                )
+                healthy = info.url == expected and not recent_error
+                print(
+                    json.dumps(
+                        dict(
+                            configured=info.url == expected,
+                            pending=info.pending_update_count,
+                            last_error_at=info.last_error_date.isoformat()
+                            if info.last_error_date
+                            else None,
+                        )
+                    )
+                )
+                return healthy
+
+        raise SystemExit(0 if asyncio.run(check_bot()) else 1)
     elif args.command == "bot":
         from .bot import poll
 
@@ -129,5 +183,9 @@ def main():
         from .api import create_app
 
         uvicorn.run(
-            create_app(cfg), host="127.0.0.1" if cfg.env == "demo" else "0.0.0.0", port=args.port
+            create_app(cfg),
+            host="127.0.0.1" if cfg.env == "demo" else "0.0.0.0",
+            port=args.port,
+            proxy_headers=True,
+            forwarded_allow_ips=cfg.forwarded_allow_ips,
         )

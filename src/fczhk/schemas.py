@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 from uuid import UUID
@@ -16,12 +17,34 @@ class Login(Payload):
     init_data: str = Field(max_length=16000)
 
 
+class BrowserLogin(Payload):
+    id_token: str = Field(min_length=1, max_length=16000)
+
+
 class Name(Payload):
     alias: str = Field(min_length=2, max_length=60)
 
 
 class Version(Payload):
     version: int = Field(ge=1)
+
+
+class Cancellation(Version):
+    reason: str = Field(min_length=2, max_length=300)
+
+
+class SkipDay(Payload):
+    game_day: date
+    reason: str = Field(min_length=2, max_length=300)
+
+
+class ClaimProfile(Payload):
+    guest_id: int = Field(gt=0)
+
+
+class ResolveClaim(Payload):
+    guest_id: int = Field(gt=0)
+    accept: bool
 
 
 class GameFields(Payload):
@@ -121,6 +144,7 @@ class MatchRatingEdit(RatingValues, Version):
 
 
 class BalanceSettings(Payload):
+    method: Literal["community", "game"] = "community"
     epsilon: Decimal = Field(default=Decimal("0.10"), ge=0, le=10, decimal_places=2)
     max_epsilon: Decimal = Field(default=Decimal("0.50"), ge=0, le=10, decimal_places=2)
     epsilon_step: Decimal = Field(default=Decimal("0.10"), gt=0, le=10, decimal_places=2)

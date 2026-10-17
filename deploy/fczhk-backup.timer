@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily FCZHK offsite backup and restore rehearsal
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

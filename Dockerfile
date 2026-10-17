@@ -15,9 +15,11 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ ./src/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
+COPY scripts/import_history.py scripts/import_community_ratings.py ./scripts/
+COPY data/historical_import_corrections.json data/community_rating_aliases.json ./data/
 COPY --from=frontend /frontend/dist ./frontend/dist
 RUN uv sync --frozen --no-dev && useradd --create-home app && chown -R app:app /app
 ENV UV_NO_SYNC=1
 USER app
 EXPOSE 8000
-CMD ["uv", "run", "--frozen", "--no-dev", "fczhk", "serve"]
+CMD ["/app/.venv/bin/fczhk", "serve"]

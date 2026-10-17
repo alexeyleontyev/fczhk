@@ -29,7 +29,7 @@ class LoginSession(Base):
     __tablename__ = "login_sessions"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
-    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
     checked_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 
 
@@ -170,6 +170,30 @@ class RatingHistory(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 
 
+class ImportedRating(Base):
+    """Exact source vote; current app votes from the same author supersede it."""
+
+    __tablename__ = "imported_ratings"
+    __table_args__ = (
+        UniqueConstraint("source_id", "author_id", "player_id", "position"),
+        CheckConstraint("author_id <> player_id"),
+        CheckConstraint("position = 'field'"),
+        CheckConstraint("attack_milli BETWEEN 0 AND 5000"),
+        CheckConstraint("defense_milli BETWEEN 0 AND 5000"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(100))
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    author_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    position: Mapped[str] = mapped_column(String(10), default="field")
+    attack_milli: Mapped[int] = mapped_column()
+    defense_milli: Mapped[int] = mapped_column()
+    attack_cell: Mapped[str] = mapped_column(String(12))
+    defense_cell: Mapped[str] = mapped_column(String(12))
+    imported_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
 class MatchRating(Base):
     """A fallback bound to a registration, never a permanent player rating."""
 
@@ -303,4 +327,29 @@ class Prediction(Base):
     black_score: Mapped[int] = mapped_column()
     revision: Mapped[int] = mapped_column(default=1)
     approved_version: Mapped[int] = mapped_column()
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class ServiceHeartbeat(Base):
+    __tablename__ = "service_heartbeats"
+    name: Mapped[str] = mapped_column(String(30), primary_key=True)
+    checked_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+    succeeded_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    error: Mapped[str | None] = mapped_column(String(100))
+
+
+class SkippedGameDay(Base):
+    __tablename__ = "skipped_game_days"
+    game_day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    reason: Mapped[str] = mapped_column(String(300))
+    actor_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class ProfileClaim(Base):
+    __tablename__ = "profile_claims"
+    __table_args__ = (CheckConstraint("status IN ('pending', 'accepted', 'rejected')"),)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), primary_key=True)
+    guest_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    status: Mapped[str] = mapped_column(String(15), default="pending")
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)

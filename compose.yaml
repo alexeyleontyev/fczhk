@@ -17,41 +17,71 @@ services:
       retries: 10
     restart: unless-stopped
 
-  app:
+  migrate:
     profiles: [production]
-    build: .
+    image: ${FCZHK_IMAGE:-fczhk:local}
     env_file: .env
-    command: ["sh", "-c", "uv run --frozen --no-dev fczhk migrate && uv run --frozen --no-dev fczhk serve"]
-    expose: ["8000"]
+    command: ["/app/.venv/bin/fczhk", "migrate"]
     depends_on:
       db:
         condition: service_healthy
+    restart: "no"
+
+  app:
+    profiles: [production]
+    image: ${FCZHK_IMAGE:-fczhk:local}
+    env_file: .env
+    environment:
+      # Port 8000 is accessible only inside Docker; Caddy sanitizes X-Forwarded-For.
+      FCZHK_FORWARDED_ALLOW_IPS: "*"
+    command: ["/app/.venv/bin/fczhk", "serve"]
+    expose: ["8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 15s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    stop_grace_period: 30s
 
   worker:
     profiles: [production]
-    build: .
+    image: ${FCZHK_IMAGE:-fczhk:local}
     env_file: .env
-    command: ["uv", "run", "--frozen", "--no-dev", "fczhk", "worker"]
+    command: ["/app/.venv/bin/fczhk", "worker"]
     depends_on:
       app:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/fczhk", "worker-health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
 
   bot:
     profiles: [polling]
-    build: .
+    image: ${FCZHK_IMAGE:-fczhk:local}
     env_file: .env
-    command: ["uv", "run", "--frozen", "--no-dev", "fczhk", "bot"]
+    command: ["/app/.venv/bin/fczhk", "bot"]
     depends_on:
       db:
         condition: service_healthy
     restart: unless-stopped
+
+  tools:
+    profiles: [tools]
+    image: ${FCZHK_IMAGE:-fczhk:local}
+    env_file: .env
+    command: ["/app/.venv/bin/fczhk", "check-bot"]
+    depends_on:
+      db:
+        condition: service_healthy
 
   proxy:
     profiles: [production]

@@ -16,6 +16,7 @@ from .models import (
     Publication,
     Registration,
     ResultParticipant,
+    SkippedGameDay,
     TeamRatingDraft,
     TeamRatingSnapshot,
     TeamSnapshot,
@@ -141,15 +142,35 @@ def match_data(db: Session, match: Match) -> dict:
         )
     )
     auction = latest(db, match)
+    historical = (
+        db.scalar(
+            select(Audit.id)
+            .where(Audit.match_id == match.id, Audit.action == "history.imported")
+            .limit(1)
+        )
+        is not None
+    )
+    cancellation = (
+        db.scalar(
+            select(Audit.data)
+            .where(Audit.match_id == match.id, Audit.action == "match.cancelled")
+            .order_by(Audit.id.desc())
+            .limit(1)
+        )
+        if match.status == "cancelled"
+        else None
+    )
     return dict(
         id=match.id,
         starts_at=match.starts_at,
         game_day=match.game_day,
+        historical=historical,
         location=match.location,
         description=match.description,
         cost=match.cost,
         payment_details=match.payment_details,
         status=match.status,
+        cancellation_reason=cancellation.get("reason") if cancellation else None,
         version=match.version,
         field_limit=match.field_limit,
         keeper_limit=match.keeper_limit,
@@ -176,6 +197,8 @@ def create_match(db: Session, actor: int | None, data: dict) -> Match:
     # All creators lock the same template row: manual and scheduled creation serialize.
     db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
     day = data["starts_at"].astimezone(MOSCOW).date().isoformat()
+    if db.get(SkippedGameDay, day):
+        raise DomainError("Эта неделя пропущена. Сначала снимите пропуск в расписании.", 409)
     if db.scalar(select(Match.id).where(Match.game_day == day)):
         raise DomainError("На эту дату игра уже создана", 409)
     match = Match(game_day=day, **data)
@@ -188,6 +211,10 @@ def create_match(db: Session, actor: int | None, data: dict) -> Match:
 def text_for(db: Session, match: Match, kind: str) -> str:
     when = match.starts_at.astimezone(MOSCOW).strftime("%d.%m.%Y · %H:%M МСК")
     header = f"ФКЖК · {when}\n📍 {match.location}"
+    if kind == "cancellation":
+        return (
+            f"❌ Игра отменена\n{header}\n\nВозврат или перенос оплаты согласуйте с организатором."
+        )
     if kind == "collection":
         return (
             f"⚽ Открыта запись\n{header}\n\n"
@@ -285,6 +312,8 @@ def cancel(db: Session, actor: int, match: Match, r: Registration, admin=False):
 
 
 def confirm_payment(db: Session, actor: int, match: Match, r: Registration, paid: bool):
+    if match.status == "cancelled":
+        raise DomainError("Игра отменена. История оплат сохранена.", 409)
     if not r.active:
         raise DomainError("Заявка отменена")
     if r.paid == paid:
@@ -450,6 +479,14 @@ def swap_team_colors(db: Session, actor: int, match: Match):
             summary = data.get("summary")
             if summary:
                 summary["white"], summary["black"] = summary["black"], summary["white"]
+            game_summary = data.get("game_summary")
+            if game_summary:
+                for suffix in ("mu", "total"):
+                    white, black = f"white_{suffix}", f"black_{suffix}"
+                    game_summary[white], game_summary[black] = (
+                        game_summary[black],
+                        game_summary[white],
+                    )
             db.add(TeamRatingSnapshot(snapshot_id=snapshot.id, data=data))
     else:
         draft = db.get(TeamRatingDraft, match.id)
@@ -535,6 +572,8 @@ def schedule_tick(db: Session, cfg: Settings, at: datetime | None = None) -> int
     local = (at or now()).astimezone(MOSCOW)
     monday = local.date() - timedelta(days=local.weekday())
     friday = monday + timedelta(days=4)
+    if db.get(SkippedGameDay, friday.isoformat()):
+        return None
     opening = datetime.combine(monday + timedelta(days=1), datetime.min.time(), MOSCOW).replace(
         hour=12
     )
@@ -610,9 +649,66 @@ def merge_guest(db: Session, actor: int, guest_id: int, target_id: int):
             "Обе карточки есть в фактическом составе одной игры. Сначала исправьте результат.", 409
         )
     guest.merged_into = target_id
+    from .models import ProfileClaim
+
+    for claim in db.scalars(
+        select(ProfileClaim).where(
+            ProfileClaim.guest_id == guest_id, ProfileClaim.status == "pending"
+        )
+    ):
+        claim.status = "accepted" if claim.player_id == target_id else "rejected"
+        claim.updated_at = now()
     audit(db, actor, "guest.linked", guest_id=guest_id, target_id=target_id)
 
 
 def ensure_pregame(db: Session, match: Match):
+    if match.status == "cancelled":
+        raise DomainError("Игра отменена", 409)
     if db.get(MatchResult, match.id):
         raise DomainError("Результат уже внесен. Изменяйте фактический состав в результате матча.")
+
+
+def cancel_match(db, actor, match, reason, cfg):
+    from .auctions import invalidate_roster
+
+    if match.status == "cancelled":
+        return
+    ensure_pregame(db, match)
+    if now() >= match.starts_at:
+        raise DomainError("Отмена доступна до начала игры", 409)
+    invalidate_roster(db, match)
+    announced = match.status != "draft"
+    for pub in db.scalars(select(Publication).where(Publication.match_id == match.id)):
+        pub.stale = True
+        if pub.status == "pending":
+            pub.status = "cancelled"
+    match.status = "cancelled"
+    match.approved_version = None
+    match.version += 1
+    if announced:
+        publication = enqueue(db, match, "cancellation", cfg.publication_chat_id)
+        publication.text += f"\n\nПричина: {reason}"
+    audit(db, actor, "match.cancelled", match.id, reason=reason)
+
+
+def skip_day(db, actor, day, reason):
+    # Same ordering as manual/scheduled match creation.
+    db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
+    if day.weekday() != 4 or day < now().astimezone(MOSCOW).date():
+        raise DomainError("Выберите будущую пятницу")
+    key = day.isoformat()
+    if db.scalar(select(Match.id).where(Match.game_day == key)):
+        raise DomainError("Игра уже создана. Отмените её в карточке игры.", 409)
+    if db.get(SkippedGameDay, key):
+        raise DomainError("Неделя уже пропущена", 409)
+    db.add(SkippedGameDay(game_day=key, reason=reason, actor_id=actor))
+    audit(db, actor, "schedule.skipped", game_day=key, reason=reason)
+
+
+def registration(db, match_id, reg_id):
+    from .models import Registration
+
+    row = db.get(Registration, reg_id)
+    if not row or row.match_id != match_id:
+        raise DomainError("Заявка не найдена", 404)
+    return row

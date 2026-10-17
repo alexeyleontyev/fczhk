@@ -119,6 +119,10 @@ def save_result(db, actor, match, body):
     return new
 
 
+def win_rate(wins: int, draws: int, games: int) -> float | None:
+    return 100 * (2 * wins + draws) / (2 * games) if games else None
+
+
 def player_stats(db, player_id):
     people, canonical = identities(db)
     if player_id not in people:
@@ -126,6 +130,7 @@ def player_stats(db, player_id):
     player_id = canonical[player_id]
     total = dict(games=0, wins=0, losses=0, draws=0, goals=0, assists=0)
     history, partners = [], Counter()
+    partner_outcomes = {outcome: Counter() for outcome in ("wins", "draws", "losses")}
     completed = list(
         db.scalars(
             select(Match)
@@ -165,29 +170,113 @@ def player_stats(db, player_id):
         )
         total["games"] += 1
         total[outcome] += 1
-        total["goals"] += sum(
+        match_goals = sum(
             g.kind == "goal" and canonical.get(g.author_id) == player_id for g in events
         )
-        total["assists"] += sum(canonical.get(g.assist_id) == player_id for g in events)
-        partners.update(
-            {
-                canonical[p.player_id]
-                for p in participants
-                if p.team == mine.team and canonical[p.player_id] != player_id
-            }
-        )
+        match_assists = sum(canonical.get(g.assist_id) == player_id for g in events)
+        total["goals"] += match_goals
+        total["assists"] += match_assists
+        teammates = {
+            canonical[p.player_id]
+            for p in participants
+            if p.team == mine.team and canonical[p.player_id] != player_id
+        }
+        partners.update(teammates)
+        partner_outcomes[outcome].update(teammates)
         history.append(
-            dict(match_id=match.id, starts_at=match.starts_at, team=mine.team, score=score)
+            dict(
+                match_id=match.id,
+                starts_at=match.starts_at,
+                team=mine.team,
+                score=score,
+                goals=match_goals,
+                assists=match_assists,
+            )
         )
     return dict(
         player_id=player_id,
         alias=people[player_id].alias,
         **total,
+        win_rate=win_rate(total["wins"], total["draws"], total["games"]),
         matches=history,
         partners=[
-            dict(player_id=pid, alias=people[pid].alias, games=count)
+            dict(
+                player_id=pid,
+                alias=people[pid].alias,
+                games=count,
+                wins=partner_outcomes["wins"][pid],
+                draws=partner_outcomes["draws"][pid],
+                losses=partner_outcomes["losses"][pid],
+                win_rate=win_rate(
+                    partner_outcomes["wins"][pid], partner_outcomes["draws"][pid], count
+                ),
+            )
             for pid, count in sorted(
                 partners.items(), key=lambda item: (-item[1], people[item[0]].alias, item[0])
             )
         ],
     )
+
+
+def leaderboards(db):
+    """Public seasonless totals from the current versions of completed results."""
+    people, canonical = identities(db)
+    completed = set(db.scalars(select(MatchResult.match_id).where(MatchResult.completed.is_(True))))
+    participants = list(
+        db.scalars(
+            select(ResultParticipant).join(MatchResult).where(MatchResult.completed.is_(True))
+        )
+    )
+    goals = list(
+        db.scalars(select(ResultGoal).join(MatchResult).where(MatchResult.completed.is_(True)))
+    )
+    scores = {match_id: {"white": 0, "black": 0} for match_id in completed}
+    totals = {}
+    for goal in goals:
+        scores[goal.match_id][goal.team] += 1
+        if goal.kind == "goal" and goal.author_id is not None:
+            pid = canonical[goal.author_id]
+            totals.setdefault(pid, _empty_total())["goals"] += 1
+        if goal.assist_id is not None:
+            pid = canonical[goal.assist_id]
+            totals.setdefault(pid, _empty_total())["assists"] += 1
+    for participant in participants:
+        pid = canonical[participant.player_id]
+        row = totals.setdefault(pid, _empty_total())
+        own = scores[participant.match_id][participant.team]
+        other = scores[participant.match_id]["black" if participant.team == "white" else "white"]
+        row["games"] += 1
+        if own > other:
+            row["wins"] += 1
+            row["points"] += 3
+        elif own == other:
+            row["draws"] += 1
+            row["points"] += 1
+        else:
+            row["losses"] += 1
+    players = [
+        dict(
+            player_id=pid,
+            alias=people[pid].alias,
+            **total,
+            win_rate=win_rate(total["wins"], total["draws"], total["games"]),
+            goal_assist=total["goals"] + total["assists"],
+        )
+        for pid, total in totals.items()
+        if total["games"]
+    ]
+    metrics = ("points", "win_rate", "goals", "assists", "goal_assist")
+    return {
+        "matches": len(completed),
+        "boards": {
+            metric: sorted(
+                players,
+                key=lambda row: (-row[metric], -row["games"], row["alias"], row["player_id"]),
+            )
+            for metric in metrics
+        },
+    }
+
+
+def _empty_total():
+    return dict(games=0, wins=0, draws=0, losses=0, points=0, goals=0, assists=0)

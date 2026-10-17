@@ -5,7 +5,14 @@ import pytest
 from sqlalchemy import select
 
 from fczhk.db import now
-from fczhk.models import Match, Player, Registration, ResultGoal
+from fczhk.models import Match, MatchResult, Player, Registration, ResultGoal, ResultParticipant
+from fczhk.results import win_rate
+
+
+def test_win_rate_examples():
+    assert win_rate(1, 1, 3) == 50
+    assert win_rate(3, 1, 5) == 70
+    assert win_rate(0, 0, 0) is None
 
 
 @pytest.fixture
@@ -70,13 +77,19 @@ def test_draft_completed_corrections_and_partners(env, call, played):
     stats = call("GET", f"/players/{admin}/stats", role="player")
     assert (stats["games"], stats["wins"], stats["goals"], stats["assists"]) == (1, 1, 1, 0)
     assert [p["player_id"] for p in stats["partners"]] == [mate]
-    assert call("GET", f"/players/{mate}/stats")["assists"] == 1
+    assert stats["win_rate"] == stats["partners"][0]["win_rate"] == 100
+    assert tuple(stats["partners"][0][key] for key in ("wins", "draws", "losses")) == (1, 0, 0)
+    assert (stats["matches"][0]["goals"], stats["matches"][0]["assists"]) == (1, 0)
+    mate_stats = call("GET", f"/players/{mate}/stats")
+    assert mate_stats["assists"] == mate_stats["matches"][0]["assists"] == 1
     assert call("GET", f"/players/{guest}/stats")["goals"] == 0
     body.update(version=done["version"])
     body["goals"].append(event("black", guest))
     corrected = call("PUT", f"/matches/{mid}/result", body)
     stats = call("GET", f"/players/{admin}/stats")
     assert (stats["games"], stats["wins"], stats["draws"]) == (1, 0, 1)
+    assert stats["win_rate"] == stats["partners"][0]["win_rate"] == 50
+    assert tuple(stats["partners"][0][key] for key in ("wins", "draws", "losses")) == (0, 1, 0)
     assert call("GET", f"/players/{guest}/stats")["goals"] == 1
     call("PUT", f"/matches/{mid}/result", body, expected=409)
     assert len(call("GET", f"/matches/{mid}/history")["audit"]) == 3
@@ -84,6 +97,69 @@ def test_draft_completed_corrections_and_partners(env, call, played):
     assert corrected["score"] == {"white": 2, "black": 2}
     body.update(version=corrected["version"], completed=False)
     call("PUT", f"/matches/{mid}/result", body, expected=400)
+
+
+def test_partner_win_rate_and_per_match_contributions(env, call, played):
+    mid, guest, mate = played
+    admin = env[4]["admin"]
+    body = payload(call, mid, completed=True)
+    body["goals"] = [
+        event("white", admin, mate),
+        event("white", mate, admin),
+        event("black", guest),
+    ]
+    call("PUT", f"/matches/{mid}/result", body)
+    with env[1]() as db, db.begin():
+        match = Match(
+            game_day="2020-01-04",
+            starts_at=now() - timedelta(hours=1),
+            location="Поле",
+            status="completed",
+        )
+        db.add(match)
+        db.flush()
+        db.add(MatchResult(match_id=match.id, completed=True))
+        db.add_all(
+            [
+                ResultParticipant(match_id=match.id, player_id=admin, team="white", position="field"),
+                ResultParticipant(match_id=match.id, player_id=mate, team="white", position="keeper"),
+                ResultParticipant(match_id=match.id, player_id=guest, team="black", position="field"),
+            ]
+        )
+        loss = Match(
+            game_day="2020-01-05",
+            starts_at=now() - timedelta(minutes=30),
+            location="Поле",
+            status="completed",
+        )
+        db.add(loss)
+        db.flush()
+        db.add_all(
+            [
+                MatchResult(match_id=loss.id, completed=True),
+                ResultParticipant(match_id=loss.id, player_id=admin, team="white", position="field"),
+                ResultParticipant(match_id=loss.id, player_id=mate, team="white", position="keeper"),
+                ResultParticipant(match_id=loss.id, player_id=guest, team="black", position="field"),
+                ResultGoal(match_id=loss.id, id=str(uuid4()), team="black", kind="goal", author_id=guest),
+            ]
+        )
+    stats = call("GET", f"/players/{admin}/stats", role="player")
+    assert (stats["games"], stats["wins"], stats["draws"], stats["losses"]) == (3, 1, 1, 1)
+    assert stats["win_rate"] == 50
+    assert stats["partners"][0] == {
+        "player_id": mate,
+        "alias": "Вратарь партнёр",
+        "games": 3,
+        "wins": 1,
+        "draws": 1,
+        "losses": 1,
+        "win_rate": 50,
+    }
+    assert [(m["goals"], m["assists"]) for m in stats["matches"]] == [
+        (0, 0),
+        (0, 0),
+        (1, 1),
+    ]
 
 
 @pytest.mark.parametrize(

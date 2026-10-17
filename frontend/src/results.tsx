@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { percentTone } from './percent'
 import type { Match, Player, Position, Run, Team } from './types'
 
 export type Participant = { player_id: number; alias: string; team: Team; position: Position }
@@ -395,10 +396,26 @@ type Stats = {
   wins: number
   losses: number
   draws: number
+  win_rate: number | null
   goals: number
   assists: number
-  matches: { match_id: number; starts_at: string; team: Team; score: Record<Team, number> }[]
-  partners: { player_id: number; alias: string; games: number }[]
+  matches: {
+    match_id: number
+    starts_at: string
+    team: Team
+    score: Record<Team, number>
+    goals: number
+    assists: number
+  }[]
+  partners: {
+    player_id: number
+    alias: string
+    games: number
+    wins: number
+    draws: number
+    losses: number
+    win_rate: number
+  }[]
 }
 export function PlayerStats({
   playerId,
@@ -426,6 +443,45 @@ export function PlayerStats({
       current = false
     }
   }, [playerId])
+  const partnerRow = (p: Stats['partners'][number]) => (
+    <button key={p.player_id} className="stat-link" onClick={() => onPlayer(p.player_id)}>
+      <span>{p.alias}</span>
+      <span className="partner-details">
+        Игр: {p.games} · Винрейт:{' '}
+        <span className={percentTone(p.win_rate)}>
+          {p.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
+        </span>{' '}
+        <span className="partner-outcomes">
+          ({p.wins}–{p.draws}–{p.losses})
+        </span>
+      </span>
+    </button>
+  )
+  const matchRow = (m: Stats['matches'][number]) => (
+    <button key={m.match_id} className="stat-link" onClick={() => onMatch(m.match_id)}>
+      <span>
+        {new Date(m.starts_at).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })} ·{' '}
+        {label(m.team)}
+        {(m.goals > 0 || m.assists > 0) && (
+          <span className="match-contributions">
+            {m.goals > 0 && (
+              <span title={`Голов: ${m.goals}`} aria-label={`Голов: ${m.goals}`}>
+                <span aria-hidden="true">⚽</span> {m.goals}
+              </span>
+            )}
+            {m.assists > 0 && (
+              <span title={`Передач: ${m.assists}`} aria-label={`Передач: ${m.assists}`}>
+                <span aria-hidden="true">👟</span> {m.assists}
+              </span>
+            )}
+          </span>
+        )}
+      </span>
+      <strong>
+        {m.score.white} : {m.score.black} →
+      </strong>
+    </button>
+  )
   return (
     <section className="statistics">
       <h2>{data ? `Статистика: ${data.alias}` : 'Статистика'}</h2>
@@ -452,28 +508,34 @@ export function PlayerStats({
                 <span>{title}</span>
               </div>
             ))}
+            <div className="overall-win-rate-stat">
+              <strong className={data.win_rate === null ? undefined : percentTone(data.win_rate)}>
+                {data.win_rate === null
+                  ? '—'
+                  : `${data.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}
+              </strong>
+              <span>Винрейт</span>
+            </div>
           </div>
-          <h3>Частые партнёры</h3>
-          {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}
-          {data.partners.map((p) => (
-            <button key={p.player_id} className="stat-link" onClick={() => onPlayer(p.player_id)}>
-              <span>{p.alias}</span>
-              <span>{p.games} совместных игр</span>
-            </button>
-          ))}
           <h3>История игр</h3>
           {!data.matches.length && <p className="muted">Завершённых игр пока нет.</p>}
-          {data.matches.map((m) => (
-            <button key={m.match_id} className="stat-link" onClick={() => onMatch(m.match_id)}>
-              <span>
-                {new Date(m.starts_at).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })} ·{' '}
-                {label(m.team)}
-              </span>
-              <strong>
-                {m.score.white} : {m.score.black} →
-              </strong>
-            </button>
-          ))}
+          {data.matches.slice(0, 5).map(matchRow)}
+          {data.matches.length > 5 && (
+            <details className="history-more" key={playerId}>
+              <summary>Остальные игры ({data.matches.length - 5})</summary>
+              {data.matches.slice(5).map(matchRow)}
+            </details>
+          )}
+          <h3>Частые партнёры</h3>
+          <p className="muted caption">В скобках: победы — ничьи — поражения.</p>
+          {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}
+          {data.partners.slice(0, 3).map(partnerRow)}
+          {data.partners.length > 3 && (
+            <details className="partner-more" key={playerId}>
+              <summary>Остальные партнёры ({data.partners.length - 3})</summary>
+              {data.partners.slice(3).map(partnerRow)}
+            </details>
+          )}
         </>
       )}
     </section>

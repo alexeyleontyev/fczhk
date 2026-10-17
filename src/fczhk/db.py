@@ -38,7 +38,7 @@ def database(url: str):
         pool_pre_ping=True,
         connect_args={"check_same_thread": False, "timeout": 30}
         if url.startswith("sqlite")
-        else {},
+        else {"connect_timeout": 5, "options": "-clock_timeout=5000 -cstatement_timeout=30000"},
     )
     if engine.dialect.name == "sqlite":
 

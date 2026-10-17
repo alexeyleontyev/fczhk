@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { DEFAULT_MIN_GAMES, filterPlayers, PlayerListFilters } from './player-list-filters'
 import type {
   Average,
   BalanceRun,
@@ -13,6 +14,105 @@ import type {
 
 export const score = (n: number | null | undefined) =>
   n == null ? '—' : n.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+
+type GameRatingBoard = {
+  model: string
+  margin: number
+  matches: number
+  provisional: boolean
+  players: {
+    player_id: number
+    alias: string
+    mu: number
+    sigma: number
+    ordinal: number
+    rating: number
+    games: number
+  }[]
+}
+
+export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => void }) {
+  const [board, setBoard] = useState<GameRatingBoard | null>(null)
+  const [error, setError] = useState('')
+  const [expanded, setExpanded] = useState(false)
+  const [playerName, setPlayerName] = useState('')
+  const [minimumGames, setMinimumGames] = useState(DEFAULT_MIN_GAMES)
+  useEffect(() => {
+    let active = true
+    void api<GameRatingBoard>('/game-ratings')
+      .then((data) => {
+        if (active) setBoard(data)
+      })
+      .catch((e) => {
+        if (active) setError((e as Error).message)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+  const qualifiedPlayers = filterPlayers(board?.players ?? [], '', minimumGames)
+  const players = filterPlayers(qualifiedPlayers, playerName, '0')
+  return (
+    <section className="panel game-rating-board">
+      <div className="section-title">
+        <div>
+          <div className="eyebrow">ПО ИСТОРИИ МАТЧЕЙ</div>
+          <h2>Общий рейтинг OpenSkill</h2>
+        </div>
+        <span className="tag">Эксперимент</span>
+      </div>
+      <p className="muted caption">
+        {board ? `${board.matches} игр` : 'Загрузка…'} · Только полевые игроки · Победа, поражение и
+        ничья. Разница мячей пока не влияет на рейтинг. Порядок учитывает неопределённость оценки;
+        для надёжного подбора пока мало игр, поэтому этот способ помечен как эксперимент.
+      </p>
+      <p className="muted caption">
+        Шкала начинается с 1500: рейтинг = 1500 + 10 × (μ − 3σ). μ — оценка силы, σ —
+        неопределённость.
+      </p>
+      <PlayerListFilters
+        name={playerName}
+        setName={setPlayerName}
+        minimumGames={minimumGames}
+        setMinimumGames={setMinimumGames}
+        scope="Фильтры OpenSkill"
+      />
+      {error && <p className="alert error">{error}</p>}
+      {board?.players.length === 0 && <p>Истории завершённых матчей пока нет.</p>}
+      {board && board.players.length > 0 && !players.length && (
+        <p>По выбранным фильтрам игроки не найдены.</p>
+      )}
+      {players.length > 0 && (
+        <>
+          <div className="game-rating-list">
+            {(expanded ? players : players.slice(0, 10)).map((player) => (
+              <div className="game-rating-row" key={player.player_id}>
+                <span className="muted">
+                  {qualifiedPlayers.findIndex(
+                    (candidate) => candidate.player_id === player.player_id,
+                  ) + 1}
+                </span>
+                <button className="button ghost compact" onClick={() => onPlayer(player.player_id)}>
+                  {player.alias}
+                </button>
+                <span>{player.games} игр</span>
+                <span title={`μ ${score(player.mu)} · σ ${score(player.sigma)}`}>
+                  {player.rating.toLocaleString('ru-RU')} · μ {score(player.mu)} · σ{' '}
+                  {score(player.sigma)}
+                </span>
+              </div>
+            ))}
+          </div>
+          {players.length > 10 && (
+            <button className="button ghost compact" onClick={() => setExpanded(!expanded)}>
+              {expanded ? 'Свернуть' : `Показать всех (${players.length})`}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
 
 export function RatingAverages({ player }: { player: Player }) {
   return (
@@ -84,9 +184,10 @@ function ScoreInputs({
   )
 }
 
-type Review = Average & { revision: number; at: string }
+type Review = Average & { revision: number; at: string; source?: 'sheet' }
 type ReviewData = {
   own: Review | null
+  imported_own?: Average
   averages: Average
   reviews?: (Review & { author: string; author_id: number; history: Review[] })[]
 }
@@ -264,6 +365,13 @@ export function RatingFlow({
                   Ваша предыдущая оценка будет заменена, а не добавлена второй раз.
                 </p>
               )}
+              {!data.own && data.imported_own && (
+                <p className="muted caption">
+                  Ваша оценка из таблицы:{' '}
+                  {position === 'field' ? `А ${score(data.imported_own.attack)} · ` : ''}З{' '}
+                  {score(data.imported_own.defense)}. Новая оценка заменит её в общем зачёте.
+                </p>
+              )}
               {position === 'keeper' && (
                 <p className="muted caption">
                   Защита вратаря — для информации, в подборе команд не участвует.
@@ -294,22 +402,27 @@ export function RatingFlow({
               {data.reviews.length === 0 && <p className="muted">Оценок пока нет.</p>}
               {data.reviews.map((review) => (
                 <div className="rating-review" key={review.author_id}>
-                  <strong>{review.author}</strong>
+                  <strong>
+                    {review.author}
+                    {review.source === 'sheet' ? ' · из таблицы' : ''}
+                  </strong>
                   <span>
                     {position === 'field' ? `А ${score(review.attack)} · ` : ''}З{' '}
                     {score(review.defense)}
                   </span>
-                  <details>
-                    <summary>История изменений</summary>
-                    {review.history.map((h) => (
-                      <p className="muted caption" key={h.revision}>
-                        #{h.revision} ·{' '}
-                        {new Date(h.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК
-                        · {position === 'field' ? `А ${score(h.attack)} · ` : ''}З{' '}
-                        {score(h.defense)}
-                      </p>
-                    ))}
-                  </details>
+                  {review.source !== 'sheet' && (
+                    <details>
+                      <summary>История изменений</summary>
+                      {review.history.map((h) => (
+                        <p className="muted caption" key={h.revision}>
+                          #{h.revision} ·{' '}
+                          {new Date(h.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}{' '}
+                          МСК · {position === 'field' ? `А ${score(h.attack)} · ` : ''}З{' '}
+                          {score(h.defense)}
+                        </p>
+                      ))}
+                    </details>
+                  )}
                 </div>
               ))}
             </details>
@@ -505,7 +618,9 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
         <span className="tag">До 3 вариантов</span>
       </div>
       <p className="muted caption">
-        Меньший рейтинг делим пополам; при равенстве уменьшаем защиту. Сравниваем средние полевых.
+        {settings?.method === 'game'
+          ? 'Экспериментальный OpenSkill сравнивает сумму ожидаемой силы полевых. Разница мячей пока не используется.'
+          : 'Меньший рейтинг делим пополам; при равенстве уменьшаем защиту. Сравниваем средние полевых.'}{' '}
         Вратарей назначаете вручную.
       </p>
       {error && (
@@ -513,7 +628,7 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
           {error}
         </p>
       )}
-      {missing.length > 0 && (
+      {settings?.method !== 'game' && missing.length > 0 && (
         <p className="alert" role="status">
           Сначала задайте рейтинги на игру: {missing.map((r) => r.alias).join(', ')}.
         </p>
@@ -531,6 +646,18 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
             }, 'Варианты рассчитаны. Выбор еще не утвержден.')
           }}
         >
+          <label>
+            Способ подбора
+            <select
+              value={settings.method ?? 'community'}
+              onChange={(e) =>
+                setSettings({ ...settings, method: e.target.value as 'community' | 'game' })
+              }
+            >
+              <option value="community">Оценки сообщества</option>
+              <option value="game">OpenSkill · эксперимент</option>
+            </select>
+          </label>
           <details className="balance-settings">
             <summary>Настройки подбора</summary>
             <p className="muted caption">
@@ -593,7 +720,11 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
               </label>
             </div>
           </details>
-          <button className="button" type="submit" disabled={busy || missing.length > 0}>
+          <button
+            className="button"
+            type="submit"
+            disabled={busy || (settings.method !== 'game' && missing.length > 0)}
+          >
             {busy ? 'Подождите…' : 'Рассчитать варианты'}
           </button>
         </form>
@@ -604,7 +735,8 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
             Расчет #{latest.id} · Перебрано {latest.result.partition_count} разбиений · В пределах
             допуска {latest.result.pool_count}
             <br />
-            Лучший дисбаланс {score(latest.result.minimum_cost)} · Использован допуск{' '}
+            {latest.settings.method === 'game' ? 'Лучшая Δ силы' : 'Лучший дисбаланс'}{' '}
+            {score(latest.result.minimum_cost)} · Использован допуск{' '}
             {score(latest.result.epsilon_used)} · Минимальное различие {latest.result.min_distance}
           </p>
           {(latest.stale || m.team_ratings.stale) && (
@@ -625,9 +757,20 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
             >
               <div className="section-title">
                 <h3>Вариант {i + 1}</h3>
-                <span className="tag">Дисбаланс {score(variant.summary.cost)}</span>
+                <span className="tag">
+                  {variant.game_rating
+                    ? `Δ силы ${score(variant.game_rating.mu_gap)}`
+                    : `Дисбаланс ${score(variant.summary.cost)}`}
+                </span>
               </div>
-              <TeamMeans summary={variant.summary} />
+              {variant.game_rating ? (
+                <p className="muted caption">
+                  Сумма μ: белые {score(variant.game_rating.white_total)} · чёрные{' '}
+                  {score(variant.game_rating.black_total)}
+                </p>
+              ) : (
+                <TeamMeans summary={variant.summary} />
+              )}
               <div className="variant-names">
                 {(['white', 'black'] as const).map((team) => (
                   <div key={team}>
@@ -672,8 +815,10 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
             <summary>Рейтинги, использованные в расчете</summary>
             {latest.inputs.map((r) => (
               <p className="caption" key={r.registration_id}>
-                {r.alias}: А {score(r.attack)} / З {score(r.defense)} ·{' '}
-                {r.source === 'temporary' ? 'на эту игру' : 'среднее сообщества'}
+                {r.alias}:{' '}
+                {latest.settings.method === 'game'
+                  ? `μ ${score(r.game_mu)} · σ ${score(r.game_sigma)} · ${r.game_count} игр`
+                  : `А ${score(r.attack)} / З ${score(r.defense)} · ${r.source === 'temporary' ? 'на эту игру' : 'среднее сообщества'}`}
               </p>
             ))}
           </details>

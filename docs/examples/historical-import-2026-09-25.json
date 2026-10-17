@@ -1,0 +1,48 @@
+{
+  "source": {
+    "spreadsheet_id": "1A9zju1qrvvLqfUXAx1E3hYplLoQ6iLNYLa-vMNOq58A",
+    "sheet": "2026-09-25"
+  },
+  "game_day": "2026-09-25",
+  "teams": {
+    "white": {
+      "field": [
+        "Абозз",
+        "Виталик Ястреб",
+        "Ваня тим",
+        "Валера",
+        "Михаил Крам",
+        "Илюха",
+        "Камиль",
+        "Паша"
+      ],
+      "keeper": "Нави"
+    },
+    "black": {
+      "field": [
+        "Дубр",
+        "Никита Кросс",
+        "Джанник",
+        "Виталя пьяный",
+        "Джикия",
+        "Рузаль",
+        "Дима Пабгер",
+        "Олег Буб"
+      ],
+      "keeper": "Серега"
+    }
+  },
+  "final_score": {"white": 2, "black": 8},
+  "goals": [
+    {"source_row": 15, "team": "black", "kind": "goal", "author": "Дима Пабгер", "assist": "Дубр"},
+    {"source_row": 16, "team": "black", "kind": "goal", "author": "Дубр", "assist": "Дима Пабгер"},
+    {"source_row": 17, "team": "black", "kind": "goal", "author": "Олег Буб", "assist": "Дубр"},
+    {"source_row": 18, "team": "black", "kind": "goal", "author": "Виталя пьяный", "assist": "Дубр"},
+    {"source_row": 19, "team": "black", "kind": "goal", "author": "Рузаль", "assist": "Дима Пабгер"},
+    {"source_row": 20, "team": "black", "kind": "goal", "author": "Виталя пьяный", "assist": null},
+    {"source_row": 21, "team": "black", "kind": "goal", "author": "Дубр", "assist": "Виталя пьяный"},
+    {"source_row": 22, "team": "white", "kind": "goal", "author": "Камиль", "assist": "Паша"},
+    {"source_row": 23, "team": "black", "kind": "goal", "author": "Виталя пьяный", "assist": "Рузаль"},
+    {"source_row": 24, "team": "white", "kind": "goal", "author": "Виталик Ястреб", "assist": "Камиль"}
+  ]
+}
