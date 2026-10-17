@@ -47,6 +47,9 @@ elif any("SELECT version_num" in a for a in args):
     print(os.environ.get("SCHEMA_REVISION", "old-revision"))
 elif "pg_dump" in args:
     print("test-dump-content")
+elif "pg_isready" in args:
+    # Simulate the bootstrap server: Unix socket ready, final TCP server absent.
+    sys.exit(int(os.environ.get("TCP_NOT_READY", "0")) if "-h" in args else 0)
 elif "pg_restore" in args and "--exit-on-error" in args:
     sys.exit(int(os.environ.get("FAIL_RESTORE", "0")))
 elif "run" in args and args[-1] == "migrate":
@@ -121,3 +124,18 @@ def test_release_rejects_mutable_tag_before_any_docker_operation(release):
     _, run = release
     result, calls = run("deploy.sh", "ghcr.io/example/club:latest")
     assert result.returncode != 0 and calls == []
+
+
+def test_release_waits_for_final_postgres_before_restore_and_migration(release):
+    root, run = release
+    sleep = root / "bin" / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o755)
+    result, calls = run("deploy.sh", TAG, TCP_NOT_READY="1")
+    assert result.returncode != 0
+    assert "Restore PostgreSQL did not become ready" in result.stderr
+    assert not any("pg_restore" in c and "--exit-on-error" in c for c in calls)
+    assert not any(c[-1] == "migrate" for c in calls)
+    assert not any("up" in c and "--no-deps" in c for c in calls)
+    assert (root / ".local/release-image").read_text().strip() == OLD
+    assert any(c[:2] == ["rm", "-f"] for c in calls)

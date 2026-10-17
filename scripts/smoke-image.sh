@@ -17,10 +17,12 @@ trap cleanup EXIT
 docker network create "$network" > /dev/null
 docker run -d --name "$db" --network "$network" --tmpfs /var/lib/postgresql/data \
   -e POSTGRES_USER=fczhk -e POSTGRES_PASSWORD=smoke-only -e POSTGRES_DB=fczhk postgres:17-alpine > /dev/null
+ready=false
 for _ in {1..60}; do
-  if docker exec "$db" pg_isready -U fczhk > /dev/null 2>&1; then break; fi
+  if docker exec "$db" pg_isready -h 127.0.0.1 -U fczhk -d fczhk > /dev/null 2>&1; then ready=true; break; fi
   sleep 1
 done
+if ! $ready; then docker logs "$db"; echo 'Smoke PostgreSQL did not become ready.' >&2; exit 1; fi
 env_args=(--network "$network" -e FCZHK_ENV=test -e "FCZHK_DATABASE_URL=postgresql+psycopg://fczhk:smoke-only@$db/fczhk")
 docker run --rm "${env_args[@]}" "$image" /app/.venv/bin/fczhk migrate
 # A repeat migration must be harmless.
