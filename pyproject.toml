@@ -1,7 +1,7 @@
 [project]
 name = "fczhk"
 version = "0.5.0"
-description = "Telegram football organization, results, captain auctions and predictions — MVP 5"
+description = "Football community management: Telegram bot, Mini App, teams, results, ratings and predictions"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.141,<1",

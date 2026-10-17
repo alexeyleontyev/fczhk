@@ -34,7 +34,9 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
                 await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(
-        title="FCZHK · MVP 5",
+        title="ФКЖК · API",
+        description="Игры, составы, результаты, рейтинги и прогнозы футбольного сообщества.",
+        version="0.5.0",
         docs_url="/api/docs" if cfg.env != "production" else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if cfg.env != "production" else None,
@@ -100,7 +102,11 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         db.execute(text("SELECT 1"))
         return {"status": "ok", "demo": cfg.env == "demo"}
 
-    @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    @app.api_route(
+        "/api/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        include_in_schema=False,
+    )
     def api_not_found(path: str):
         raise svc.DomainError("Не найдено", 404)
 
@@ -112,7 +118,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
         # A dev rebuild briefly replaces assets; don't couple API startup/tests to it.
         app.mount("/assets", StaticFiles(directory=dist / "assets", check_dir=False), name="assets")
 
-        @app.get("/{path:path}")
+        @app.get("/{path:path}", include_in_schema=False)
         def frontend(path: str):
             if path.startswith("api/"):
                 raise svc.DomainError("Не найдено", 404)

@@ -102,7 +102,9 @@ def migrate(url):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="FCZHK")
+    parser = argparse.ArgumentParser(
+        description="ФКЖК: сервер, Telegram-бот, worker и эксплуатационные команды"
+    )
     parser.add_argument(
         "command",
         choices=[
