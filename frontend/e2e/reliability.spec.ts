@@ -30,7 +30,9 @@ test('valid session survives stale Mini App initData and logout revokes it', asy
   expect(revoked.status()).toBe(401)
 })
 
-test('expired session returns to login and admin can cancel a future game', async ({ page }) => {
+test('expired session returns to login and admin can cancel a future game', async ({
+  page,
+}, testInfo) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Войти администратором' }).click()
   await expect(page.getByRole('heading', { name: 'Выходим на поле.' })).toBeVisible()
@@ -38,7 +40,10 @@ test('expired session returns to login and admin can cancel a future game', asyn
   const headers = { Authorization: `Bearer ${token}` }
   const created = await page.request.post('/api/matches', {
     headers,
-    data: { starts_at: '2049-06-04T20:00:00+03:00', location: 'Отменяемая игра' },
+    data: {
+      starts_at: new Date(Date.UTC(2049, 5, 4 + testInfo.repeatEachIndex, 17)).toISOString(),
+      location: 'Отменяемая игра',
+    },
   })
   expect(created.status()).toBe(201)
   const match = await created.json()
@@ -57,9 +62,24 @@ test('expired session returns to login and admin can cancel a future game', asyn
   await expect(page.getByRole('button', { name: 'Записаться полевым' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Доставка сообщений' })).toBeVisible()
-  await page.request.post('/api/auth/logout', { headers })
   await page.getByRole('button', { name: 'Игра', exact: true }).click()
+  // Revoke when the explicit refresh reaches the server. A background poll must
+  // not log out the app before Playwright can click the authenticated controls.
+  await page.route(
+    `**/api/matches/${match.id}`,
+    async (route) => {
+      const revoked = await page.request.post('/api/auth/logout', { headers })
+      expect(revoked.ok()).toBe(true)
+      await route.continue()
+    },
+    { times: 1 },
+  )
+  const expired = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/matches/${match.id}` && response.status() === 401,
+  )
   await page.getByRole('button', { name: 'Обновить игру' }).click()
+  await expired
   await expect(page.getByRole('button', { name: 'Войти администратором' })).toBeVisible()
 })
 
