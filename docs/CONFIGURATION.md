@@ -39,13 +39,16 @@
 | Переменная | Назначение |
 | --- | --- |
 | `POSTGRES_PASSWORD` | Настоящий пароль PostgreSQL; в URL использовать его URL-encoded значение. Смена переменной не меняет пароль существующего volume |
-| `DOMAIN` | Домен Caddy; DNS направлен на сервер, порты 80/443 открыты |
+| `DOMAIN` | Имя домена Caddy без схемы и порта; DNS направлен на сервер. Обычно открыты 80/443; для варианта 8443 — 80/8443 |
+| `COMPOSE_FILE` | Для HTTPS на 8443: `compose.yaml:deploy/compose.8443.yaml` (Linux, Compose >= 2.24.4). Тогда `FCZHK_PUBLIC_URL` должен содержать `:8443` |
 | `FCZHK_IMAGE` | Образ приложения; успешный deploy сохраняет разрешённый digest в `.local/release-image`, который использует `scripts/compose.sh` |
 | `BACKUP_DIRECTORY` | Абсолютный каталог локальных backup для offsite-скрипта |
 | `BACKUP_REMOTE` | SSH-назначение вида `user@host:/absolute/directory` |
 | `FCZHK_TEST_DATABASE_URL` | Отдельное подключение для PostgreSQL-тестов; не production |
 
 `BACKUP_DIRECTORY` и `BACKUP_REMOTE` задаются systemd через `/etc/fczhk-backup.env`. Расписание, проверка SSH host key, место хранения, оповещения и retention описаны в [эксплуатации](DEPLOYMENT_PLAN.md). Локальный пароль Compose `local-development-only` допустим только для разработки.
+
+Вариант 8443 заменяет публикацию портов Caddy на 80/8443 и использует `deploy/Caddyfile.8443`. Порт 443 не публикуется. Сертификат получается через HTTP-01 на порту 80; TLS-ALPN-проверка на 443 отключена. HTTP перенаправляется на HTTPS с явным портом 8443. Тот же полный HTTPS-адрес указать в Main Mini App и Allowed URLs браузерного входа.
 
 ## Команды
 

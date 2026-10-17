@@ -88,6 +88,8 @@ docs/          ТЗ, справочники и решения этапов MVP
 
 Production использует Linux, Docker Compose и Caddy. Подготовить `.env`, Telegram, DNS/HTTPS и PostgreSQL по [инструкции эксплуатации](docs/DEPLOYMENT_PLAN.md). База внутри Compose доступна на `db:5432`; её пароль должен совпадать с URL-encoded паролем в `FCZHK_DATABASE_URL`.
 
+Если 443 занят другим сервисом, доступен [вариант HTTPS на 8443](docs/DEPLOYMENT_PLAN.md#если-порт-443-занят-другим-сервисом): отдельный Compose override, HTTP-01 на 80 и публичный адрес с `:8443`. Подготовка этих файлов не требует перезапуска Docker или существующих контейнеров.
+
 ```sh
 bash scripts/deploy.sh ghcr.io/OWNER/REPOSITORY:FULL_40_CHARACTER_GIT_SHA
 bash scripts/compose.sh exec app fczhk configure-bot

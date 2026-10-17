@@ -1,0 +1,9 @@
+# Use with compose.yaml via COMPOSE_FILE; requires Compose 2.24.4 or later.
+# Replace the entire list so host port 443 remains available to another service.
+services:
+  proxy:
+    ports: !override
+      - "80:80"
+      - "8443:8443"
+    volumes:
+      - ./deploy/Caddyfile.8443:/etc/caddy/Caddyfile:ro
