@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from threading import Event
 
 import pytest
 from sqlalchemy import select
@@ -61,6 +63,59 @@ def control(call, mid, a, action, expected=200):
         dict(auction_id=a["id"], revision=a["revision"], action=action),
         expected=expected,
     )
+
+
+def test_demo_concurrent_bids_wait_for_the_first_transaction(env, call, auction_game):
+    from fczhk import auctions
+    from fczhk.schemas import AuctionBid
+    from fczhk.services import get_match
+
+    _, factory, _, _, ids = env
+    auction = start(call, env, auction_game)
+    first_read, release_first = Event(), Event()
+    second_started, second_read = Event(), Event()
+
+    def submit(first):
+        with factory() as db, db.begin():
+            if not first:
+                second_started.set()
+            match = get_match(db, auction_game, lock=True)
+            if first:
+                first_read.set()
+                assert release_first.wait(5)
+            else:
+                second_read.set()
+            auctions.bid(
+                db,
+                ids["admin" if first else "player"],
+                match,
+                AuctionBid(
+                    auction_id=auction["id"],
+                    lot_id=auction["current"]["id"],
+                    amount=10 if first else 0,
+                ),
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(submit, True)
+        try:
+            assert first_read.wait(5)
+            second = pool.submit(submit, False)
+            assert second_started.wait(5)
+            # SQLite has no row locks: the transaction must reserve the writer
+            # before reading, otherwise both bids can miss the other captain.
+            assert not second_read.wait(0.2)
+        finally:
+            release_first.set()
+        first.result(timeout=5)
+        second.result(timeout=5)
+    view = call("GET", f"/matches/{auction_game}/auction")
+    assert view["revision"] == auction["revision"] + 2
+    assert len(view["lots"]) == 1
+    assert view["lots"][0]["winner"] == "white"
+    assert view["lots"][0]["white_bid"] == 10
+    assert view["lots"][0]["black_bid"] == 0
+    assert view["budgets"] == {"white": 90, "black": 100}
 
 
 def test_same_player_cannot_captain_both_teams(env, call, auction_game):

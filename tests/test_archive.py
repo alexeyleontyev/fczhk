@@ -35,7 +35,9 @@ def test_archive_batches_queries_and_paginates_without_rosters(env, call):
     engine = factory.kw["bind"]
 
     def record(*args):
-        queries.append(args[2])
+        # Compare data queries across dialects; SQLite emits BEGIN explicitly.
+        if not args[2].startswith("BEGIN"):
+            queries.append(args[2])
 
     event.listen(engine, "before_cursor_execute", record)
     try:

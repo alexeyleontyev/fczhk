@@ -44,8 +44,17 @@ def database(url: str):
 
         @event.listens_for(engine, "connect")
         def sqlite_setup(conn, _):
+            # Let SQLAlchemy start transactions before SELECT, too. sqlite3's
+            # legacy mode otherwise starts only at the first write.
+            conn.isolation_level = None
             conn.execute("PRAGMA foreign_keys=ON")
             conn.execute("PRAGMA journal_mode=WAL")
+
+        @event.listens_for(engine, "begin")
+        def sqlite_begin(conn):
+            # Demo SQLite has no SELECT FOR UPDATE. Serialize transactions from
+            # their first read so concurrent captains cannot resolve stale lots.
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     return engine, sessionmaker(engine, expire_on_commit=False)
 
