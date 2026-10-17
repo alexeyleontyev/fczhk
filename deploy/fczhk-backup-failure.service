@@ -1,0 +1,6 @@
+[Unit]
+Description=Report FCZHK backup failure
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/logger -p daemon.crit "FCZHK offsite backup FAILED: inspect journalctl -u fczhk-backup.service"

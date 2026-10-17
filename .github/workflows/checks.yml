@@ -1,5 +1,10 @@
-name: MVP 1–5 checks
+name: Test and release image
 on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -35,3 +40,40 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npm --prefix frontend run test:e2e
+      - run: shellcheck deploy/lib.sh scripts/*.sh
+      - name: Retain browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-diagnostics
+          path: frontend/test-results
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build once with immutable Git SHA tag
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:$GITHUB_SHA"
+          echo "RELEASE_IMAGE=$image" >> "$GITHUB_ENV"
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image" .
+      - name: Migrate, serve, restore backup and stop gracefully
+        run: bash scripts/smoke-image.sh "$RELEASE_IMAGE"
+      - name: Publish the tested image from the default branch
+        if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$RELEASE_IMAGE" >/dev/null 2>&1; then
+            echo "SHA tag already exists; refusing to overwrite a released image." >&2
+            exit 1
+          fi
+          docker push "$RELEASE_IMAGE"
+          docker pull "$RELEASE_IMAGE"
+          echo "### Tested image" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$RELEASE_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          docker image inspect --format '{{json .RepoDigests}}' "$RELEASE_IMAGE" >> "$GITHUB_STEP_SUMMARY"

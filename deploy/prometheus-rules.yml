@@ -1,0 +1,27 @@
+groups:
+  - name: fczhk
+    rules:
+      - alert: FczhkUnavailable
+        expr: up{job="fczhk"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "FCZHK API or metrics authentication unavailable"}
+      - alert: FczhkWorkerStalled
+        expr: fczhk_worker_healthy == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "FCZHK scheduler/publication worker stopped progressing"}
+      - alert: FczhkPublicationNeedsAttention
+        expr: fczhk_publications_failed + fczhk_publications_uncertain + fczhk_stuck_sending + fczhk_stale_mark_errors > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: "Inspect publications in FCZHK settings before retrying"}
+      - alert: FczhkQueueDelayed
+        expr: fczhk_queue_age_seconds > 300
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: "FCZHK publication has waited over five minutes"}
+      - alert: FczhkServerErrors
+        expr: increase(fczhk_http_5xx_total[5m]) > 0 or increase(fczhk_webhook_errors_total[5m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: "FCZHK API/webhook errors: inspect application logs"}
