@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { seasonQuery } from './seasons'
 import { DEFAULT_MIN_GAMES, filterPlayers, PlayerListFilters } from './player-list-filters'
 import type {
   Average,
@@ -31,7 +32,15 @@ type GameRatingBoard = {
   }[]
 }
 
-export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => void }) {
+export function GameRatingLeaderboard({
+  onPlayer,
+  season,
+  revision,
+}: {
+  onPlayer: (id: number) => void
+  season: string
+  revision: number
+}) {
   const [board, setBoard] = useState<GameRatingBoard | null>(null)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(false)
@@ -39,7 +48,9 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
   const [minimumGames, setMinimumGames] = useState(DEFAULT_MIN_GAMES)
   useEffect(() => {
     let active = true
-    void api<GameRatingBoard>('/game-ratings')
+    setBoard(null)
+    setError('')
+    void api<GameRatingBoard>(`/game-ratings${seasonQuery(season)}`)
       .then((data) => {
         if (active) setBoard(data)
       })
@@ -49,7 +60,7 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
     return () => {
       active = false
     }
-  }, [])
+  }, [season, revision])
   const qualifiedPlayers = filterPlayers(board?.players ?? [], '', minimumGames)
   const players = filterPlayers(qualifiedPlayers, playerName, '0')
   return (
@@ -57,7 +68,7 @@ export function GameRatingLeaderboard({ onPlayer }: { onPlayer: (id: number) => 
       <div className="section-title">
         <div>
           <div className="eyebrow">ПО ИСТОРИИ МАТЧЕЙ</div>
-          <h2>Общий рейтинг OpenSkill</h2>
+          <h2>{season ? `OpenSkill · сезон ${season}` : 'Общий рейтинг OpenSkill'}</h2>
         </div>
         <span className="tag">Эксперимент</span>
       </div>

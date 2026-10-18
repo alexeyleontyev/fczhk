@@ -34,6 +34,7 @@ function App() {
   const {
     me,
     players,
+    seasons,
     match: m,
     setSelectedId,
     selectedId,
@@ -59,6 +60,11 @@ function App() {
     nativeBack,
     visited,
   } = useNavigation(selectedId, setSelectedId, Boolean(me))
+  const [season, setSeason] = useState('')
+  const seasonFilter = { season, seasons, onSeason: setSeason }
+  useEffect(() => {
+    if (!me) setSeason('')
+  }, [me?.id])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
   const [template, setTemplate] = useState<Template | null>(null)
@@ -260,10 +266,17 @@ function App() {
             me={me}
           />
         )}
-        {tab === 'predictions' && <PredictionStandings me={me.id} onPlayer={openStats} />}
+        {tab === 'predictions' && (
+          <PredictionStandings me={me.id} onPlayer={openStats} {...seasonFilter} />
+        )}
         {visited('archive') && (
           <div hidden={tab !== 'archive'}>
-            <ArchiveScreen onMatch={openGame} revision={dataRevision} />
+            <ArchiveScreen
+              key={season}
+              onMatch={openGame}
+              revision={dataRevision}
+              {...seasonFilter}
+            />
           </div>
         )}
         {visited('players') && (
@@ -272,6 +285,7 @@ function App() {
               players={players}
               me={me}
               dataRevision={dataRevision}
+              {...seasonFilter}
               openStats={openStats}
               openRatings={openRatings}
               setModal={setModal}
@@ -286,6 +300,7 @@ function App() {
             openGame={openGame}
             openStats={openStats}
             logout={logout}
+            {...seasonFilter}
             players={players}
           />
         )}
@@ -337,7 +352,12 @@ function App() {
       )}
       {modal === 'stats' && statsTarget && (
         <Modal title="Статистика игрока" close={() => setModal(null)}>
-          <PlayerStats playerId={statsTarget} onMatch={openGame} onPlayer={openStats} />
+          <PlayerStats
+            playerId={statsTarget}
+            onMatch={openGame}
+            onPlayer={openStats}
+            {...seasonFilter}
+          />
         </Modal>
       )}
       {modal === 'ratings' && (

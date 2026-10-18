@@ -69,6 +69,7 @@ def seed_demo(cfg):
         friday = local.date() + timedelta(days=(4 - local.weekday()) % 7 or 7)
         m = Match(
             game_day=friday.isoformat(),
+            season=str(friday.year),
             starts_at=datetime.combine(friday, datetime.min.time(), MOSCOW).replace(hour=20),
             location="Манеж «Север»",
             description="Пятничный футбол. Берите белую и черную футболки.\nДемонстрационные данные — реальная запись не ведется.",

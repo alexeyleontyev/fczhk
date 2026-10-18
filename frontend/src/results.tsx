@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { SeasonSelect, seasonQuery, type SeasonFilter } from './seasons'
 import { percentTone } from './percent'
 import type { Match, Player, Position, Run, Team } from './types'
 
@@ -435,7 +436,8 @@ export function PlayerStats({
   playerId,
   onMatch,
   onPlayer,
-}: {
+  ...seasonFilter
+}: SeasonFilter & {
   playerId: number
   onMatch: (id: number) => void
   onPlayer: (id: number) => void
@@ -446,7 +448,7 @@ export function PlayerStats({
     let current = true
     setData(null)
     setError('')
-    api<Stats>(`/players/${playerId}/stats`)
+    api<Stats>(`/players/${playerId}/stats${seasonQuery(seasonFilter.season)}`)
       .then((x) => {
         if (current) setData(x)
       })
@@ -456,7 +458,7 @@ export function PlayerStats({
     return () => {
       current = false
     }
-  }, [playerId])
+  }, [playerId, seasonFilter.season])
   const partnerRow = (p: Stats['partners'][number]) => (
     <button key={p.player_id} className="stat-link" onClick={() => onPlayer(p.player_id)}>
       <span>{p.alias}</span>
@@ -499,6 +501,7 @@ export function PlayerStats({
   return (
     <section className="statistics">
       <h2>{data ? `Статистика: ${data.alias}` : 'Статистика'}</h2>
+      <SeasonSelect {...seasonFilter} />
       {error && (
         <p role="alert" className="alert error">
           {error}
@@ -535,7 +538,7 @@ export function PlayerStats({
           {!data.matches.length && <p className="muted">Завершённых игр пока нет.</p>}
           {data.matches.slice(0, 5).map(matchRow)}
           {data.matches.length > 5 && (
-            <details className="history-more" key={playerId}>
+            <details className="history-more" key={`${playerId}:${seasonFilter.season}`}>
               <summary>Остальные игры ({data.matches.length - 5})</summary>
               {data.matches.slice(5).map(matchRow)}
             </details>
@@ -545,7 +548,7 @@ export function PlayerStats({
           {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}
           {data.partners.slice(0, 3).map(partnerRow)}
           {data.partners.length > 3 && (
-            <details className="partner-more" key={playerId}>
+            <details className="partner-more" key={`${playerId}:${seasonFilter.season}`}>
               <summary>Остальные партнёры ({data.partners.length - 3})</summary>
               {data.partners.slice(3).map(partnerRow)}
             </details>

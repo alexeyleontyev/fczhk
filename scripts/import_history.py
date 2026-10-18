@@ -34,6 +34,7 @@ from fczhk.models import (
     ResultGoal,
     ResultParticipant,
 )
+from fczhk.ratings import lock_ratings
 from fczhk.services import MOSCOW
 from fczhk.xlsx import read_sheets
 
@@ -90,27 +91,47 @@ def apply_cell_corrections(name: str, raw: dict[str, str], corrections: dict) ->
     return cells
 
 
-def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
+def parse_game(
+    name: str,
+    raw: dict[str, str],
+    corrections: dict,
+    *,
+    previous: bool = False,
+    game_day: str | None = None,
+) -> dict:
     cells = apply_cell_corrections(name, raw, corrections)
+    aliases = corrections.get("aliases", {})
+
+    def canonical(value):
+        return aliases.get(value, value)
+
     issues = []
     teams = {}
+    roster_columns = (
+        (("white", "M"), ("black", "P")) if previous else (("white", "A"), ("black", "E"))
+    )
+    first_row, keeper_row = (3, 11) if previous else (2, 10)
     keeper_resolutions = corrections.get("keeper_resolutions", {}).get(name, {})
-    for side, column in (("white", "A"), ("black", "E")):
-        field = [cells.get(f"{column}{r}", "") for r in range(2, 10)]
+    for side, column in roster_columns:
+        field = [canonical(cells.get(f"{column}{r}", "")) for r in range(first_row, keeper_row)]
         field = [player for player in field if player]
-        keeper_raw = cells.get(f"{column}10", "")
+        keeper_raw = cells.get(f"{column}{keeper_row}", "")
         if side in keeper_resolutions:
             if not keeper_raw:
-                issues.append(f"{column}10: есть поправка к пустой ячейке")
+                issues.append(f"{column}{keeper_row}: есть поправка к пустой ячейке")
             keepers = keeper_resolutions[side]
         elif keeper_raw and ("/" in keeper_raw or "(" in keeper_raw):
-            issues.append(f"{column}10: уточнить вратарей: {keeper_raw!r}")
+            issues.append(f"{column}{keeper_row}: уточнить вратарей: {keeper_raw!r}")
             keepers = []
         else:
             keepers = [keeper_raw] if keeper_raw else []
         if any(not isinstance(player, str) or not player.strip() for player in keepers):
-            issues.append(f"{column}10: некорректное разрешение списка вратарей")
-        teams[side] = {"field": field, "keeper": keepers, "keeper_raw": keeper_raw}
+            issues.append(f"{column}{keeper_row}: некорректное разрешение списка вратарей")
+        teams[side] = {
+            "field": field,
+            "keeper": [canonical(p) for p in keepers],
+            "keeper_raw": keeper_raw,
+        }
     all_names = [
         player
         for team in teams.values()
@@ -120,9 +141,9 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
     for player, count in Counter(all_names).items():
         if count > 1:
             issues.append(f"Игрок {player!r} встречается в составах {count} раза")
+    score_cells = {"white": "E2", "black": "C2"} if previous else {"white": "C14", "black": "E14"}
     final_score = {
-        "white": integer(f"{name}!C14", cells.get("C14", "")),
-        "black": integer(f"{name}!E14", cells.get("E14", "")),
+        side: integer(f"{name}!{cell}", cells.get(cell, "")) for side, cell in score_cells.items()
     }
     ignored_assists = {
         item["cell"]: item
@@ -136,13 +157,15 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
     }
     goals = []
     score = {"white": 0, "black": 0}
-    for row in range(15, 48):
+    for row in range(3, 48) if previous else range(15, 48):
         if f"C{row}" not in cells and f"E{row}" not in cells:
             continue
-        for side, score_col, author_col, assist_col in (
-            ("white", "C", "A", "B"),
-            ("black", "E", "F", "G"),
-        ):
+        goal_columns = (
+            (("white", "E", "F", "G"), ("black", "C", "A", "B"))
+            if previous
+            else (("white", "C", "A", "B"), ("black", "E", "F", "G"))
+        )
+        for side, score_col, author_col, assist_col in goal_columns:
             current = integer(f"{name}!{score_col}{row}", cells.get(f"{score_col}{row}", ""))
             change = current - score[side]
             if change not in (0, 1):
@@ -180,8 +203,8 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
                     {
                         "team": side,
                         "kind": kind,
-                        "author": author,
-                        "assist": assist,
+                        "author": canonical(author) if author else None,
+                        "assist": canonical(assist) if assist else None,
                         "source_row": row,
                         "source_kind": "score_progression",
                         "raw_author": author_raw,
@@ -234,7 +257,9 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
     if Counter(goal["team"] for goal in goals) != Counter(final_score):
         issues.append("Количество событий не совпадает с итоговым счётом")
     return {
-        "game_day": name,
+        "game_day": game_day or name,
+        "sheet": name,
+        "season": corrections.get("season", (game_day or name)[:4]),
         "teams": teams,
         "final_score": final_score,
         "goals": goals,
@@ -244,10 +269,43 @@ def parse_game(name: str, raw: dict[str, str], corrections: dict) -> dict:
         "source_cells": {
             cell: value
             for cell, value in raw.items()
-            if (match := re.fullmatch(r"([A-G])(\d+)", cell)) and int(match.group(2)) <= 51
+            if (match := re.fullmatch(r"([A-GMP])(\d+)", cell)) and int(match.group(2)) <= 51
         },
         "issues": issues,
     }
+
+
+def parse_workbook(path: Path, corrections: dict) -> tuple[list[dict], list[str]]:
+    if corrections.get("layout") != "previous_season":
+        return [
+            parse_game(name, cells, corrections)
+            for name, cells in sorted(read_sheets(path).items())
+        ], []
+    # Dates are explicitly confirmed, never inferred from the current year or month.
+    dates = corrections["sheet_dates"]
+    excluded = set(corrections["excluded_tournaments"])
+    games, skipped = [], []
+    for name, cells in read_sheets(path, dated_only=False).items():
+        if not re.fullmatch(r"\d{2}\.\d{2}", name):
+            continue
+        if name not in dates:
+            raise ValueError(f"Для листа {name} не подтверждён год")
+        parsed = date.fromisoformat(dates[name])
+        if parsed.strftime("%d.%m") != name:
+            raise ValueError(f"Дата {parsed} не соответствует названию листа {name}")
+        day = parsed.isoformat()
+        ordinary = cells.get("A1") == "Черные" and cells.get("F1") == "Белые"
+        if name in excluded:
+            if ordinary:
+                raise ValueError(f"Лист {name} изменился: вместо турнира обычная игра")
+            skipped.append(name)
+        elif not ordinary:
+            raise ValueError(f"Неизвестный формат листа {name}")
+        else:
+            games.append(parse_game(name, cells, corrections, previous=True, game_day=day))
+    if set(dates) != {g["sheet"] for g in games} | set(skipped):
+        raise ValueError("Набор листов не совпадает с подтверждённым источником")
+    return sorted(games, key=lambda game: game["game_day"]), skipped
 
 
 def backup_sqlite(path: Path) -> Path:
@@ -277,15 +335,42 @@ def import_games(
     engine, factory = database(db_url)
     if engine.dialect.name == "sqlite":
         Base.metadata.create_all(engine)
+    if not games or any(game["issues"] for game in games):
+        raise ValueError("Пустой импорт или нерешённые замечания")
+    dates = [game["game_day"] for game in games]
+    if len(dates) != len(set(dates)):
+        raise ValueError("Повторяющиеся даты в импорте")
     with factory() as db, db.begin():
         if replace_demo:
             for table in reversed(Base.metadata.sorted_tables):
                 db.execute(table.delete())
             db.add_all([RatingState(id=1), GameTemplate(id=1)])
             db.flush()
+        lock_ratings(db)
         existing = {}
-        for player in db.scalars(select(Player).where(Player.merged_into.is_(None))):
-            existing.setdefault(player.alias, []).append(player)
+        catalog = {p.id: p for p in db.scalars(select(Player))}
+
+        def resolved(player):
+            visited = set()
+            while player.merged_into is not None:
+                if player.id in visited or player.merged_into not in catalog:
+                    raise ValueError("Повреждённая цепочка связанных игроков")
+                visited.add(player.id)
+                player = catalog[player.merged_into]
+            return player
+
+        for source_player in catalog.values():
+            player = resolved(source_player)
+            existing.setdefault(source_player.alias, {})[player.id] = player
+        # New links release the guest's unique alias. Its confirmed identity stays
+        # in the audit trail even if the account is renamed after linking.
+        for entry in db.scalars(select(Audit).where(Audit.action == "guest.linked")):
+            alias = entry.data.get("guest_alias")
+            target = catalog.get(entry.data.get("target_id"))
+            if alias and target is not None:
+                player = resolved(target)
+                existing.setdefault(alias, {})[player.id] = player
+        existing = {name: list(players.values()) for name, players in existing.items()}
         names = {
             player
             for game in games
@@ -301,6 +386,15 @@ def import_games(
         db.add_all(new_players)
         db.flush()
         players.update({player.alias: player for player in new_players})
+        for game in games:
+            participant_ids = [
+                players[name].id
+                for team in game["teams"].values()
+                for role in ("field", "keeper")
+                for name in team[role]
+            ]
+            if len(participant_ids) != len(set(participant_ids)):
+                raise ValueError(f"{game['game_day']}: один связанный игрок указан несколько раз")
         existing_days = set(db.scalars(select(Match.game_day)))
         overlapping = existing_days & {game["game_day"] for game in games}
         if overlapping:
@@ -309,6 +403,7 @@ def import_games(
             day = date.fromisoformat(game["game_day"])
             match = Match(
                 game_day=game["game_day"],
+                season=game["season"],
                 starts_at=datetime.combine(day, time(12, 0), MOSCOW),
                 location="Не указано в историческом источнике",
                 description="Исторический импорт. Известна дата игры; время начала и место не указаны.",
@@ -362,7 +457,9 @@ def import_games(
                     action="history.imported",
                     data={
                         "spreadsheet_id": corrections["spreadsheet_id"],
-                        "sheet": game["game_day"],
+                        "sheet": game.get("sheet", game["game_day"]),
+                        "season": game["season"],
+                        "aliases": corrections.get("aliases", {}),
                         "xlsx_sha256": source_hash,
                         "date_only": True,
                         "source_info": game["source_info"],
@@ -398,15 +495,16 @@ def main() -> int:
     args = parser.parse_args()
     source_hash = hashlib.sha256(args.xlsx.read_bytes()).hexdigest()
     corrections = source_corrections(args.corrections)
-    sheets = read_sheets(args.xlsx)
+    games, skipped = parse_workbook(args.xlsx, corrections)
     if args.dates:
-        missing = set(args.dates) - sheets.keys()
+        missing = set(args.dates) - {game["game_day"] for game in games}
         if missing:
             raise ValueError(f"В источнике нет дат: {sorted(missing)}")
-        sheets = {name: sheets[name] for name in args.dates}
-    games = [parse_game(name, sheets[name], corrections) for name in sorted(sheets)]
+        games = [game for game in games if game["game_day"] in args.dates]
     if not games:
-        raise ValueError("В файле нет вкладок с датами YYYY-MM-DD")
+        raise ValueError("В файле нет обычных игр с датами")
+    if skipped:
+        print(f"Пропущены турнирные листы ({len(skipped)}): {', '.join(skipped)}")
     problems = 0
     for game in games:
         score = game["final_score"]

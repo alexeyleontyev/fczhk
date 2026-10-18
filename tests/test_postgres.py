@@ -703,3 +703,39 @@ async def test_simultaneous_login_of_same_identity_commits_without_event_loop_lo
     with factory() as db:
         assert len(list(db.scalars(select(LoginSession)))) == 2
         assert len(list(db.scalars(select(Player).where(Player.telegram_id == 102)))) == 1
+
+
+@pytest.mark.parametrize("pg", ["e6b2f48a913c"], indirect=True)
+def test_season_migration_preserves_matches_and_refuses_loss(pg):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from fczhk.db import Base
+
+    factory, _ = pg
+    with factory() as db, db.begin():
+        mid = db.execute(
+            text(
+                "INSERT INTO matches (game_day, starts_at, location, description, cost, payment_details, status, version, roster_version, field_limit, keeper_limit, created_at) VALUES ('2026-06-05', '2026-06-05T20:30:00+03:00', 'История', '', 0, '', 'completed', 3, 2, 16, 2, now()) RETURNING id"
+            )
+        ).scalar_one()
+    config = Config("alembic.ini")
+    with factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        assert compare_metadata(MigrationContext.configure(conn), Base.metadata) == []
+    with factory() as db, db.begin():
+        match = db.get(Match, mid)
+        assert (match.season, match.version, match.roster_version, match.location) == (
+            "2026",
+            3,
+            2,
+            "История",
+        )
+        match.season = "2024-2025"
+    with pytest.raises(ValueError, match="потеряет разделение"), factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.downgrade(config, "e6b2f48a913c")
+    with factory() as db:
+        assert db.get(Match, mid).season == "2024-2025"

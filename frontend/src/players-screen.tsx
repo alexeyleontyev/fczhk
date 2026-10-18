@@ -4,6 +4,7 @@ import { Leaderboards } from './leaderboards'
 import { GameRatingLeaderboard, RatingAverages } from './ratings'
 import { initial } from './format'
 import { Button } from './ui'
+import { SeasonSelect, type SeasonFilter } from './seasons'
 import type { Player } from './types'
 
 export function PlayersScreen({
@@ -13,7 +14,8 @@ export function PlayersScreen({
   openStats,
   openRatings,
   setModal,
-}: {
+  ...seasonFilter
+}: SeasonFilter & {
   players: Player[]
   me: Player
   dataRevision: number
@@ -41,8 +43,13 @@ export function PlayersScreen({
           )}
         </div>
       </div>
-      <Leaderboards onPlayer={openStats} revision={dataRevision} />
-      <GameRatingLeaderboard onPlayer={openStats} />
+      <SeasonSelect {...seasonFilter} />
+      <Leaderboards onPlayer={openStats} revision={dataRevision} season={seasonFilter.season} />
+      <GameRatingLeaderboard
+        onPlayer={openStats}
+        season={seasonFilter.season}
+        revision={dataRevision}
+      />
       <input
         className="search"
         placeholder="Найти по имени или alias"

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { api } from './api'
+import { SeasonSelect, seasonQuery, type SeasonFilter } from './seasons'
 import { date, time, status } from './format'
 import { Button, Empty } from './ui'
 import type { MatchSummary } from './types'
@@ -8,7 +9,8 @@ import type { MatchSummary } from './types'
 export function ArchiveScreen({
   onMatch,
   revision,
-}: {
+  ...seasonFilter
+}: SeasonFilter & {
   onMatch: (id: number) => void
   revision: number
 }) {
@@ -19,7 +21,7 @@ export function ArchiveScreen({
   useEffect(() => {
     let active = true
     setBusy(true)
-    api<MatchSummary[]>('/matches?limit=20')
+    api<MatchSummary[]>(`/matches?limit=20${seasonQuery(seasonFilter.season).replace('?', '&')}`)
       .then((rows) => {
         if (active) {
           setGames(rows)
@@ -36,11 +38,13 @@ export function ArchiveScreen({
     return () => {
       active = false
     }
-  }, [revision])
+  }, [revision, seasonFilter.season])
   async function loadMore() {
     setBusy(true)
     try {
-      const rows = await api<MatchSummary[]>(`/matches?limit=20&offset=${games.length}`)
+      const rows = await api<MatchSummary[]>(
+        `/matches?limit=20&offset=${games.length}${seasonQuery(seasonFilter.season).replace('?', '&')}`,
+      )
       setGames((old) => [...old, ...rows])
       setMore(rows.length === 20)
       setError('')
@@ -56,6 +60,7 @@ export function ArchiveScreen({
         <div className="eyebrow">НАША ИСТОРИЯ</div>
         <h1>Все игры</h1>
       </div>
+      <SeasonSelect {...seasonFilter} />
       {error && (
         <p className="alert error" role="alert">
           {error}
@@ -69,6 +74,7 @@ export function ArchiveScreen({
               {status[game.status]}
             </span>
             <h2>{date(game.starts_at)}</h2>
+            <small className="muted">Сезон {game.season}</small>
             {game.result && (
               <strong>
                 Белые {game.result.score.white} : {game.result.score.black} Чёрные

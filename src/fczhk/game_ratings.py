@@ -32,26 +32,26 @@ class HistoricalGame:
     score: tuple[int, int]
 
 
-def history(db: Session) -> list[HistoricalGame]:
+def history(db: Session, season: str | None = None) -> list[HistoricalGame]:
     canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
+    completed_ids = select(Match.id).join(MatchResult).where(MatchResult.completed.is_(True))
+    if season is not None:
+        completed_ids = completed_ids.where(Match.season == season)
     matches = db.scalars(
         select(Match)
         .join(MatchResult, MatchResult.match_id == Match.id)
-        .where(MatchResult.completed.is_(True))
+        .where(Match.id.in_(completed_ids))
         .order_by(Match.game_day, Match.id)
     )
     by_match = defaultdict(list)
     for row in db.scalars(
         select(ResultParticipant)
-        .join(MatchResult)
-        .where(MatchResult.completed.is_(True))
+        .where(ResultParticipant.match_id.in_(completed_ids))
         .order_by(ResultParticipant.match_id, ResultParticipant.player_id)
     ):
         by_match[row.match_id].append(row)
     scores = defaultdict(lambda: {"white": 0, "black": 0})
-    for row in db.scalars(
-        select(ResultGoal).join(MatchResult).where(MatchResult.completed.is_(True))
-    ):
+    for row in db.scalars(select(ResultGoal).where(ResultGoal.match_id.in_(completed_ids))):
         scores[row.match_id][row.team] += 1
     result = []
     for match in matches:
@@ -90,9 +90,12 @@ def replay(
     margin: float = 0.0,
     before_day: str | None = None,
     include_keepers: bool = False,
+    season: str | None = None,
 ) -> dict:
     """Return chronological predictions; keeper mode keeps field and keeper skills separate."""
-    games = tuple(game for game in history(db) if before_day is None or game.day < before_day)
+    games = tuple(
+        game for game in history(db, season=season) if before_day is None or game.day < before_day
+    )
     # Content-addressed cache: changed results, identities, or dates get a new key.
     # It cannot serve an old revision after imports or edits, even across processes.
     return deepcopy(_replay(games, margin, include_keepers))
@@ -154,9 +157,9 @@ def prediction_error(predictions: list[dict], decisive_only: bool = False) -> fl
     return sum((p["p_white"] - p["outcome"]) ** 2 for p in predictions) / len(predictions)
 
 
-def leaderboard(db: Session) -> dict:
+def leaderboard(db: Session, season: str | None = None) -> dict:
     """Read-only preview; keep it separate from community ratings and team runs."""
-    run = replay(db)
+    run = replay(db, season=season)
     aliases = {
         p.id: p.alias for p in db.scalars(select(Player).where(Player.id.in_(run["players"])))
     }

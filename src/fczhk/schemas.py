@@ -54,6 +54,7 @@ class ResolveClaim(Payload):
 
 class GameFields(Payload):
     starts_at: AwareDatetime
+    season: str | None = Field(default=None, min_length=1, max_length=40)
     location: str = Field(min_length=2, max_length=200)
     description: str = Field(default="", max_length=1500)
     cost: int = Field(default=0, ge=0, le=100_000_000)

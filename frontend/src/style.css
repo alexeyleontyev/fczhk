@@ -833,6 +833,13 @@ p {
   gap: 12px;
   margin: 12px 0 18px;
 }
+.season-filter {
+  display: block;
+  max-width: 360px;
+  margin-bottom: 24px;
+  font-size: 12px;
+  color: var(--muted);
+}
 .player-list-filters label {
   display: flex;
   flex-direction: column;

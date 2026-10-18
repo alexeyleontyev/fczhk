@@ -30,7 +30,7 @@ def completed_scores():
     )
 
 
-def standings(db):
+def standings(db, season: str | None = None):
     scores = completed_scores()
     query = (
         select(Prediction, Player.alias, scores.c.white, scores.c.black)
@@ -39,6 +39,8 @@ def standings(db):
         .join(Match, Match.id == Prediction.match_id)
         .where(Match.status != "cancelled")
     )
+    if season is not None:
+        query = query.where(Match.season == season)
     totals = {}
     for prediction, alias, white, black in db.execute(query):
         row = totals.setdefault(

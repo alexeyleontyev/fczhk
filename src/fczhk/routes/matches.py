@@ -35,6 +35,7 @@ def router(ctx):
         db: Session = Depends(db_dep, scope="function"),
         offset: int = Query(default=0, ge=0),
         limit: int = Query(default=20, ge=1, le=100),
+        season: str | None = Query(default=None, min_length=1, max_length=40),
     ):
         query = (
             select(Match)
@@ -44,6 +45,8 @@ def router(ctx):
         )
         if not has_admin_access(p, cfg):
             query = query.where(Match.status != "draft")
+        if season is not None:
+            query = query.where(Match.season == season)
         return summaries(db, list(db.scalars(query)))
 
     @app.get("/api/matches/current")
@@ -90,13 +93,17 @@ def router(ctx):
             raise svc.DomainError("Игра отменена", 409)
         day = body.starts_at.astimezone(svc.MOSCOW).date().isoformat()
         if db.get(SkippedGameDay, day):
-            raise svc.DomainError("Эта неделя пропущена. Сначала снимите пропуск в расписании.", 409)
+            raise svc.DomainError(
+                "Эта неделя пропущена. Сначала снимите пропуск в расписании.", 409
+            )
         before = {key: str(getattr(m, key)) for key in S.GameFields.model_fields}
         pred.validate_reschedule(db, m, body.starts_at)
         if db.get(res.MatchResult, m.id) and body.starts_at != m.starts_at:
             raise svc.DomainError("Время матча с результатом изменять нельзя")
-        for key, value in body.model_dump(exclude={"version"}).items():
+        for key, value in body.model_dump(exclude={"version", "season"}).items():
             setattr(m, key, value)
+        if body.season is not None:
+            m.season = body.season
         m.game_day = m.starts_at.astimezone(svc.MOSCOW).date().isoformat()
         m.version += 1
         # Editing logistics invalidates published text; preserve manual assignments.

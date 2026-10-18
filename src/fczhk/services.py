@@ -163,6 +163,7 @@ def match_data(db: Session, match: Match) -> dict:
         id=match.id,
         starts_at=match.starts_at,
         game_day=match.game_day,
+        season=match.season,
         historical=historical,
         location=match.location,
         description=match.description,
@@ -196,6 +197,7 @@ def create_match(db: Session, actor: int | None, data: dict) -> Match:
     # All creators lock the same template row: manual and scheduled creation serialize.
     db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
     day = data["starts_at"].astimezone(MOSCOW).date().isoformat()
+    data = {**data, "season": data.get("season") or day[:4]}
     if db.get(SkippedGameDay, day):
         raise DomainError("Эта неделя пропущена. Сначала снимите пропуск в расписании.", 409)
     if db.scalar(select(Match.id).where(Match.game_day == day)):

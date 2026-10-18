@@ -29,7 +29,7 @@ docker run --rm "${env_args[@]}" "$image" /app/.venv/bin/fczhk migrate
 docker run --rm "${env_args[@]}" "$image" /app/.venv/bin/fczhk migrate
 docker run --rm "$image" python scripts/import_history.py --help > /dev/null
 docker run --rm "$image" python scripts/import_community_ratings.py --help > /dev/null
-docker run --rm "$image" python -c "import json; from pathlib import Path; [json.loads(p.read_text()) for p in (Path('data/historical_import_corrections.json'), Path('data/community_rating_aliases.json'))]"
+docker run --rm "$image" python -c "import json; from pathlib import Path; [json.loads(p.read_text()) for p in (Path('data/historical_import_corrections.json'), Path('data/historical_import_2024_2025.json'), Path('data/community_rating_aliases.json'))]"
 docker run -d --name "$app" "${env_args[@]}" "$image" > /dev/null
 docker run -d --name "$worker" "${env_args[@]}" "$image" /app/.venv/bin/fczhk worker > /dev/null
 healthy=false

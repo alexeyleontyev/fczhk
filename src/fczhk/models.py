@@ -52,6 +52,9 @@ class Match(Base):
     __table_args__ = (CheckConstraint("field_limit >= 2 AND keeper_limit >= 0"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     game_day: Mapped[str] = mapped_column(String(10), unique=True)
+    season: Mapped[str] = mapped_column(
+        String(40), default="2026", server_default="2026", index=True
+    )
     starts_at: Mapped[datetime] = mapped_column(UTCDateTime)
     location: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")

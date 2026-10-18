@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from .. import schemas as S
 from .. import services as svc
 from ..auth import has_admin_access, public_player
 from ..models import (
+    Match,
     Player,
     ProfileClaim,
 )
@@ -50,12 +51,30 @@ def router(ctx):
         return [{**public_player(x, cfg), "ratings": averages[x.id]} for x in people]
 
     @app.get("/api/game-ratings")
-    def game_ratings(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
-        return gr.leaderboard(db)
+    def game_ratings(
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+        season: str | None = Query(default=None, min_length=1, max_length=40),
+    ):
+        return gr.leaderboard(db, season=season)
+
+    @app.get("/api/seasons")
+    def seasons(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
+        query = select(Match.season).distinct().order_by(Match.season.desc())
+        if not has_admin_access(p, cfg):
+            query = query.where(Match.status != "draft")
+        return list(db.scalars(query))
 
     @app.get("/api/leaderboards")
-    def leaderboards(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
-        return {"results": res.leaderboards(db), "community": rt.community_leaderboards(db)}
+    def leaderboards(
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+        season: str | None = Query(default=None, min_length=1, max_length=40),
+    ):
+        return {
+            "results": res.leaderboards(db, season=season),
+            "community": rt.community_leaderboards(db),
+        }
 
     @app.get("/api/players/{player_id}/ratings/{position}")
     def rating_detail(
@@ -71,8 +90,9 @@ def router(ctx):
         player_id: int,
         p: Player = Depends(current),
         db: Session = Depends(db_dep, scope="function"),
+        season: str | None = Query(default=None, min_length=1, max_length=40),
     ):
-        return res.player_stats(db, player_id)
+        return res.player_stats(db, player_id, season=season)
 
     @app.put("/api/players/{player_id}/ratings")
     def rate(

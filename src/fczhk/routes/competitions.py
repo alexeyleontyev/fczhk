@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,9 +22,11 @@ def router(ctx):
 
     @app.get("/api/predictions/standings")
     def prediction_standings(
-        p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+        season: str | None = Query(default=None, min_length=1, max_length=40),
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
     ):
-        return pred.standings(db)
+        return pred.standings(db, season=season)
 
     @app.get("/api/matches/{match_id}/predictions")
     def prediction_detail(

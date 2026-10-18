@@ -51,6 +51,7 @@ def summaries(db, matches):
             id=m.id,
             starts_at=m.starts_at,
             game_day=m.game_day,
+            season=m.season,
             location=m.location,
             historical=m.id in historical,
             status=m.status,

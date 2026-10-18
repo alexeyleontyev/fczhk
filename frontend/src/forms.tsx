@@ -26,6 +26,7 @@ export function GameForm({
         void save({
           starts_at: `${f.get('starts_at')}:00+03:00`,
           location: f.get('location'),
+          season: String(f.get('season') || '').trim() || null,
           description: f.get('description'),
           payment_details: f.get('payment_details'),
           cost: Math.round(Number(f.get('cost')) * 100),
@@ -35,6 +36,15 @@ export function GameForm({
       <label>
         Дата и время · Москва
         <input name="starts_at" type="datetime-local" defaultValue={dateValue} required />
+      </label>
+      <label>
+        Сезон
+        <input
+          name="season"
+          defaultValue={match?.season || ''}
+          maxLength={40}
+          placeholder="По году даты игры"
+        />
       </label>
       <label>
         Место игры

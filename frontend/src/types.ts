@@ -38,6 +38,7 @@ export type Match = {
   id: number
   starts_at: string
   game_day: string
+  season: string
   historical: boolean
   location: string
   description: string
@@ -177,7 +178,7 @@ export type History = {
 }
 export type MatchSummary = Pick<
   Match,
-  'id' | 'starts_at' | 'game_day' | 'historical' | 'location' | 'status' | 'version'
+  'id' | 'season' | 'starts_at' | 'game_day' | 'historical' | 'location' | 'status' | 'version'
 > & {
   participant_count: number
   result: { completed: boolean; score: Record<Team, number> } | null

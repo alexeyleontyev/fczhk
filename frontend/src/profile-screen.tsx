@@ -1,4 +1,5 @@
 import { api } from './api'
+import type { SeasonFilter } from './seasons'
 import { RatingAverages } from './ratings'
 import { PlayerStats } from './results'
 import { initial } from './format'
@@ -14,7 +15,8 @@ export function ProfileScreen({
   openStats,
   logout,
   players,
-}: {
+  ...seasonFilter
+}: SeasonFilter & {
   me: Player
   busy: boolean
   run: Run
@@ -37,7 +39,7 @@ export function ProfileScreen({
           {me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок клуба'}
         </span>
         <RatingAverages player={me} />
-        <PlayerStats playerId={me.id} onMatch={openGame} onPlayer={openStats} />
+        <PlayerStats playerId={me.id} onMatch={openGame} onPlayer={openStats} {...seasonFilter} />
         <form
           onSubmit={(e) => {
             e.preventDefault()

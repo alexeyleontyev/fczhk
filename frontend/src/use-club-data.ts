@@ -5,6 +5,7 @@ import type { Match, Player } from './types'
 export function useClubData() {
   const [me, setMe] = useState<Player | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
+  const [seasons, setSeasons] = useState<string[]>([])
   const [match, setMatch] = useState<Match | null>(null)
   const [selectedId, select] = useState<number | null>(null)
   const [dataRevision, setRevision] = useState(0)
@@ -63,7 +64,14 @@ export function useClubData() {
               }),
             ]
           : []),
-        ...(matchChanged ? [loadMatch(selected.current)] : []),
+        ...(matchChanged
+          ? [
+              loadMatch(selected.current),
+              api<string[]>('/seasons').then((value) => {
+                if (identity === identityGeneration.current && hasToken()) setSeasons(value)
+              }),
+            ]
+          : []),
       ])
       if (force || paths.length) setRevision((value) => value + 1)
     } catch (error) {
@@ -87,6 +95,7 @@ export function useClubData() {
       setMe(null)
       setMatch(null)
       setPlayers([])
+      setSeasons([])
     }
     const changed = (event: Event) => {
       const { path } = (event as CustomEvent<{ path: string }>).detail
@@ -143,6 +152,7 @@ export function useClubData() {
   return {
     me,
     players,
+    seasons,
     match,
     selectedId,
     setSelectedId,

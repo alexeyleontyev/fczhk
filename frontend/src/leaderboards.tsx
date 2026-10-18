@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { seasonQuery } from './seasons'
 import { percentTone } from './percent'
 import {
   DEFAULT_MIN_GAMES,
@@ -129,7 +130,9 @@ function LeaderboardRows<T extends { player_id: number; alias: string }>({
 export function Leaderboards({
   onPlayer,
   revision,
+  season,
 }: {
+  season: string
   onPlayer: (id: number) => void
   revision: number
 }) {
@@ -143,7 +146,8 @@ export function Leaderboards({
   useEffect(() => {
     let active = true
     setError('')
-    void api<Boards>('/leaderboards')
+    setData(null)
+    void api<Boards>(`/leaderboards${seasonQuery(season)}`)
       .then((value) => {
         if (active) setData(value)
       })
@@ -153,7 +157,7 @@ export function Leaderboards({
     return () => {
       active = false
     }
-  }, [revision])
+  }, [revision, season])
   const allResultRows = data?.results.boards[resultMetric] ?? []
   const qualifiedResultRows = filterPlayers(allResultRows, '', resultMinimumGames)
   const resultRows = filterPlayers(qualifiedResultRows, resultName, '0')
@@ -165,7 +169,7 @@ export function Leaderboards({
         <div className="section-title">
           <div>
             <div className="eyebrow">ПО РЕЗУЛЬТАТАМ МАТЧЕЙ</div>
-            <h2>Общие зачёты</h2>
+            <h2>{season ? `Зачёты сезона ${season}` : 'Общие зачёты'}</h2>
           </div>
         </div>
         <p className="muted caption">
@@ -224,8 +228,9 @@ export function Leaderboards({
           </div>
         </div>
         <p className="muted caption">
-          Средние оценки за полевую игру или игру в воротах. В общем зачёте складываются средние
-          оценки атаки и защиты; игроки без оценок по выбранному показателю не показаны.
+          Оценки сообщества общие для всех сезонов. Средние оценки за полевую игру или игру в
+          воротах. В общем зачёте складываются средние оценки атаки и защиты; игроки без оценок по
+          выбранному показателю не показаны.
         </p>
         <Filters
           options={communityOptions}

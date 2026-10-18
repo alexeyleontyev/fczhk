@@ -211,7 +211,7 @@ def win_rate(wins: int, draws: int, games: int) -> float | None:
     return 100 * (2 * wins + draws) / (2 * games) if games else None
 
 
-def player_stats(db, player_id):
+def player_stats(db, player_id, season: str | None = None):
     people, canonical = identities(db)
     if player_id not in people:
         raise DomainError("Игрок не найден", 404)
@@ -219,23 +219,22 @@ def player_stats(db, player_id):
     total = dict(games=0, wins=0, losses=0, draws=0, goals=0, assists=0)
     history, partners = [], Counter()
     partner_outcomes = {outcome: Counter() for outcome in ("wins", "draws", "losses")}
+    completed_ids = select(Match.id).join(MatchResult).where(MatchResult.completed.is_(True))
+    if season is not None:
+        completed_ids = completed_ids.where(Match.season == season)
     completed = list(
         db.scalars(
             select(Match)
             .join(MatchResult)
-            .where(MatchResult.completed.is_(True))
+            .where(Match.id.in_(completed_ids))
             .order_by(Match.starts_at.desc(), Match.id.desc())
         )
     )
     # Batched reads avoid one query per historical match.
     rows = list(
-        db.scalars(
-            select(ResultParticipant).join(MatchResult).where(MatchResult.completed.is_(True))
-        )
+        db.scalars(select(ResultParticipant).where(ResultParticipant.match_id.in_(completed_ids)))
     )
-    goals = list(
-        db.scalars(select(ResultGoal).join(MatchResult).where(MatchResult.completed.is_(True)))
-    )
+    goals = list(db.scalars(select(ResultGoal).where(ResultGoal.match_id.in_(completed_ids))))
     by_match, by_goals = {}, {}
     for row in rows:
         by_match.setdefault(row.match_id, []).append(row)
@@ -306,18 +305,17 @@ def player_stats(db, player_id):
     )
 
 
-def leaderboards(db):
-    """Public seasonless totals from the current versions of completed results."""
+def leaderboards(db, season: str | None = None):
+    """Public all-time or per-season totals from completed results."""
     people, canonical = identities(db)
-    completed = set(db.scalars(select(MatchResult.match_id).where(MatchResult.completed.is_(True))))
+    completed_ids = select(Match.id).join(MatchResult).where(MatchResult.completed.is_(True))
+    if season is not None:
+        completed_ids = completed_ids.where(Match.season == season)
+    completed = set(db.scalars(completed_ids))
     participants = list(
-        db.scalars(
-            select(ResultParticipant).join(MatchResult).where(MatchResult.completed.is_(True))
-        )
+        db.scalars(select(ResultParticipant).where(ResultParticipant.match_id.in_(completed_ids)))
     )
-    goals = list(
-        db.scalars(select(ResultGoal).join(MatchResult).where(MatchResult.completed.is_(True)))
-    )
+    goals = list(db.scalars(select(ResultGoal).where(ResultGoal.match_id.in_(completed_ids))))
     scores = {match_id: {"white": 0, "black": 0} for match_id in completed}
     totals = {}
     for goal in goals:

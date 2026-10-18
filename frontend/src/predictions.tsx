@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { SeasonSelect, seasonQuery, type SeasonFilter } from './seasons'
 import type { Match, Run } from './types'
 
 type Forecast = {
@@ -242,38 +243,50 @@ type Standing = {
 export function PredictionStandings({
   me,
   onPlayer,
-}: {
+  ...seasonFilter
+}: SeasonFilter & {
   me: number
   onPlayer: (id: number) => void
 }) {
   const [data, setData] = useState<Standing[] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const load = async () => {
-    setLoading(true)
-    try {
-      setData(await api<Standing[]>('/predictions/standings'))
-      setError('')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const [revision, setRevision] = useState(0)
   useEffect(() => {
-    void load()
-  }, [])
+    let active = true
+    setLoading(true)
+    setData(null)
+    setError('')
+    api<Standing[]>(`/predictions/standings${seasonQuery(seasonFilter.season)}`)
+      .then((data) => {
+        if (active) setData(data)
+      })
+      .catch((e) => {
+        if (active) setError((e as Error).message)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [seasonFilter.season, revision])
   return (
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">КОНКУРС ПРОГНОЗОВ · ВСЕ ИГРЫ</div>
-          <h1>Общий зачёт</h1>
+          <div className="eyebrow">КОНКУРС ПРОГНОЗОВ</div>
+          <h1>{seasonFilter.season ? `Зачёт сезона ${seasonFilter.season}` : 'Общий зачёт'}</h1>
         </div>
-        <button className="button secondary compact" disabled={loading} onClick={() => void load()}>
+        <button
+          className="button secondary compact"
+          disabled={loading}
+          onClick={() => setRevision((value) => value + 1)}
+        >
           Обновить зачёт
         </button>
       </div>
+      <SeasonSelect {...seasonFilter} />
       <section className="panel standings-panel">
         <p className="muted">{rules}</p>
         <p className="muted caption">
