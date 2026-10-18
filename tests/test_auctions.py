@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from fczhk.auth import create_session
 from fczhk.db import now
-from fczhk.models import Auction, AuctionLot, Match, Player, Registration
+from fczhk.models import Auction, AuctionLot, Match, Player, Publication, Registration
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def test_demo_concurrent_bids_wait_for_the_first_transaction(env, call, auction_
     from fczhk.schemas import AuctionBid
     from fczhk.services import get_match
 
-    _, factory, _, _, ids = env
+    cfg, factory, _, _, ids = env
     auction = start(call, env, auction_game)
     first_read, release_first = Event(), Event()
     second_started, second_read = Event(), Event()
@@ -94,6 +94,7 @@ def test_demo_concurrent_bids_wait_for_the_first_transaction(env, call, auction_
                     lot_id=auction["current"]["id"],
                     amount=10 if first else 0,
                 ),
+                cfg,
             )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -165,6 +166,90 @@ def test_secret_bids_reveal_only_after_resolution(env, call, auction_game):
     assert call("GET", f"/matches/{mid}/auction", role="observer")["lots"] == second["lots"]
 
 
+def test_prices_and_chat_results_are_revealed_once_after_both_bids(env, call, auction_game):
+    cfg, factory, _, _, _ = env
+    cfg.publication_chat_id = "-1005678"
+    mid = auction_game
+    auction = start(call, env, mid)
+    player = auction["current"]["player"]
+    bid(call, mid, auction, 17)
+    with factory() as db:
+        assert not list(db.scalars(select(Publication).where(Publication.kind == "auction_lot")))
+    resolved = bid(call, mid, auction, 12, "player")
+    assert resolved["prices"] == {str(player["registration_id"]): 17}
+    for role, amount in (("admin", 17), ("player", 12)):
+        bid(call, mid, auction, amount, role)
+    with factory() as db:
+        messages = list(db.scalars(select(Publication).where(Publication.kind == "auction_lot")))
+        assert len(messages) == 1
+        message = messages[0]
+        assert message.chat_id == "-1005678" and message.status == "pending"
+        assert player["alias"] in message.text
+        assert "Белые: 17" in message.text and "Чёрные: 12" in message.text
+        assert "Белые получают игрока за 17 баллов" in message.text
+    control(call, mid, resolved, "cancel")
+    restarted = start(call, env, mid)
+    bid(call, mid, restarted, 1)
+    bid(call, mid, restarted, 0, "player")
+    with factory() as db:
+        messages = list(
+            db.scalars(
+                select(Publication)
+                .where(Publication.kind == "auction_lot")
+                .order_by(Publication.version)
+            )
+        )
+        assert [message.version for message in messages] == [1, 2]
+
+
+def test_positive_tie_has_no_price_team_or_charge_and_announces_next_round(env, call, auction_game):
+    mid = auction_game
+    auction = start(call, env, mid)
+    player = auction["current"]["player"]
+    bid(call, mid, auction, 15)
+    resolved = bid(call, mid, auction, 15, "player")
+    assert resolved["budgets"] == {"white": 100, "black": 100}
+    assert str(player["registration_id"]) not in resolved["assignments"]
+    assert resolved["prices"] == {}
+    with env[1]() as db:
+        message = db.scalar(select(Publication).where(Publication.kind == "auction_lot"))
+        assert "Белые: 15" in message.text and "Чёрные: 15" in message.text
+        assert (
+            "переходит на круг 2" in message.text and "Команда пока не определена" in message.text
+        )
+
+
+async def test_auction_result_is_delivered_once_by_existing_worker(env, call, auction_game):
+    from types import SimpleNamespace
+
+    from fczhk.worker import deliver_one
+
+    cfg, factory, _, _, _ = env
+    cfg.publication_chat_id = "-1005678"
+    cfg.bot_username = "test_club_bot"
+    auction = start(call, env, auction_game)
+    alias = auction["current"]["player"]["alias"]
+    bid(call, auction_game, auction, 9)
+    bid(call, auction_game, auction, 4, "player")
+
+    class Bot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat, text, **kwargs):
+            self.sent.append((chat, text))
+            return SimpleNamespace(message_id=42)
+
+    bot = Bot()
+    assert await deliver_one(cfg, factory, bot)
+    assert not await deliver_one(cfg, factory, bot)
+    assert len(bot.sent) == 1 and bot.sent[0][0] == cfg.publication_chat_id
+    assert alias in bot.sent[0][1] and "Белые получают игрока за 9 баллов" in bot.sent[0][1]
+    with factory() as db:
+        message = db.scalar(select(Publication).where(Publication.kind == "auction_lot"))
+        assert message.status == "sent" and message.message_ids == [42]
+
+
 def test_ties_rounds_then_free_assignment_and_approval(env, call, auction_game):
     mid = auction_game
     a = start(call, env, mid)
@@ -181,6 +266,11 @@ def test_ties_rounds_then_free_assignment_and_approval(env, call, auction_game):
     assert a["status"] == "completed"
     assert a["budgets"] == {"white": 98, "black": 100}
     assert len(a["automatic"]) == 2
+    assert sorted(a["prices"].values()) == [0, 0, 1, 1]
+    with env[1]() as db:
+        messages = list(db.scalars(select(Publication).where(Publication.kind == "auction_lot")))
+        assert len(messages) == 8  # Four ties, two won lots and two automatic assignments.
+        assert sum("0 баллов.\nБез торгов" in message.text for message in messages) == 2
     assert sorted(a["assignments"].values()) == ["black"] * 3 + ["white"] * 3
     m = call("GET", f"/matches/{mid}")
     assert m["team_ratings"]["method"] == "auction"

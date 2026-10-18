@@ -93,6 +93,8 @@ export type BalanceRun = {
     attack: number | null
     defense: number | null
     source: string
+    community?: Average | null
+    temporary?: Average | null
     game_mu?: number
     game_sigma?: number
     game_count?: number

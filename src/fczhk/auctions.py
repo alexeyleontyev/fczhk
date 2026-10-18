@@ -4,11 +4,11 @@ from copy import deepcopy
 from random import SystemRandom
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from .models import Auction, AuctionLot, Player, TeamRatingDraft
+from .models import Auction, AuctionLot, Player, Publication, TeamRatingDraft
 from .ratings import lock_ratings
-from .services import DomainError, audit, ensure_pregame, entries, invalidate, save_teams
+from .services import MOSCOW, DomainError, audit, ensure_pregame, entries, invalidate, save_teams
 
 TEAMS = ("white", "black")
 RUNNING = ("active", "paused")
@@ -69,6 +69,12 @@ def data(db, auction, viewer):
     people = {p["registration_id"]: p for p in state["participants"]}
     side = next((t for t in TEAMS if getattr(auction, t + "_captain") == viewer), None)
     current = next((lot for lot in lots if lot.status == "pending"), None)
+    prices = {
+        str(lot.registration_id): getattr(lot, lot.winner + "_bid")
+        for lot in lots
+        if lot.status == "won" and lot.winner
+    }
+    prices.update({str(rid): 0 for rid in state["automatic"]})
     return dict(
         id=auction.id,
         revision=auction.revision,
@@ -82,6 +88,7 @@ def data(db, auction, viewer):
         participants=state["participants"],
         assignments=state["assignments"],
         automatic=state["automatic"],
+        prices=prices,
         current=dict(
             id=current.id,
             number=current.number,
@@ -118,7 +125,47 @@ def apply_assignments(db, actor, match, auction):
     save_teams(db, actor, match, values, reset=True)
 
 
-def advance(db, actor, match, auction):
+def announce(db, match, auction, text, cfg):
+    # The caller holds the match lock. Replayed bids return before creating an outbox row.
+    version = (
+        db.scalar(
+            select(func.max(Publication.version)).where(
+                Publication.match_id == match.id, Publication.kind == "auction_lot"
+            )
+        )
+        or 0
+    ) + 1
+    db.add(
+        Publication(
+            match_id=match.id,
+            kind="auction_lot",
+            version=version,
+            chat_id=cfg.publication_chat_id,
+            text=f"🎯 Аукцион #{auction.id} · {match.starts_at.astimezone(MOSCOW):%d.%m.%Y}\n{text}",
+        )
+    )
+    db.flush()
+
+
+def announce_lot(db, match, auction, lot, cfg):
+    player = next(
+        p for p in auction.state["participants"] if p["registration_id"] == lot.registration_id
+    )
+    text = (
+        f"Лот {lot.number} · круг {lot.round} · {player['alias']}\n"
+        f"⚪ Белые: {lot.white_bid} баллов\n⚫ Чёрные: {lot.black_bid} баллов\n"
+    )
+    if lot.winner:
+        team = "⚪ Белые" if lot.winner == "white" else "⚫ Чёрные"
+        text += f"{team} получают игрока за {getattr(lot, lot.winner + '_bid')} баллов."
+    else:
+        text += (
+            f"Равные ставки — игрок переходит на круг {lot.round + 1}. Команда пока не определена."
+        )
+    announce(db, match, auction, text, cfg)
+
+
+def advance(db, actor, match, auction, cfg):
     state = deepcopy(auction.state)
     full = next(
         (
@@ -135,6 +182,14 @@ def advance(db, actor, match, auction):
             if rid not in state["assignments"]:
                 state["assignments"][rid] = other
                 state["automatic"].append(p["registration_id"])
+                team = "⚪ Белые" if other == "white" else "⚫ Чёрные"
+                announce(
+                    db,
+                    match,
+                    auction,
+                    f"{p['alias']} → {team} · 0 баллов.\nБез торгов: команда соперника заполнена.",
+                    cfg,
+                )
         state["queue"] = []
         auction.state = state
         auction.status = "completed"
@@ -175,7 +230,7 @@ def advance(db, actor, match, auction):
     db.flush()
 
 
-def start(db, actor, match, body):
+def start(db, actor, match, body, cfg):
     ensure_pregame(db, match)
     if match.status not in ("finalized", "approved"):
         raise DomainError("Сначала финализируйте список")
@@ -234,11 +289,11 @@ def start(db, actor, match, body):
         captains=sorted(captains),
         rules="sealed-captains/v1",
     )
-    advance(db, actor, match, auction)
+    advance(db, actor, match, auction, cfg)
     return auction
 
 
-def bid(db, actor, match, body):
+def bid(db, actor, match, body, cfg):
     auction = latest(db, match)
     if not auction or auction.id != body.auction_id:
         raise DomainError("Аукцион изменился. Обновите страницу.", 409)
@@ -294,7 +349,8 @@ def bid(db, actor, match, body):
             black_bid=lot.black_bid,
             winner=lot.winner,
         )
-        advance(db, actor, match, auction)
+        announce_lot(db, match, auction, lot, cfg)
+        advance(db, actor, match, auction, cfg)
     db.flush()
     return auction
 

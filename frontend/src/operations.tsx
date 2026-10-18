@@ -98,7 +98,9 @@ export function OperationsPanel({ onMatch }: { onMatch: (id: number) => void }) 
                   ? 'Составы'
                   : problem.kind === 'cancellation'
                     ? 'Отмена игры'
-                    : 'Сбор'}{' '}
+                    : problem.kind === 'auction_lot'
+                      ? 'Аукцион'
+                      : 'Сбор'}{' '}
                 ·{' '}
                 {
                   (

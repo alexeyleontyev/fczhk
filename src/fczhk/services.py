@@ -601,7 +601,7 @@ def schedule_tick(db: Session, cfg: Settings, at: datetime | None = None) -> int
 
 
 def merge_guest(db: Session, actor: int, guest_id: int, target_id: int):
-    from .ratings import lock_ratings
+    from .ratings import lock_ratings, reconcile_linked_ratings
 
     lock_ratings(db)
     players = list(
@@ -649,6 +649,7 @@ def merge_guest(db: Session, actor: int, guest_id: int, target_id: int):
             "Обе карточки есть в фактическом составе одной игры. Сначала исправьте результат.", 409
         )
     guest.merged_into = target_id
+    reconcile_linked_ratings(db, [*linked_ids, guest_id])
     from .models import ProfileClaim
 
     for claim in db.scalars(

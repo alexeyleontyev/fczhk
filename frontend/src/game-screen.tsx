@@ -377,7 +377,9 @@ export function GameScreen({
                           ? 'Составы'
                           : p.kind === 'cancellation'
                             ? 'Отмена игры'
-                            : 'Сбор'}
+                            : p.kind === 'auction_lot'
+                              ? 'Аукцион'
+                              : 'Сбор'}
                       </strong>
                       <span>
                         {

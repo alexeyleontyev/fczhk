@@ -417,10 +417,11 @@ def test_concurrent_result_edits_are_atomic(pg):
 def test_simultaneous_auction_bids_resolve_once_and_persist(pg):
     from fczhk.auctions import bid, data, start
     from fczhk.db import now
-    from fczhk.models import Auction, AuctionLot
+    from fczhk.models import Auction, AuctionLot, Publication
     from fczhk.schemas import AuctionBid, AuctionStart
 
     factory, actor = pg
+    cfg = Settings(_env_file=None, env="test", publication_chat_id="-1005678")
     with factory() as db, db.begin():
         people = [Player(alias=f"Торги {i}", telegram_id=6000 + i) for i in range(3)]
         m = Match(game_day="2020-01-03", starts_at=now(), location="Поле", status="finalized")
@@ -431,7 +432,11 @@ def test_simultaneous_auction_bids_resolve_once_and_persist(pg):
             db.add(Registration(match_id=m.id, player_id=pid, position="field", selected=True))
         db.flush()
         a = start(
-            db, actor, m, AuctionStart(version=m.version, white_captain=actor, black_captain=ids[1])
+            db,
+            actor,
+            m,
+            AuctionStart(version=m.version, white_captain=actor, black_captain=ids[1]),
+            cfg,
         )
         view = data(db, a, actor)
         mid, aid, lot, other = m.id, a.id, view["current"]["id"], ids[1]
@@ -443,6 +448,7 @@ def test_simultaneous_auction_bids_resolve_once_and_persist(pg):
                 player,
                 get_match(db, mid, lock=True),
                 AuctionBid(auction_id=aid, lot_id=lot, amount=1 if player == actor else 0),
+                cfg,
             )
 
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -453,6 +459,11 @@ def test_simultaneous_auction_bids_resolve_once_and_persist(pg):
         assert a.white_budget == 99 and a.black_budget == 100
         assert len(a.state["assignments"]) == 4
         assert len(list(db.scalars(select(AuctionLot)))) == 1
+        messages = list(db.scalars(select(Publication).where(Publication.kind == "auction_lot")))
+        assert len(messages) == 2  # One winning lot and one free assignment, despite replayed bids.
+        assert data(db, a, actor)["prices"] == {
+            str(lot.registration_id): 1 for lot in db.scalars(select(AuctionLot))
+        } | {str(rid): 0 for rid in a.state["automatic"]}
 
 
 def test_concurrent_prediction_edit_rejects_stale_revision(pg):

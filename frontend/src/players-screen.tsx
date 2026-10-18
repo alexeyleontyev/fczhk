@@ -70,7 +70,7 @@ export function PlayersScreen({
                 <button className="button ghost compact" onClick={() => openStats(p.id)}>
                   Статистика
                 </button>
-                {!p.guest && (p.id !== me.id || isAdmin) && (
+                {(p.id !== me.id || isAdmin) && (
                   <button
                     className="button ghost compact"
                     aria-label={`Оценки: ${p.alias}`}

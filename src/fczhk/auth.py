@@ -3,6 +3,7 @@ import secrets
 from datetime import timedelta
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramMigrateToChat
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -17,7 +18,10 @@ async def check_member(cfg, telegram_id: int):
         return
     try:
         async with Bot(cfg.bot_token) as bot:
-            member = await bot.get_chat_member(cfg.community_chat_id, telegram_id)
+            try:
+                member = await bot.get_chat_member(cfg.community_chat_id, telegram_id)
+            except TelegramMigrateToChat as migration:
+                member = await bot.get_chat_member(migration.migrate_to_chat_id, telegram_id)
         allowed = member.status in ("creator", "administrator", "member") or (
             member.status == "restricted" and getattr(member, "is_member", False)
         )

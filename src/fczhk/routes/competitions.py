@@ -98,7 +98,7 @@ def router(ctx):
         db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
-        return auc.data(db, auc.start(db, p.id, m, body), p.id)
+        return auc.data(db, auc.start(db, p.id, m, body, cfg), p.id)
 
     @app.post("/api/matches/{match_id}/auction/bids")
     def auction_bid(
@@ -108,7 +108,7 @@ def router(ctx):
         db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, lock=True)
-        return auc.data(db, auc.bid(db, p.id, m, body), p.id)
+        return auc.data(db, auc.bid(db, p.id, m, body, cfg), p.id)
 
     @app.post("/api/matches/{match_id}/auction/control")
     def auction_control(

@@ -118,7 +118,7 @@ def dispatcher(cfg, factory):
                     people = list(
                         db.scalars(
                             select(Player)
-                            .where(Player.merged_into.is_(None), Player.telegram_id.is_not(None))
+                            .where(Player.merged_into.is_(None))
                             .order_by(Player.alias)
                         )
                     )

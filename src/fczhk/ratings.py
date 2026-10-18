@@ -41,8 +41,54 @@ def lock_ratings(db: Session):
 def registered_player(db: Session, player_id: int) -> Player:
     p = db.get(Player, player_id)
     if not p or p.telegram_id is None or p.merged_into:
-        raise DomainError("Оценивать можно только зарегистрированных игроков", 404)
+        raise DomainError("Оценки может оставлять только зарегистрированный игрок", 404)
     return p
+
+
+def catalog_player(db: Session, player_id: int) -> Player:
+    p = db.get(Player, player_id)
+    if not p or p.merged_into:
+        raise DomainError("Игрок не найден", 404)
+    return p
+
+
+def own_rating(db: Session, actor: int, target_ids: list[int], position: str):
+    return db.scalar(
+        select(Rating)
+        .where(
+            Rating.author_id == actor,
+            Rating.player_id.in_(target_ids),
+            Rating.position == position,
+        )
+        .order_by(Rating.updated_at.desc(), Rating.id.desc())
+        .limit(1)
+        .execution_options(populate_existing=True)
+    )
+
+
+def reconcile_linked_ratings(db: Session, target_ids: list[int]):
+    groups = {}
+    for row in db.scalars(
+        select(Rating)
+        .where(Rating.player_id.in_(target_ids))
+        .order_by(Rating.updated_at, Rating.id)
+    ):
+        groups.setdefault((row.author_id, row.position), []).append(row)
+    for rows in groups.values():
+        if len(rows) < 2:
+            continue
+        # Invalidate edits opened before two separately rated cards became one identity.
+        latest = rows[-1]
+        latest.revision = max(row.revision for row in rows) + 1
+        latest.updated_at = now()
+        db.add(
+            RatingHistory(
+                rating_id=latest.id,
+                revision=latest.revision,
+                attack=latest.attack,
+                defense=latest.defense,
+            )
+        )
 
 
 def aggregate(db: Session, ids: list[int]) -> dict:
@@ -51,7 +97,11 @@ def aggregate(db: Session, ids: list[int]) -> dict:
     canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
     relevant = [pid for pid, target in canonical.items() if target in ids]
     current = list(
-        db.scalars(select(Rating).where(Rating.player_id.in_(relevant)).order_by(Rating.id))
+        db.scalars(
+            select(Rating)
+            .where(Rating.player_id.in_(relevant))
+            .order_by(Rating.updated_at, Rating.id)
+        )
     )
     imported = list(
         db.scalars(
@@ -154,17 +204,13 @@ def rating_data(row: Rating | RatingHistory | None) -> dict | None:
 
 
 def review_data(db: Session, actor: int, target: int, position: str, admin: bool) -> dict:
-    registered_player(db, target)
-    own = db.scalar(
-        select(Rating).where(
-            Rating.author_id == actor, Rating.player_id == target, Rating.position == position
-        )
-    )
+    catalog_player(db, target)
+    canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
+    target_ids = [pid for pid, resolved in canonical.items() if resolved == target]
+    own = own_rating(db, actor, target_ids, position)
     result = dict(
         own=rating_data(own), averages=public_averages(db, [target], admin)[target][position]
     )
-    canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
-    target_ids = [pid for pid, resolved in canonical.items() if resolved == target]
     imported = list(
         db.scalars(
             select(ImportedRating)
@@ -200,8 +246,8 @@ def review_data(db: Session, actor: int, target: int, position: str, admin: bool
         for rating, author in db.execute(
             select(Rating, Player)
             .join(Player, Player.id == Rating.author_id)
-            .where(Rating.player_id == target, Rating.position == position)
-            .order_by(Rating.id)
+            .where(Rating.player_id.in_(target_ids), Rating.position == position)
+            .order_by(Rating.updated_at, Rating.id)
         ):
             history = list(
                 db.scalars(
@@ -226,16 +272,11 @@ def review_data(db: Session, actor: int, target: int, position: str, admin: bool
 def save_rating(db: Session, actor: int, target: int, body):
     lock_ratings(db)
     registered_player(db, actor)
-    registered_player(db, target)
+    catalog_player(db, target)
     if actor == target:
         raise DomainError("Нельзя оценивать себя")
-    row = db.scalar(
-        select(Rating)
-        .where(
-            Rating.author_id == actor, Rating.player_id == target, Rating.position == body.position
-        )
-        .execution_options(populate_existing=True)
-    )
+    target_ids = [target, *db.scalars(select(Player.id).where(Player.merged_into == target))]
+    row = own_rating(db, actor, target_ids, body.position)
     if body.revision != (row.revision if row else 0):
         raise DomainError("Ваша оценка уже изменена. Откройте карточку заново.", 409)
     if row and row.attack == body.attack and row.defense == body.defense:
@@ -323,7 +364,20 @@ def effective(db: Session, regs: list[Registration]) -> dict[int, dict]:
     for r in regs:
         a, d, _ = scores.get((r.player_id, r.position), (None, None, 0))
         source = "community" if d is not None else "missing"
+        community = (
+            dict(attack=float(a) if a is not None else None, defense=float(d))
+            if d is not None
+            else None
+        )
         fallback = temps.get(r.id)
+        temporary = (
+            dict(
+                attack=fallback.attack / 10 if fallback.attack is not None else None,
+                defense=fallback.defense / 10,
+            )
+            if fallback and fallback.position == r.position
+            else None
+        )
         if source == "missing" and fallback and fallback.position == r.position:
             a = Fraction(fallback.attack, 10) if fallback.attack is not None else None
             d = Fraction(fallback.defense, 10)
@@ -337,6 +391,8 @@ def effective(db: Session, regs: list[Registration]) -> dict[int, dict]:
             attack=float(a) if a is not None else None,
             defense=float(d) if d is not None else None,
             source=source,
+            community=community,
+            temporary=temporary,
         )
     return result
 

@@ -101,6 +101,36 @@ test('admin can see authors and rating history without self-rating', async ({ pa
   await page.screenshot({ path: 'test-results/desktop-rating-history.png', fullPage: true })
 })
 
+test('player can rate a catalog card without Telegram from its card and full rating list', async ({
+  page,
+}) => {
+  const api = await login(page, 'player')
+  const admin = await (await page.request.post('/api/auth/demo/admin')).json()
+  const alias = `Каталог без Telegram ${Date.now()}`
+  const response = await page.request.post('/api/players/guests', {
+    headers: { Authorization: `Bearer ${admin.token}` },
+    data: { alias },
+  })
+  expect(response.status()).toBe(201)
+  const guest = await response.json()
+  await page.reload()
+  await page.getByRole('button', { name: 'Игроки', exact: true }).click()
+  await page.getByLabel('Поиск игроков').fill(alias)
+  await page.getByRole('button', { name: `Оценки: ${alias}`, exact: true }).click()
+  const modal = page.getByRole('dialog')
+  await modal.getByRole('button', { name: 'Полевой', exact: true }).click()
+  await modal.getByLabel('Оценка атаки').fill('2,7')
+  await modal.getByLabel('Оценка защиты').fill('4,1')
+  await modal.getByRole('button', { name: 'Сохранить оценку', exact: true }).click()
+  await expect(modal.getByRole('button', { name: 'Сохранить оценку', exact: true })).toBeEnabled()
+  expect((await api('GET', `/players/${guest.id}/ratings/field`)).own.attack).toBe(2.7)
+  await modal.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await page.getByRole('button', { name: 'Оценить игроков', exact: true }).click()
+  await modal.getByLabel('Оцениваемый игрок').selectOption(String(guest.id))
+  await expect(modal.getByLabel('Оценка атаки')).toHaveValue('2.7')
+  await expect(modal.getByText(/Все оценки и история/)).toHaveCount(0)
+})
+
 test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing and frozen approval', async ({
   page,
 }) => {
@@ -114,9 +144,11 @@ test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing 
     cost: 80000,
   })
   m = await api('POST', `/matches/${m.id}/actions/open`, { version: m.version })
+  let firstGuestId = 0
   for (let i = 0; i < 18; i++) {
     const alias = i < 16 ? `Баланс ${String(i + 1).padStart(2, '0')}` : `Вратарь ${i - 15}`
     const guest = await api('POST', '/players/guests', { alias })
+    if (i === 0) firstGuestId = guest.id
     const position = i < 16 ? 'field' : 'keeper'
     m = await api('POST', `/matches/${m.id}/participants`, {
       version: m.version,
@@ -132,6 +164,12 @@ test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing 
       defense: i < 16 ? 2 + (i % 4) * 0.5 : i === 16 ? 0 : 5,
     })
   }
+  await api('PUT', `/players/${firstGuestId}/ratings`, {
+    position: 'field',
+    attack: 4.5,
+    defense: 1.2,
+    revision: 0,
+  })
   await page.goto(`/?game=${m.id}`)
   await page.getByRole('button', { name: 'Финализировать сбор', exact: true }).click()
   await page
@@ -151,6 +189,10 @@ test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing 
   await page.getByRole('button', { name: 'Рассчитать варианты', exact: true }).click()
   await expect(page.getByRole('article', { name: 'Вариант 3', exact: true })).toBeVisible()
   const runs = await api('GET', `/matches/${m.id}/balance`)
+  const firstVariant = page.getByRole('article', { name: 'Вариант 1', exact: true })
+  const firstPlayer = firstVariant.locator('.variant-player').filter({ hasText: 'Баланс 01' })
+  await expect(firstPlayer.getByText('Сообщество: А 4,5 · З 1,2', { exact: true })).toBeVisible()
+  await expect(firstPlayer.getByText('На эту игру: А 2 · З 2', { exact: true })).toBeVisible()
   expect(runs[0].result.partition_count).toBe(6435)
   for (let i = 0; i < 3; i++)
     for (let j = i + 1; j < 3; j++) expect(runs[0].result.distances[i][j]).toBeGreaterThanOrEqual(6)

@@ -120,11 +120,17 @@ def test_invalid_values_rejected(env, call, attack, defense):
     vote(call, env[4]["player"], attack, defense, expected=422)
 
 
-def test_self_guest_and_keeper_rules(env, call):
+def test_self_catalog_and_keeper_rules(env, call):
     ids = env[4]
     vote(call, ids["admin"], expected=400)
     g = call("POST", "/players/guests", {"alias": "Гость без Telegram"}, expected=201)
-    vote(call, g["id"], expected=404)
+    guest_rating = vote(call, g["id"], attack=4.2, defense=3.1, role="player")
+    assert guest_rating["own"]["attack"] == 4.2
+    assert guest_rating["averages"] == {"attack": 4.2, "defense": 3.1}
+    assert "reviews" not in guest_rating
+    assert (
+        call("GET", f"/players/{g['id']}/ratings/field")["reviews"][0]["author_id"] == ids["player"]
+    )
     vote(call, ids["player"], position="keeper", expected=422)
     data = vote(call, ids["player"], attack=None, defense=4.7, position="keeper")
     assert data["averages"]["attack"] is None
@@ -132,6 +138,26 @@ def test_self_guest_and_keeper_rules(env, call):
     assert field["averages"]["defense"] is None
     vote(call, ids["player"], attack=0, defense=0)
     assert call("GET", f"/players/{ids['player']}/ratings/keeper")["averages"]["defense"] == 4.7
+
+
+def test_catalog_votes_follow_link_and_latest_edit_counts_once(env, call):
+    target = env[4]["player"]
+    guest = call("POST", "/players/guests", {"alias": "Историческая карточка"}, expected=201)
+    vote(call, target, attack=1, defense=1)
+    vote(call, guest["id"], attack=3, defense=2)
+    call("POST", f"/players/{guest['id']}/link", {"target_id": target})
+    linked = call("GET", f"/players/{target}/ratings/field")
+    assert linked["own"]["attack"] == 3
+    assert linked["averages"] == {"attack": 3, "defense": 2, "count": 1}
+    vote(call, target, attack=1, defense=1, revision=1, expected=409)
+    updated = vote(call, target, attack=4, defense=5, revision=linked["own"]["revision"])
+    assert updated["averages"] == {"attack": 4, "defense": 5, "count": 1}
+    assert updated["reviews"][0]["history"][0]["attack"] == 4
+    assert len(updated["reviews"]) == 1
+    call("GET", f"/players/{guest['id']}/ratings/field", expected=404)
+    vote(call, guest["id"], revision=2, expected=404)
+    vote(call, 999999, expected=404)
+    vote(call, target, role="player", expected=400)
 
 
 def test_temporary_is_match_scoped_and_community_takes_precedence(env, call, game):
@@ -183,6 +209,20 @@ def test_missing_not_zero_and_permissions(call, game):
         role="player",
         expected=403,
     )
+
+
+def test_balance_snapshot_includes_both_community_and_match_scores(call, game):
+    m, reg = add_guest(call, game, "Оба источника", attack=2, defense=3)
+    m, _ = add_guest(call, m, "Только временная", attack=4, defense=1)
+    vote(call, reg["player_id"], attack=4.5, defense=1.2)
+    m = call("POST", f"/matches/{m['id']}/actions/finalize", {"version": m["version"]})
+    run = generate(call, m)
+    row = next(row for row in run["inputs"] if row["player_id"] == reg["player_id"])
+    assert row["community"] == {"attack": 4.5, "defense": 1.2}
+    assert row["temporary"] == {"attack": 2, "defense": 3}
+    assert row["source"] == "community" and row["attack"] == 4.5
+    other = next(row for row in run["inputs"] if row["player_id"] != reg["player_id"])
+    assert other["community"] is None and other["temporary"] == {"attack": 4, "defense": 1}
 
 
 def test_autoteams_keeper_assignment_edit_snapshot_and_publish(call, game):

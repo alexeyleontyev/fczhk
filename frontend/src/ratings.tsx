@@ -205,7 +205,7 @@ export function RatingFlow({
   run: Run
   busy: boolean
 }) {
-  const eligible = players.filter((p) => !p.guest && p.id !== me.id)
+  const eligible = players.filter((p) => p.id !== me.id)
   const key = `fczhk-rating-progress:${me.id}`
   const [position, setPosition] = useState<Position>(() =>
     localStorage.getItem(`${key}:position`) === 'keeper' ? 'keeper' : 'field',
@@ -221,7 +221,7 @@ export function RatingFlow({
   const [defense, setDefense] = useState('')
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
-  const person = players.find((p) => p.id === playerId && !p.guest)
+  const person = players.find((p) => p.id === playerId)
   const index = eligible.findIndex((p) => p.id === playerId)
   useEffect(() => {
     let active = true
@@ -255,7 +255,7 @@ export function RatingFlow({
       localStorage.setItem(key, String(nextPerson.id))
     }
   }
-  if (!eligible.length && !person) return <p>Пока нет других зарегистрированных игроков.</p>
+  if (!eligible.length && !person) return <p>Пока нет других игроков в каталоге.</p>
   if (done)
     return (
       <div className="rating-finished">
@@ -286,7 +286,7 @@ export function RatingFlow({
           onChange={(e) => setPlayerId(Number(e.target.value))}
         >
           {!person && <option value="">Выберите игрока</option>}
-          {(me.is_admin ? players.filter((p) => !p.guest) : eligible).map((p) => (
+          {(me.is_admin ? players : eligible).map((p) => (
             <option key={p.id} value={p.id}>
               {p.alias}
             </option>
@@ -777,9 +777,25 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
                     <h4>{team === 'white' ? 'Белые' : 'Черные'}</h4>
                     {latest.inputs
                       .filter((r) => variant.assignments[r.registration_id] === team)
-                      .map((r) => (
-                        <span key={r.registration_id}>{r.alias}</span>
-                      ))}
+                      .map((r) => {
+                        const community = r.community ?? (r.source === 'community' ? r : null)
+                        const temporary = r.temporary ?? (r.source === 'temporary' ? r : null)
+                        return (
+                          <div className="variant-player" key={r.registration_id}>
+                            <span>{r.alias}</span>
+                            <small>
+                              {community
+                                ? `Сообщество: А ${score(community.attack)} · З ${score(community.defense)}`
+                                : 'Сообщество: нет оценок'}
+                            </small>
+                            <small>
+                              {temporary
+                                ? `На эту игру: А ${score(temporary.attack)} · З ${score(temporary.defense)}`
+                                : 'На эту игру: оценка не задана'}
+                            </small>
+                          </div>
+                        )
+                      })}
                   </div>
                 ))}
               </div>

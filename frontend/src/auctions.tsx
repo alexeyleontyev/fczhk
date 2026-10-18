@@ -24,6 +24,7 @@ type Auction = {
   participants: AuctionPlayer[]
   assignments: Record<string, Team>
   automatic: number[]
+  prices: Record<string, number>
   current: {
     id: string
     number: number
@@ -172,7 +173,14 @@ export function AuctionPanel({
                 {auction.participants
                   .filter((p) => auction.assignments[p.registration_id] === t)
                   .map((p) => (
-                    <p key={p.registration_id}>{p.alias}</p>
+                    <p className="auction-player" key={p.registration_id}>
+                      <span>{p.alias}</span>
+                      <small>
+                        {p.player_id === auction.captains[t]
+                          ? 'Капитан'
+                          : `${auction.prices[p.registration_id]} баллов${auction.automatic.includes(p.registration_id) ? ' · автоматически' : ''}`}
+                      </small>
+                    </p>
                   ))}
               </div>
             ))}

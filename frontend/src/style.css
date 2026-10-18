@@ -1527,6 +1527,20 @@ footer > span:first-child {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+.variant-player {
+  display: grid;
+  gap: 3px;
+}
+.variant-player small,
+.auction-player small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.auction-player {
+  display: grid;
+  gap: 3px;
+}
 .manual-reset {
   border-top: 1px solid #dfe5dc;
   margin-top: 20px;
