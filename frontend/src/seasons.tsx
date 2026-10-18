@@ -8,6 +8,13 @@ export function seasonQuery(season: string) {
   return season ? `?season=${encodeURIComponent(season)}` : ''
 }
 
+export function defaultSeason(seasons: string[], at = new Date()) {
+  const year = new Intl.DateTimeFormat('en', { timeZone: 'Europe/Moscow', year: 'numeric' }).format(
+    at,
+  )
+  return seasons.includes(year) ? year : (seasons[0] ?? '')
+}
+
 export function SeasonSelect({ season, seasons, onSeason }: SeasonFilter) {
   return (
     <label className="season-filter">

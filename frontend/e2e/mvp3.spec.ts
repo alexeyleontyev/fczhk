@@ -73,6 +73,9 @@ test('mobile result: unknown goals, actual rosters, corrections and player stati
   await expect(
     page.getByRole('heading', { name: 'Статистика: Алексей', exact: true }),
   ).toBeVisible()
+  await page
+    .getByRole('combobox', { name: 'Период статистики', exact: true })
+    .selectOption(m.season)
   await page.locator('.statistics .stat-link').filter({ hasText: '1 : 1' }).first().click()
   await expect(result.getByLabel('Счёт матча')).toContainText('1 : 1')
   await page.getByRole('button', { name: 'Сменить роль', exact: true }).click()

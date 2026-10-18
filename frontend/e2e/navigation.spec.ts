@@ -65,7 +65,7 @@ test('Telegram back restores nested statistics, catalog search and current game;
       json: { ...current, id: detailId, location: 'Игра из статистики' },
     }),
   )
-  await page.route(`**/api/players/${person.id}/stats`, (route) =>
+  await page.route(`**/api/players/${person.id}/stats*`, (route) =>
     route.fulfill({
       json: {
         ...stats,

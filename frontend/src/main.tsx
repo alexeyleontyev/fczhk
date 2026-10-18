@@ -27,6 +27,7 @@ import { PlayersScreen } from './players-screen'
 import { ProfileScreen } from './profile-screen'
 import { OperationsPanel, ScheduleExceptions, ProfileClaims } from './operations'
 import { AdministratorsPanel } from './administrators'
+import { defaultSeason } from './seasons'
 import type { Match, Template, History, Run } from './types'
 import './style.css'
 
@@ -60,10 +61,11 @@ function App() {
     nativeBack,
     visited,
   } = useNavigation(selectedId, setSelectedId, Boolean(me))
-  const [season, setSeason] = useState('')
+  const [selectedSeason, setSeason] = useState<string | null>(null)
+  const season = selectedSeason ?? defaultSeason(seasons)
   const seasonFilter = { season, seasons, onSeason: setSeason }
   useEffect(() => {
-    if (!me) setSeason('')
+    if (!me) setSeason(null)
   }, [me?.id])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
