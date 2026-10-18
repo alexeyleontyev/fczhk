@@ -22,6 +22,7 @@ import { GameForm, IncludeForm, TemplateForm } from './forms'
 import { useClubData } from './use-club-data'
 import { useNavigation } from './use-navigation'
 import { GameScreen } from './game-screen'
+import { AuctionScreen } from './auctions'
 import { ArchiveScreen } from './archive-screen'
 import { PlayersScreen } from './players-screen'
 import { ProfileScreen } from './profile-screen'
@@ -56,6 +57,7 @@ function App() {
     ratingTarget,
     openRatings,
     openGame,
+    openAuction,
     back,
     canBack,
     nativeBack,
@@ -101,14 +103,12 @@ function App() {
     await run(async () => {
       const data = await api<{ token: string }>(`/auth/demo/${role}`, 'POST')
       setToken(data.token)
-      setTab('game')
       await refresh(true)
     })
   }
   async function loginBrowser(token: string) {
     setToken(token)
     setNotice(null)
-    setTab('game')
     try {
       await refresh(true)
     } catch (error) {
@@ -199,7 +199,7 @@ function App() {
           </button>
         </div>
       )}
-      <nav className="navigation" aria-label="Главная навигация">
+      <nav className="navigation" aria-label="Главная навигация" hidden={tab === 'auction'}>
         {[
           ['game', CalendarDays, 'Игра'],
           ['archive', Clock3, 'Архив'],
@@ -211,7 +211,7 @@ function App() {
           return (
             <button
               key={id as string}
-              className={tab === id ? 'active' : ''}
+              className={tab === id || (id === 'game' && tab === 'auction') ? 'active' : ''}
               onClick={() => setTab(id as string)}
             >
               <I size={18} />
@@ -266,6 +266,25 @@ function App() {
             setTab={setTab}
             setHistory={setHistory}
             me={me}
+            openAuction={openAuction}
+          />
+        )}
+        {tab === 'auction' && m && (
+          <AuctionScreen
+            key={m.id}
+            match={m}
+            admin={isAdmin}
+            busy={busy}
+            run={run}
+            onStatusChange={() => void run(() => refresh(true))}
+            onTeams={() => {
+              openGame(m.id)
+              requestAnimationFrame(() => {
+                const target =
+                  document.querySelector('.team-grid') ?? document.querySelector('.result-panel')
+                target?.scrollIntoView({ block: 'start' })
+              })
+            }}
           />
         )}
         {tab === 'predictions' && (

@@ -1501,6 +1501,25 @@ footer > span:first-child {
 .balance-results {
   margin-top: 24px;
 }
+.variant-switcher {
+  display: flex;
+  gap: 8px;
+}
+.variant-switcher .button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.variant-switcher [aria-pressed='true'] {
+  background: var(--green);
+  color: white;
+}
+.variant-team-summary {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.auto-teams .balance-results > details {
+  margin-top: 18px;
+}
 .balance-variant {
   border: 1px solid #dce3d6;
   border-radius: 16px;
@@ -1712,6 +1731,36 @@ footer > span:first-child {
   padding: 20px 0;
   border-top: 1px solid var(--line);
   margin-top: 16px;
+}
+.auction-panel {
+  max-width: 820px;
+  margin-inline: auto;
+}
+.auction-heading h1 {
+  font-size: 28px;
+}
+.navigation[hidden] {
+  display: none;
+}
+.auction-budgets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.auction-budgets > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.auction-budgets h3 {
+  font-size: 16px;
+}
+.auction-budgets p {
+  font-size: 13px;
+  margin-top: 6px;
+}
+.auction-current h3 {
+  font-size: 26px;
+  overflow-wrap: anywhere;
 }
 .auction-panel details {
   margin: 18px 0;

@@ -595,6 +595,8 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
   const [settings, setSettings] = useState<BalanceRun['settings'] | null>(null)
   const [error, setError] = useState('')
   const [confirmReset, setConfirmReset] = useState(false)
+  const [preview, setPreview] = useState<{ runId: number; index: number } | null>(null)
+  const [browsingRun, setBrowsingRun] = useState<number | null>(null)
   useEffect(() => {
     let active = true
     setError('')
@@ -616,6 +618,20 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
     }
   }, [m])
   const latest = runs[0]
+  const chosenVariant =
+    latest &&
+    m.team_ratings.run_id === latest.id &&
+    ['auto', 'auto-game'].includes(m.team_ratings.method)
+      ? (m.team_ratings.variant ?? null)
+      : null
+  const browsing =
+    chosenVariant === null || browsingRun === latest?.id || latest?.stale || m.team_ratings.stale
+  const variantIndex =
+    !browsing && chosenVariant !== null
+      ? chosenVariant
+      : preview && preview.runId === latest?.id
+        ? preview.index
+        : 0
   const missing = m.registrations.filter(
     (r) => r.selected && r.position === 'field' && r.rating.source === 'missing',
   )
@@ -628,12 +644,7 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
         </div>
         <span className="tag">До 3 вариантов</span>
       </div>
-      <p className="muted caption">
-        {settings?.method === 'game'
-          ? 'Экспериментальный OpenSkill сравнивает сумму ожидаемой силы полевых. Разница мячей пока не используется.'
-          : 'Меньший рейтинг делим пополам; при равенстве уменьшаем защиту. Сравниваем средние полевых.'}{' '}
-        Вратарей назначаете вручную.
-      </p>
+      <p className="muted caption">Вратарей назначаете вручную.</p>
       {error && (
         <p role="alert" className="alert error">
           {error}
@@ -644,7 +655,7 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
           Сначала задайте рейтинги на игру: {missing.map((r) => r.alias).join(', ')}.
         </p>
       )}
-      {settings && (
+      {settings && browsing && (
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -654,6 +665,8 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
                 settings,
               })
               setRuns((current) => [result, ...current.filter((r) => r.id !== result.id)])
+              setPreview({ runId: result.id, index: 0 })
+              setBrowsingRun(null)
             }, 'Варианты рассчитаны. Выбор еще не утвержден.')
           }}
         >
@@ -742,14 +755,6 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
       )}
       {latest && (
         <div className="balance-results">
-          <p className="muted caption">
-            Расчет #{latest.id} · Перебрано {latest.result.partition_count} разбиений · В пределах
-            допуска {latest.result.pool_count}
-            <br />
-            {latest.settings.method === 'game' ? 'Лучшая Δ силы' : 'Лучший дисбаланс'}{' '}
-            {score(latest.result.minimum_cost)} · Использован допуск{' '}
-            {score(latest.result.epsilon_used)} · Минимальное различие {latest.result.min_distance}
-          </p>
           {(latest.stale || m.team_ratings.stale) && (
             <p className="alert error" role="alert">
               Список или рейтинги изменились. Рассчитайте варианты заново.
@@ -760,32 +765,57 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
               {w}
             </p>
           ))}
-          {latest.result.variants.map((variant, i) => (
+          {browsing ? (
+            <div className="variant-switcher" role="group" aria-label="Варианты составов">
+              {latest.result.variants.map((_, i) => (
+                <button
+                  className="button secondary compact"
+                  key={i}
+                  aria-label={`Показать вариант ${i + 1}`}
+                  aria-pressed={variantIndex === i}
+                  onClick={() => setPreview({ runId: latest.id, index: i })}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="section-title">
+              <span className="tag">Выбранный вариант</span>
+              <button
+                className="button ghost compact"
+                onClick={() => {
+                  setPreview({ runId: latest.id, index: chosenVariant! })
+                  setBrowsingRun(latest.id)
+                }}
+              >
+                Другой вариант
+              </button>
+            </div>
+          )}
+          {latest.result.variants.slice(variantIndex, variantIndex + 1).map((variant) => (
             <article
               className="balance-variant"
-              aria-label={`Вариант ${i + 1}`}
-              key={`${latest.id}:${i}`}
+              aria-label={`Вариант ${variantIndex + 1}`}
+              key={`${latest.id}:${variantIndex}`}
             >
               <div className="section-title">
-                <h3>Вариант {i + 1}</h3>
+                <h3>Вариант {variantIndex + 1}</h3>
                 <span className="tag">
                   {variant.game_rating
                     ? `Δ силы ${score(variant.game_rating.mu_gap)}`
                     : `Дисбаланс ${score(variant.summary.cost)}`}
                 </span>
               </div>
-              {variant.game_rating ? (
-                <p className="muted caption">
-                  Сумма μ: белые {score(variant.game_rating.white_total)} · чёрные{' '}
-                  {score(variant.game_rating.black_total)}
-                </p>
-              ) : (
-                <TeamMeans summary={variant.summary} />
-              )}
               <div className="variant-names">
                 {(['white', 'black'] as const).map((team) => (
                   <div key={team}>
                     <h4>{team === 'white' ? 'Белые' : 'Черные'}</h4>
+                    <small className="muted variant-team-summary">
+                      {variant.game_rating
+                        ? `Сумма μ: ${score(team === 'white' ? variant.game_rating.white_total : variant.game_rating.black_total)}`
+                        : `Средние: А ${score(variant.summary[team].attack)} · З ${score(variant.summary[team].defense)}`}
+                    </small>
                     {latest.inputs
                       .filter((r) => variant.assignments[r.registration_id] === team)
                       .map((r) => {
@@ -807,44 +837,62 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
                   </div>
                 ))}
               </div>
-              <p className="muted caption">
-                {latest.result.distances[i]
-                  .map((d, j) => (i === j ? null : `С вариантом ${j + 1}: ${d} сменивших команду`))
-                  .filter(Boolean)
-                  .join(' · ')}
-              </p>
-              <button
-                className="button secondary"
-                disabled={busy || latest.stale}
-                onClick={() =>
-                  void run(
-                    () =>
-                      api(`/matches/${m.id}/balance/${latest.id}/apply`, 'POST', {
+              {browsing && (
+                <button
+                  className="button secondary"
+                  disabled={busy || latest.stale}
+                  onClick={() =>
+                    void run(async () => {
+                      await api(`/matches/${m.id}/balance/${latest.id}/apply`, 'POST', {
                         version: m.version,
-                        variant: i,
-                      }),
-                    'Вариант перенесен в черновик. Назначьте вратарей и утвердите команды.',
-                  )
-                }
-              >
-                Выбрать вариант {i + 1}
-              </button>
+                        variant: variantIndex,
+                      })
+                      setBrowsingRun(null)
+                    }, 'Вариант перенесен в черновик. Назначьте вратарей и утвердите команды.')
+                  }
+                >
+                  Выбрать вариант {variantIndex + 1}
+                </button>
+              )}
             </article>
           ))}
-          <p className="muted caption">
-            Смена цветов не считается отличием. Поиск разных вариантов эвристический, без гарантии
-            глобального максимума разнообразия.
-          </p>
           <details>
-            <summary>Рейтинги, использованные в расчете</summary>
-            {latest.inputs.map((r) => (
-              <p className="caption" key={r.registration_id}>
-                {r.alias}:{' '}
-                {latest.settings.method === 'game'
-                  ? `μ ${score(r.game_mu)} · σ ${score(r.game_sigma)} · ${r.game_count} игр`
-                  : `А ${score(r.attack)} / З ${score(r.defense)} · ${r.source === 'temporary' ? 'на эту игру' : 'среднее сообщества'}`}
-              </p>
-            ))}
+            <summary>Подробности расчёта</summary>
+            <p className="muted caption">
+              {latest.settings.method === 'game'
+                ? 'Экспериментальный OpenSkill сравнивает сумму ожидаемой силы полевых. Разница мячей пока не используется.'
+                : 'Меньший рейтинг делим пополам; при равенстве уменьшаем защиту. Сравниваем средние полевых.'}
+            </p>
+            <p className="muted caption">
+              Расчет #{latest.id} · Перебрано {latest.result.partition_count} разбиений · В пределах
+              допуска {latest.result.pool_count}.{' '}
+              {latest.settings.method === 'game' ? 'Лучшая Δ силы' : 'Лучший дисбаланс'}{' '}
+              {score(latest.result.minimum_cost)} · Использован допуск{' '}
+              {score(latest.result.epsilon_used)} · Минимальное различие{' '}
+              {latest.result.min_distance}
+            </p>
+            {latest.result.distances[variantIndex]?.map((distance, i) =>
+              i === variantIndex ? null : (
+                <p className="caption" key={i}>
+                  С вариантом {i + 1}: {distance} сменивших команду
+                </p>
+              ),
+            )}
+            <p className="muted caption">
+              Смена цветов не считается отличием. Поиск разных вариантов эвристический, без гарантии
+              глобального максимума разнообразия.
+            </p>
+            <details>
+              <summary>Рейтинги, использованные в расчете</summary>
+              {latest.inputs.map((r) => (
+                <p className="caption" key={r.registration_id}>
+                  {r.alias}:{' '}
+                  {latest.settings.method === 'game'
+                    ? `μ ${score(r.game_mu)} · σ ${score(r.game_sigma)} · ${r.game_count} игр`
+                    : `А ${score(r.attack)} / З ${score(r.defense)} · ${r.source === 'temporary' ? 'на эту игру' : 'среднее сообщества'}`}
+                </p>
+              ))}
+            </details>
           </details>
           {runs.length > 1 && (
             <details>

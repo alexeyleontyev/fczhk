@@ -15,8 +15,11 @@ export function useNavigation(
   selectMatch: (id: number | null) => void,
   authenticated: boolean,
 ) {
-  const [screen, setScreen] = useState<Screen>(root)
-  const current = useRef<Frame>({ ...root, matchId: selectedId, scroll: 0, modalScroll: 0 })
+  const [screen, setScreen] = useState<Screen>(() => ({
+    ...root,
+    tab: new URLSearchParams(location.search).get('screen') === 'auction' ? 'auction' : 'game',
+  }))
+  const current = useRef<Frame>({ ...screen, matchId: selectedId, scroll: 0, modalScroll: 0 })
   const history = useRef<Frame[]>([])
   const visited = useRef(new Set(['game']))
   const select = useRef(selectMatch)
@@ -50,7 +53,11 @@ export function useNavigation(
   }
 
   const back = useCallback(() => {
-    const previous = history.current.pop()
+    const previous =
+      history.current.pop() ??
+      (current.current.tab === 'auction'
+        ? { ...current.current, ...root, scroll: 0, modalScroll: 0 }
+        : undefined)
     if (!previous) return
     current.current = previous
     select.current(previous.matchId)
@@ -71,15 +78,24 @@ export function useNavigation(
   }, [reset])
 
   useLayoutEffect(() => {
+    const url = new URL(location.href)
+    if (screen.tab === 'auction') {
+      url.searchParams.set('screen', 'auction')
+    } else {
+      url.searchParams.delete('screen')
+    }
+    if (selectedId) url.searchParams.set('game', String(selectedId))
+    else if (authenticated) url.searchParams.delete('game')
+    window.history.replaceState(window.history.state, '', url)
     window.scrollTo(0, current.current.scroll)
     const modal = document.querySelector('.modal')
     if (modal) modal.scrollTop = current.current.modalScroll
-  }, [screen])
+  }, [screen, authenticated])
 
   const tg = window.Telegram?.WebApp
   const nativeBack =
     tg?.initData && (!tg.isVersionAtLeast || tg.isVersionAtLeast('6.1')) ? tg.BackButton : undefined
-  const canBack = authenticated && history.current.length > 0
+  const canBack = authenticated && (history.current.length > 0 || screen.tab === 'auction')
   useEffect(() => {
     if (!nativeBack) return
     nativeBack.onClick(back)
@@ -112,5 +128,6 @@ export function useNavigation(
     openStats: (statsTarget: number) => navigate({ modal: 'stats', statsTarget }),
     openRatings: (ratingTarget: number | null) => navigate({ modal: 'ratings', ratingTarget }),
     openGame: (matchId: number) => navigate({ tab: 'game', modal: null, matchId }),
+    openAuction: (matchId: number) => navigate({ tab: 'auction', modal: null, matchId }),
   }
 }

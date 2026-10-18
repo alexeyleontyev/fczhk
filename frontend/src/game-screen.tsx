@@ -6,7 +6,7 @@ import { AutomaticTeams, TemporaryRatings, score } from './ratings'
 import { Roster } from './roster'
 import { TeamBoard } from './team-board'
 import { MatchResult } from './results'
-import { AuctionPanel } from './auctions'
+import { AuctionEntry } from './auctions'
 import { PredictionPanel } from './predictions'
 import type { Match, Player, Position, Run, History } from './types'
 
@@ -22,6 +22,7 @@ export function GameScreen({
   setTab,
   setHistory,
   me,
+  openAuction,
 }: {
   m: Match | null
   isAdmin: boolean
@@ -34,6 +35,7 @@ export function GameScreen({
   setTab: (value: string) => void
   setHistory: (value: History) => void
   me: Player
+  openAuction: (matchId: number) => void
 }) {
   const auctionRunning = ['active', 'paused'].includes(m?.auction_status || '')
   const mine = m?.registrations.find((r) => r.player_id === me.id)
@@ -134,12 +136,12 @@ export function GameScreen({
               )}
               {(m.auction_status ||
                 (!m.result && ['finalized', 'approved'].includes(m.status))) && (
-                <AuctionPanel
+                <AuctionEntry
                   key={`auction-${m.id}`}
                   match={m}
                   admin={isAdmin}
                   busy={busy}
-                  run={run}
+                  onOpen={() => openAuction(m.id)}
                   onStatusChange={() => void run(refresh)}
                 />
               )}

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
+import { date, time } from './format'
 import type { Match, Run, Team } from './types'
 
 type AuctionPlayer = { registration_id: number; player_id: number; alias: string }
@@ -77,27 +78,12 @@ function AuctionHistory({ auction }: { auction: Auction }) {
   )
 }
 
-export function AuctionPanel({
-  match: m,
-  admin,
-  busy,
-  run,
-  onStatusChange,
-}: {
-  match: Match
-  admin: boolean
-  busy: boolean
-  run: Run
-  onStatusChange: () => void
-}) {
+function useAuction(m: Match, onStatusChange: () => void) {
   const [auction, setAuction] = useState<Auction | null>(null)
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
-  const [history, setHistory] = useState<Auction[] | null>(null)
-  const [captainSelection, setCaptainSelection] = useState<Record<Team, string>>({
-    white: '',
-    black: '',
-  })
+  const statusChanged = useRef(onStatusChange)
+  statusChanged.current = onStatusChange
   useEffect(() => {
     let current = true,
       pending = false
@@ -110,7 +96,7 @@ export function AuctionPanel({
           setAuction(data)
           setError('')
           setLoaded(true)
-          if (data && data.status !== m.auction_status) onStatusChange()
+          if (data && data.status !== m.auction_status) statusChanged.current()
         }
       } catch (e) {
         if (current) setError((e as Error).message)
@@ -125,6 +111,67 @@ export function AuctionPanel({
       clearInterval(timer)
     }
   }, [m.id, m.version, m.auction_status])
+  return { auction, setAuction, error, loaded }
+}
+
+export function AuctionEntry({
+  match,
+  admin,
+  busy,
+  onOpen,
+  onStatusChange,
+}: {
+  match: Match
+  admin: boolean
+  busy: boolean
+  onOpen: () => void
+  onStatusChange: () => void
+}) {
+  const { auction, error, loaded } = useAuction(match, onStatusChange)
+  if (!admin && !auction && !error) return null
+  return (
+    <section className="panel auction-entry">
+      <div className="section-title">
+        <h2>Аукцион капитанов</h2>
+        {auction && <span className="tag">{states[auction.status]}</span>}
+      </div>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+      <button className="button secondary" disabled={busy || !loaded} onClick={onOpen}>
+        {auction && ['active', 'paused'].includes(auction.status)
+          ? 'Перейти к торгам'
+          : auction
+            ? 'Открыть аукцион'
+            : 'Подготовить аукцион'}
+      </button>
+    </section>
+  )
+}
+
+export function AuctionScreen({
+  match: m,
+  admin,
+  busy,
+  run,
+  onStatusChange,
+  onTeams,
+}: {
+  match: Match
+  admin: boolean
+  busy: boolean
+  run: Run
+  onStatusChange: () => void
+  onTeams: () => void
+}) {
+  const { auction, setAuction, error, loaded } = useAuction(m, onStatusChange)
+  const [history, setHistory] = useState<Auction[] | null>(null)
+  const [captainSelection, setCaptainSelection] = useState<Record<Team, string>>({
+    white: '',
+    black: '',
+  })
   const active = auction && ['active', 'paused'].includes(auction.status)
   const captains = m.registrations.filter((r) => r.selected && r.position === 'field' && !r.guest)
   const hasDistinctCaptains =
@@ -142,260 +189,299 @@ export function AuctionPanel({
           }),
         )
     }, 'Состояние аукциона обновлено')
-  if (!admin && loaded && !auction) return null
   return (
-    <section className="panel auction-panel">
-      <div className="section-title">
-        <h2>Аукцион капитанов</h2>
-        {auction && <span className="tag">{states[auction.status]}</span>}
-      </div>
-      {error && (
-        <p className="alert error" role="alert">
-          {error}
-        </p>
-      )}
-      {!loaded && !error && <p>Загрузка аукциона…</p>}
-      {auction && (
-        <>
-          <div className="actual-teams">
-            {(['white', 'black'] as Team[]).map((t) => (
-              <div key={t}>
-                <h3>{teamName(t)}</h3>
-                <p>
-                  Капитан:{' '}
-                  {auction.participants.find((p) => p.player_id === auction.captains[t])?.alias}
-                </p>
-                <p>
-                  <strong>{auction.budgets[t]}</strong> баллов ·{' '}
-                  {Object.values(auction.assignments).filter((v) => v === t).length} /{' '}
-                  {auction.limits[t]} мест
-                </p>
-                {auction.participants
-                  .filter((p) => auction.assignments[p.registration_id] === t)
-                  .map((p) => (
-                    <p className="auction-player" key={p.registration_id}>
-                      <span>{p.alias}</span>
-                      <small>
-                        {p.player_id === auction.captains[t]
-                          ? 'Капитан'
-                          : `${auction.prices[p.registration_id]} баллов${auction.automatic.includes(p.registration_id) ? ' · автоматически' : ''}`}
-                      </small>
-                    </p>
-                  ))}
-              </div>
-            ))}
+    <>
+      <div className="page-heading auction-heading">
+        <div>
+          <div className="eyebrow">
+            {date(m.starts_at)} · {time(m.starts_at)} МСК
           </div>
-          {auction.current && (
-            <div className="auction-current">
-              <div className="eyebrow">
-                ЛОТ {auction.current.number} · КРУГ {auction.current.round}
-              </div>
-              <h3>{auction.current.player.alias}</h3>
-              <p className="muted">
-                Белые: {auction.current.submitted.white ? 'ставка принята' : 'ожидаем ставку'} ·
-                Чёрные: {auction.current.submitted.black ? 'ставка принята' : 'ожидаем ставку'}
-              </p>
-              {auction.side && <p>Вы — капитан команды {teamName(auction.side)}.</p>}
-              {auction.current.own_bid !== null && (
-                <p className="alert">Ваша ставка: {auction.current.own_bid}. Изменить её нельзя.</p>
-              )}
-              {auction.side && auction.status === 'active' && auction.current.own_bid === null && (
-                <form
-                  key={auction.current.id}
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const amount = Number(new FormData(e.currentTarget).get('amount'))
-                    void run(
-                      async () =>
-                        setAuction(
-                          await api<Auction>(`/matches/${m.id}/auction/bids`, 'POST', {
-                            auction_id: auction.id,
-                            lot_id: auction.current!.id,
-                            amount,
-                          }),
-                        ),
-                      'Ставка принята',
-                    )
-                  }}
-                >
-                  <label>
-                    Ваша закрытая ставка
-                    <input
-                      name="amount"
-                      type="number"
-                      min={0}
-                      max={auction.budgets[auction.side]}
-                      step={1}
-                      defaultValue={0}
-                      required
-                    />
-                  </label>
-                  <p className="muted caption">
-                    От 0 до {auction.budgets[auction.side]}. После отправки ставка окончательна. Обе
-                    суммы раскроются после второй ставки.
-                  </p>
-                  <button className="button" disabled={busy}>
-                    Подтвердить ставку
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-          {auction.status === 'paused' && (
-            <p className="alert">Торги приостановлены. Ставки и очередь сохранены.</p>
-          )}
-          {auction.status === 'invalidated' && (
-            <p className="alert">
-              Итоговый список изменился. Прежние ставки сохранены в истории; начните новый аукцион
-              по актуальному составу.
-            </p>
-          )}
-          {auction.status === 'manual' && (
-            <p className="alert">
-              Выигранные игроки перенесены в состав. Распределите оставшихся вручную, назначьте
-              вратарей и утвердите команды.
-            </p>
-          )}
-          {auction.status === 'completed' && (
-            <p className="alert success">
-              Полевые распределены. Администратор проверяет состав, назначает вратарей и утверждает
-              команды.
-            </p>
-          )}
-          {admin && active && (
-            <div className="auction-controls">
-              <div className="inline wrap">
-                <button
-                  className="button secondary compact"
-                  disabled={busy}
-                  onClick={() => void control(auction.status === 'active' ? 'pause' : 'resume')}
-                >
-                  {auction.status === 'active' ? 'Пауза' : 'Продолжить торги'}
-                </button>
-                <button
-                  className="button ghost compact"
-                  disabled={busy}
-                  onClick={() => void control('cancel')}
-                >
-                  Отменить аукцион
-                </button>
-              </div>
-              <p className="muted caption">
-                Если капитан не отвечает или ничьи повторяются, можно закончить торги и распределить
-                оставшихся вручную. Выигранные игроки и история сохранятся; незавершённые ставки не
-                раскрываются.
-              </p>
-              <button
-                className="button secondary"
-                disabled={busy}
-                onClick={() => void control('manual')}
-              >
-                Завершить торги вручную
-              </button>
-            </div>
-          )}
-          <details>
-            <summary>История лотов ({auction.lots.length})</summary>
-            <AuctionHistory auction={auction} />
-          </details>
-        </>
-      )}
-      {admin && loaded && !active && !m.result && ['finalized', 'approved'].includes(m.status) && (
-        <details open={!auction}>
-          <summary>{auction ? 'Начать новый аукцион' : 'Подготовить аукцион'}</summary>
-          <p className="muted">
-            По 100 баллов каждому капитану. Начало новых торгов сбросит текущее распределение и
-            утверждение. История предыдущих торгов сохранится.
+          <h1>Аукцион капитанов</h1>
+        </div>
+      </div>
+      <section className="panel auction-panel">
+        <div className="section-title">
+          <h2>
+            {auction?.current ? 'Текущий лот' : auction ? 'Состояние торгов' : 'Подготовка торгов'}
+          </h2>
+          {auction && <span className="tag">{states[auction.status]}</span>}
+        </div>
+        {error && (
+          <p className="alert error" role="alert">
+            {error}
           </p>
-          <p className="muted">Капитанами команд должны быть разные игроки.</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (!hasDistinctCaptains) return
-              const f = new FormData(e.currentTarget)
-              void run(
-                async () =>
-                  setAuction(
-                    await api<Auction>(`/matches/${m.id}/auction`, 'POST', {
-                      version: m.version,
-                      white_captain: Number(captainSelection.white),
-                      black_captain: Number(captainSelection.black),
-                      larger_team: f.get('larger') || null,
-                    }),
-                  ),
-                'Аукцион начат',
-              )
-            }}
-          >
-            {(['white', 'black'] as Team[]).map((t) => (
-              <label key={t}>
-                Капитан: {teamName(t)}
-                <select
-                  aria-label={`Капитан: ${teamName(t)}`}
-                  name={t}
-                  required
-                  value={captainSelection[t]}
-                  onChange={(e) =>
-                    setCaptainSelection({ ...captainSelection, [t]: e.currentTarget.value })
-                  }
+        )}
+        {!loaded && !error && <p>Загрузка аукциона…</p>}
+        {!admin && loaded && !auction && !error && <p>Аукцион ещё не начат.</p>}
+        {auction && (
+          <>
+            <div className="auction-budgets">
+              {(['white', 'black'] as Team[]).map((t) => (
+                <div key={t}>
+                  <h3>{teamName(t)}</h3>
+                  <p>
+                    Капитан:{' '}
+                    {auction.participants.find((p) => p.player_id === auction.captains[t])?.alias}
+                  </p>
+                  <p>
+                    <strong>{auction.budgets[t]}</strong> баллов ·{' '}
+                    {Object.values(auction.assignments).filter((v) => v === t).length} /{' '}
+                    {auction.limits[t]} мест
+                  </p>
+                </div>
+              ))}
+            </div>
+            {auction.current && (
+              <div className="auction-current">
+                <div className="eyebrow">
+                  ЛОТ {auction.current.number} · КРУГ {auction.current.round}
+                </div>
+                <h3>{auction.current.player.alias}</h3>
+                <p className="muted">
+                  Белые: {auction.current.submitted.white ? 'ставка принята' : 'ожидаем ставку'} ·
+                  Чёрные: {auction.current.submitted.black ? 'ставка принята' : 'ожидаем ставку'}
+                </p>
+                {auction.side && <p>Вы — капитан команды {teamName(auction.side)}.</p>}
+                {auction.current.own_bid !== null && (
+                  <p className="alert">
+                    Ваша ставка: {auction.current.own_bid}. Изменить её нельзя.
+                  </p>
+                )}
+                {auction.side &&
+                  auction.status === 'active' &&
+                  auction.current.own_bid === null && (
+                    <form
+                      key={auction.current.id}
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        const amount = Number(new FormData(e.currentTarget).get('amount'))
+                        void run(
+                          async () =>
+                            setAuction(
+                              await api<Auction>(`/matches/${m.id}/auction/bids`, 'POST', {
+                                auction_id: auction.id,
+                                lot_id: auction.current!.id,
+                                amount,
+                              }),
+                            ),
+                          'Ставка принята',
+                        )
+                      }}
+                    >
+                      <label>
+                        Ваша закрытая ставка
+                        <input
+                          name="amount"
+                          type="number"
+                          min={0}
+                          max={auction.budgets[auction.side]}
+                          step={1}
+                          defaultValue={0}
+                          required
+                        />
+                      </label>
+                      <p className="muted caption">
+                        От 0 до {auction.budgets[auction.side]}. После отправки ставка окончательна.
+                        Обе суммы раскроются после второй ставки.
+                      </p>
+                      <button className="button" disabled={busy}>
+                        Подтвердить ставку
+                      </button>
+                    </form>
+                  )}
+              </div>
+            )}
+            {auction.status === 'paused' && (
+              <p className="alert">Торги приостановлены. Ставки и очередь сохранены.</p>
+            )}
+            {auction.status === 'invalidated' && (
+              <p className="alert">
+                Итоговый список изменился. Прежние ставки сохранены в истории; начните новый аукцион
+                по актуальному составу.
+              </p>
+            )}
+            {auction.status === 'manual' && (
+              <p className="alert">
+                Выигранные игроки перенесены в состав. Распределите оставшихся вручную, назначьте
+                вратарей и утвердите команды.
+              </p>
+            )}
+            {auction.status === 'completed' && (
+              <p className="alert success">
+                Полевые распределены. Администратор проверяет состав, назначает вратарей и
+                утверждает команды.
+              </p>
+            )}
+            {!active && (
+              <button className="button secondary" disabled={busy} onClick={onTeams}>
+                К составам
+              </button>
+            )}
+            <details className="auction-rosters">
+              <summary>
+                Набранные составы · {Object.keys(auction.assignments).length} игроков
+              </summary>
+              <div className="actual-teams">
+                {(['white', 'black'] as Team[]).map((team) => (
+                  <div key={team}>
+                    <h3>{teamName(team)}</h3>
+                    {auction.participants
+                      .filter((p) => auction.assignments[p.registration_id] === team)
+                      .map((p) => (
+                        <p className="auction-player" key={p.registration_id}>
+                          <span>{p.alias}</span>
+                          <small>
+                            {p.player_id === auction.captains[team]
+                              ? 'Капитан'
+                              : `${auction.prices[p.registration_id]} баллов${auction.automatic.includes(p.registration_id) ? ' · автоматически' : ''}`}
+                          </small>
+                        </p>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            </details>
+            {admin && active && (
+              <details className="auction-controls">
+                <summary>Управление аукционом</summary>
+                <div className="inline wrap">
+                  <button
+                    className="button secondary compact"
+                    disabled={busy}
+                    onClick={() => void control(auction.status === 'active' ? 'pause' : 'resume')}
+                  >
+                    {auction.status === 'active' ? 'Пауза' : 'Продолжить торги'}
+                  </button>
+                  <button
+                    className="button ghost compact"
+                    disabled={busy}
+                    onClick={() => void control('cancel')}
+                  >
+                    Отменить аукцион
+                  </button>
+                </div>
+                <p className="muted caption">
+                  Если капитан не отвечает или ничьи повторяются, можно закончить торги и
+                  распределить оставшихся вручную. Выигранные игроки и история сохранятся;
+                  незавершённые ставки не раскрываются.
+                </p>
+                <button
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={() => void control('manual')}
                 >
-                  <option value="">Выберите капитана</option>
-                  {captains.map((r) => (
-                    <option
-                      key={r.id}
-                      value={r.player_id}
-                      disabled={
-                        String(r.player_id) === captainSelection[t === 'white' ? 'black' : 'white']
+                  Завершить торги вручную
+                </button>
+              </details>
+            )}
+            <details>
+              <summary>История лотов ({auction.lots.length})</summary>
+              <AuctionHistory auction={auction} />
+            </details>
+          </>
+        )}
+        {admin &&
+          loaded &&
+          !active &&
+          !m.result &&
+          ['finalized', 'approved'].includes(m.status) && (
+            <details open={!auction}>
+              <summary>{auction ? 'Начать новый аукцион' : 'Подготовить аукцион'}</summary>
+              <p className="muted">
+                По 100 баллов каждому капитану. Начало новых торгов сбросит текущее распределение и
+                утверждение. История предыдущих торгов сохранится.
+              </p>
+              <p className="muted">Капитанами команд должны быть разные игроки.</p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!hasDistinctCaptains) return
+                  const f = new FormData(e.currentTarget)
+                  void run(
+                    async () =>
+                      setAuction(
+                        await api<Auction>(`/matches/${m.id}/auction`, 'POST', {
+                          version: m.version,
+                          white_captain: Number(captainSelection.white),
+                          black_captain: Number(captainSelection.black),
+                          larger_team: f.get('larger') || null,
+                        }),
+                      ),
+                    'Аукцион начат',
+                  )
+                }}
+              >
+                {(['white', 'black'] as Team[]).map((t) => (
+                  <label key={t}>
+                    Капитан: {teamName(t)}
+                    <select
+                      aria-label={`Капитан: ${teamName(t)}`}
+                      name={t}
+                      required
+                      value={captainSelection[t]}
+                      onChange={(e) =>
+                        setCaptainSelection({ ...captainSelection, [t]: e.currentTarget.value })
                       }
                     >
-                      {r.alias}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-            {fieldCount % 2 === 1 && (
-              <label>
-                Дополнительное место
-                <select name="larger" required defaultValue="">
-                  <option value="">Выберите команду</option>
-                  <option value="white">Белые</option>
-                  <option value="black">Чёрные</option>
-                </select>
-              </label>
-            )}
-            <button className="button" disabled={busy || !hasDistinctCaptains}>
-              Начать аукцион
-            </button>
-            {captains.length < 2 && (
-              <p className="muted">Нужны два зарегистрированных полевых в финальном списке.</p>
-            )}
-          </form>
-        </details>
-      )}
-      {auction && (
-        <button
-          className="button ghost compact"
-          disabled={busy}
-          onClick={() =>
-            void run(async () =>
-              setHistory(await api<Auction[]>(`/matches/${m.id}/auctions/history`)),
-            )
-          }
-        >
-          Предыдущие аукционы
-        </button>
-      )}
-      {history
-        ?.filter((a) => a.id !== auction?.id)
-        .map((a) => (
-          <details key={a.id}>
-            <summary>
-              Аукцион #{a.id} · {states[a.status]}
-            </summary>
-            <AuctionHistory auction={a} />
-          </details>
-        ))}
-    </section>
+                      <option value="">Выберите капитана</option>
+                      {captains.map((r) => (
+                        <option
+                          key={r.id}
+                          value={r.player_id}
+                          disabled={
+                            String(r.player_id) ===
+                            captainSelection[t === 'white' ? 'black' : 'white']
+                          }
+                        >
+                          {r.alias}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+                {fieldCount % 2 === 1 && (
+                  <label>
+                    Дополнительное место
+                    <select name="larger" required defaultValue="">
+                      <option value="">Выберите команду</option>
+                      <option value="white">Белые</option>
+                      <option value="black">Чёрные</option>
+                    </select>
+                  </label>
+                )}
+                <button className="button" disabled={busy || !hasDistinctCaptains}>
+                  Начать аукцион
+                </button>
+                {captains.length < 2 && (
+                  <p className="muted">Нужны два зарегистрированных полевых в финальном списке.</p>
+                )}
+              </form>
+            </details>
+          )}
+        {auction && (
+          <button
+            className="button ghost compact"
+            disabled={busy}
+            onClick={() =>
+              void run(async () =>
+                setHistory(await api<Auction[]>(`/matches/${m.id}/auctions/history`)),
+              )
+            }
+          >
+            Предыдущие аукционы
+          </button>
+        )}
+        {history
+          ?.filter((a) => a.id !== auction?.id)
+          .map((a) => (
+            <details key={a.id}>
+              <summary>
+                Аукцион #{a.id} · {states[a.status]}
+              </summary>
+              <AuctionHistory auction={a} />
+            </details>
+          ))}
+      </section>
+    </>
   )
 }

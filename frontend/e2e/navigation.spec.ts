@@ -94,7 +94,10 @@ test('Telegram back restores nested statistics, catalog search and current game;
       },
     }),
   )
-  await page.goto('/')
+  await page.goto(`/?game=${current.id}&screen=auction`)
+  await expect(page.getByRole('heading', { name: 'Аукцион капитанов', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => (window as TelegramTestWindow).telegramBackVisible)).toBe(true)
+  await pressBack(page)
   await expect(page.getByRole('heading', { name: 'Выходим на поле.' })).toBeVisible()
   expect(await page.evaluate(() => (window as TelegramTestWindow).telegramBackVisible)).toBe(false)
   expect(await page.evaluate(() => (window as TelegramTestWindow).telegramBackHandlers)).toBe(1)
