@@ -1,10 +1,11 @@
 from datetime import datetime
 from uuid import uuid4
 
+import pytest
 from openskill.models import ThurstoneMostellerFull
 
 from fczhk.game_balancing import generate
-from fczhk.game_ratings import history, replay
+from fczhk.game_ratings import forecast_history, history, replay
 from fczhk.models import Match, MatchResult, Player, Registration, ResultGoal, ResultParticipant
 from fczhk.schemas import BalanceSettings
 
@@ -42,9 +43,14 @@ def test_replay_uses_only_past_completed_games_and_field_players(env, call):
         keeper = Player(alias="Вратарь")
         db.add_all([*field, keeper])
         db.flush()
-        for day, scorer, side in (("2026-06-05", field[0], "white"), ("2026-06-12", field[2], "black")):
+        # Insert the newer season first: game dates, not import order, drive the rating.
+        for day, season, scorer, side in (
+            ("2026-06-12", "2026", field[2], "black"),
+            ("2025-12-19", "2024-2025", field[0], "white"),
+        ):
             match = Match(
                 game_day=day,
+                season=season,
                 starts_at=datetime.fromisoformat(day + "T20:00:00+03:00"),
                 location="Тест",
                 status="completed",
@@ -79,7 +85,7 @@ def test_replay_uses_only_past_completed_games_and_field_players(env, call):
             )
     with factory() as db:
         games = history(db)
-        assert len(games) == 2
+        assert [game.day for game in games] == ["2025-12-19", "2026-06-12"]
         prior = replay(db, before_day="2026-06-12")
         assert len(prior["predictions"]) == 1
         assert all(row["games"] == 1 for row in prior["players"].values())
@@ -88,6 +94,20 @@ def test_replay_uses_only_past_completed_games_and_field_players(env, call):
         complete = replay(db)
         assert len(complete["predictions"]) == 2
         assert complete["predictions"][1]["p_white"] > 0.5
+        model = ThurstoneMostellerFull(margin=0)
+        teams = [[model.rating(), model.rating()], [model.rating(), model.rating()]]
+        expected = model.rate(model.rate(teams, scores=[1, 0]), scores=[0, 1])
+        for person, rating in zip(field, expected[0] + expected[1], strict=True):
+            assert complete["players"][person.id]["mu"] == pytest.approx(rating.mu)
+            assert complete["players"][person.id]["sigma"] == pytest.approx(rating.sigma)
+        # Reporting one season must retain ratings learned in earlier seasons.
+        forecasts = forecast_history(db, season="2026")
+        assert forecasts == [complete["predictions"][1]]
+        assert forecast_history(db) == complete["predictions"]
+        assert forecast_history(db, season="2024-2025") == [complete["predictions"][0]]
+        assert forecast_history(db, season="absent") == []
+        assert forecast_history(db, season="2026", before_day="2026-06-12") == []
+        assert forecast_history(db, before_day="2026-06-12") == prior["predictions"]
         with_keepers = replay(db, include_keepers=True)
         assert with_keepers["players"][(keeper.id, "keeper")]["games"] == 2
         assert (field[0].id, "field") in with_keepers["players"]
@@ -130,8 +150,9 @@ def test_game_balance_is_optional_and_historical_changes_stale_it(env, call):
     assert run["result"]["variants"][0]["game_rating"]["mu_gap"] == 0
     with factory() as db, db.begin():
         older = Match(
-            game_day="2026-09-25",
-            starts_at=datetime.fromisoformat("2026-09-25T20:00:00+03:00"),
+            game_day="2025-09-25",
+            starts_at=datetime.fromisoformat("2025-09-25T20:00:00+03:00"),
+            season="2024-2025",
             location="Тест",
             status="completed",
             field_limit=4,
@@ -171,6 +192,9 @@ def test_game_balance_is_optional_and_historical_changes_stale_it(env, call):
         {"version": match["version"], "settings": {"method": "game"}},
         expected=201,
     )
+    assert all(row["game_count"] == 1 for row in fresh["inputs"])
+    assert any(row["game_mu"] > 25.0 for row in fresh["inputs"])
+    assert any(row["game_mu"] < 25.0 for row in fresh["inputs"])
     applied = call(
         "POST",
         path + f"/balance/{fresh['id']}/apply",

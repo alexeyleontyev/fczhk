@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { seasonQuery } from './seasons'
 import { DEFAULT_MIN_GAMES, filterPlayers, PlayerListFilters } from './player-list-filters'
 import type {
   Average,
@@ -34,11 +33,9 @@ type GameRatingBoard = {
 
 export function GameRatingLeaderboard({
   onPlayer,
-  season,
   revision,
 }: {
   onPlayer: (id: number) => void
-  season: string
   revision: number
 }) {
   const [board, setBoard] = useState<GameRatingBoard | null>(null)
@@ -50,7 +47,7 @@ export function GameRatingLeaderboard({
     let active = true
     setBoard(null)
     setError('')
-    void api<GameRatingBoard>(`/game-ratings${seasonQuery(season)}`)
+    void api<GameRatingBoard>('/game-ratings')
       .then((data) => {
         if (active) setBoard(data)
       })
@@ -60,7 +57,7 @@ export function GameRatingLeaderboard({
     return () => {
       active = false
     }
-  }, [season, revision])
+  }, [revision])
   const qualifiedPlayers = filterPlayers(board?.players ?? [], '', minimumGames)
   const players = filterPlayers(qualifiedPlayers, playerName, '0')
   return (
@@ -68,14 +65,15 @@ export function GameRatingLeaderboard({
       <div className="section-title">
         <div>
           <div className="eyebrow">ПО ИСТОРИИ МАТЧЕЙ</div>
-          <h2>{season ? `OpenSkill · сезон ${season}` : 'Общий рейтинг OpenSkill'}</h2>
+          <h2>Общий рейтинг OpenSkill</h2>
         </div>
         <span className="tag">Эксперимент</span>
       </div>
       <p className="muted caption">
-        {board ? `${board.matches} игр` : 'Загрузка…'} · Только полевые игроки · Победа, поражение и
-        ничья. Разница мячей пока не влияет на рейтинг. Порядок учитывает неопределённость оценки;
-        для надёжного подбора пока мало игр, поэтому этот способ помечен как эксперимент.
+        {board ? `${board.matches} игр за всю историю` : 'Загрузка…'} · Рейтинг накапливается по
+        датам матчей без сброса между сезонами. Только полевые игроки · Победа, поражение и ничья.
+        Разница мячей пока не влияет на рейтинг. Порядок учитывает неопределённость оценки; для
+        надёжного подбора пока мало игр, поэтому этот способ помечен как эксперимент.
       </p>
       <p className="muted caption">
         Шкала начинается с 1500: рейтинг = 1500 + 10 × (μ − 3σ). μ — оценка силы, σ —

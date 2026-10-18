@@ -13,6 +13,7 @@ test('season filter follows statistics, player profile, archive and predictions'
     await page.request.get(`/api/players/${person.id}/stats`, { headers })
   ).json()
   const boards = await (await page.request.get('/api/leaderboards', { headers })).json()
+  const skill = await (await page.request.get('/api/game-ratings', { headers })).json()
   const games = await (await page.request.get('/api/matches?limit=20', { headers })).json()
   const requests: string[] = []
   page.on('request', (request) => requests.push(request.url()))
@@ -32,6 +33,9 @@ test('season filter follows statistics, player profile, archive and predictions'
       },
     })
   })
+  await page.route('**/api/game-ratings*', (route) =>
+    route.fulfill({ json: { ...skill, matches: 66 } }),
+  )
   await page.route(`**/api/players/${person.id}/stats*`, (route) => {
     const season = new URL(route.request().url()).searchParams.get('season')
     return route.fulfill({
@@ -48,9 +52,11 @@ test('season filter follows statistics, player profile, archive and predictions'
   )
   await expect(page.getByRole('heading', { name: 'Зачёты сезона 2026', exact: true })).toBeVisible()
   await expect(page.getByText('20 завершённых игр.', { exact: false })).toBeVisible()
-  await expect
-    .poll(() => requests.some((url) => url.endsWith('/api/game-ratings?season=2026')))
-    .toBe(true)
+  await expect.poll(() => requests.some((url) => url.endsWith('/api/game-ratings'))).toBe(true)
+  await expect(
+    page.getByRole('heading', { name: 'Общий рейтинг OpenSkill', exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('.game-rating-board')).toContainText('66 игр за всю историю')
   await page.getByRole('textbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
   await page
     .locator('.player-card')
@@ -72,11 +78,10 @@ test('season filter follows statistics, player profile, archive and predictions'
   ).toBeVisible()
   await expect(page.getByText('46 завершённых игр.', { exact: false })).toBeVisible()
   await expect(
-    page.getByRole('heading', { name: 'OpenSkill · сезон 2024-2025', exact: true }),
+    page.getByRole('heading', { name: 'Общий рейтинг OpenSkill', exact: true }),
   ).toBeVisible()
-  await expect
-    .poll(() => requests.some((url) => url.endsWith('/api/game-ratings?season=2024-2025')))
-    .toBe(true)
+  await expect(page.locator('.game-rating-board')).toContainText('66 игр за всю историю')
+  expect(requests.some((url) => url.includes('/api/game-ratings?'))).toBe(false)
   await page.getByRole('textbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
   await page
     .locator('.player-card')

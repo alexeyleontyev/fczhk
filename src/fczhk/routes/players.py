@@ -54,9 +54,15 @@ def router(ctx):
     def game_ratings(
         p: Player = Depends(current),
         db: Session = Depends(db_dep, scope="function"),
-        season: str | None = Query(default=None, min_length=1, max_length=40),
+        season: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=40,
+            deprecated=True,
+            description="Параметр совместимости: рейтинг всегда учитывает все сезоны",
+        ),
     ):
-        return gr.leaderboard(db, season=season)
+        return gr.leaderboard(db)
 
     @app.get("/api/seasons")
     def seasons(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):

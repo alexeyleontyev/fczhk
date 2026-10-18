@@ -6,7 +6,7 @@ from fczhk.models import Match, MatchResult, Player, Prediction, ResultGoal, Res
 from fczhk.services import MOSCOW
 
 
-def test_seasons_isolate_results_partners_ratings_predictions_and_archive(env, call):
+def test_seasons_filter_statistics_but_keep_cumulative_skill_rating(env, call):
     factory, ids = env[1], env[4]
     with factory() as db, db.begin():
         guest = Player(alias="Партнёр прошлого сезона")
@@ -85,11 +85,12 @@ def test_seasons_isolate_results_partners_ratings_predictions_and_archive(env, c
         archive = call("GET", "/matches" + query, role="player")
         assert len(archive) == 1 and archive[0]["season"] == season
         rating = call("GET", "/game-ratings" + query)
-        assert rating["matches"] == 1
-        assert all(p["games"] == 1 for p in rating["players"])
+        assert rating == call("GET", "/game-ratings")
+        assert rating["matches"] == 2
+        assert all(p["games"] == 2 for p in rating["players"])
         with factory() as db:
-            isolated = game_ratings.replay(db, season=season)
-        assert len(isolated["predictions"]) == 1
+            predictions = game_ratings.forecast_history(db, season=season)
+        assert len(predictions) == 1
         assert call("GET", "/predictions/standings" + query)[0]["points"] == (3 if wins else 0)
     total = call("GET", f"/players/{ids['admin']}/stats")
     assert (total["games"], total["wins"], total["losses"], total["goals"]) == (2, 1, 1, 1)
@@ -97,7 +98,7 @@ def test_seasons_isolate_results_partners_ratings_predictions_and_archive(env, c
     assert call("GET", "/game-ratings")["matches"] == 2
     assert call("GET", "/leaderboards")["results"]["matches"] == 2
     assert call("GET", "/leaderboards?season=absent")["results"]["matches"] == 0
-    assert call("GET", "/game-ratings?season=absent")["players"] == []
+    assert call("GET", "/game-ratings?season=absent") == call("GET", "/game-ratings")
     assert call("GET", "/predictions/standings?season=absent") == []
     assert call("GET", f"/players/{ids['admin']}/stats?season=absent")["games"] == 0
     call("GET", "/seasons", role=None, expected=401)

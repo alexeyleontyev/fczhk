@@ -32,11 +32,10 @@ class HistoricalGame:
     score: tuple[int, int]
 
 
-def history(db: Session, season: str | None = None) -> list[HistoricalGame]:
+def history(db: Session) -> list[HistoricalGame]:
+    """Read completed games from every season, ordered by game date and match ID."""
     canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
     completed_ids = select(Match.id).join(MatchResult).where(MatchResult.completed.is_(True))
-    if season is not None:
-        completed_ids = completed_ids.where(Match.season == season)
     matches = db.scalars(
         select(Match)
         .join(MatchResult, MatchResult.match_id == Match.id)
@@ -90,11 +89,10 @@ def replay(
     margin: float = 0.0,
     before_day: str | None = None,
     include_keepers: bool = False,
-    season: str | None = None,
 ) -> dict:
-    """Return chronological predictions; keeper mode keeps field and keeper skills separate."""
+    """Accumulate ratings chronologically across all seasons, without seasonal resets."""
     games = tuple(
-        game for game in history(db, season=season) if before_day is None or game.day < before_day
+        game for game in history(db) if before_day is None or game.day < before_day
     )
     # Content-addressed cache: changed results, identities, or dates get a new key.
     # It cannot serve an old revision after imports or edits, even across processes.
@@ -129,7 +127,13 @@ def _replay(games: tuple[HistoricalGame, ...], margin: float, include_keepers: b
             else (0.0 if game.score[0] < game.score[1] else 0.5)
         )
         predictions.append(
-            {"day": game.day, "score": game.score, "p_white": win_white, "outcome": outcome}
+            {
+                "match_id": game.match_id,
+                "day": game.day,
+                "score": game.score,
+                "p_white": win_white,
+                "outcome": outcome,
+            }
         )
         updated = model.rate(teams, scores=list(game.score))
         for side_ids, side_ratings in zip(ids, updated, strict=True):
@@ -148,6 +152,24 @@ def _replay(games: tuple[HistoricalGame, ...], margin: float, include_keepers: b
     }
 
 
+def forecast_history(
+    db: Session,
+    *,
+    season: str | None = None,
+    before_day: str | None = None,
+    margin: float = 0.0,
+    include_keepers: bool = False,
+) -> list[dict]:
+    """Forecast from all past seasons; season filters report rows, never training history."""
+    predictions = replay(
+        db, margin=margin, before_day=before_day, include_keepers=include_keepers
+    )["predictions"]
+    if season is None:
+        return predictions
+    match_ids = set(db.scalars(select(Match.id).where(Match.season == season)))
+    return [p for p in predictions if p["match_id"] in match_ids]
+
+
 def prediction_error(predictions: list[dict], decisive_only: bool = False) -> float | None:
     """Squared error for white win probability, with draws at target 0.5."""
     if decisive_only:
@@ -157,9 +179,9 @@ def prediction_error(predictions: list[dict], decisive_only: bool = False) -> fl
     return sum((p["p_white"] - p["outcome"]) ** 2 for p in predictions) / len(predictions)
 
 
-def leaderboard(db: Session, season: str | None = None) -> dict:
-    """Read-only preview; keep it separate from community ratings and team runs."""
-    run = replay(db, season=season)
+def leaderboard(db: Session) -> dict:
+    """Show cumulative ratings and appearances from the entire chronological history."""
+    run = replay(db)
     aliases = {
         p.id: p.alias for p in db.scalars(select(Player).where(Player.id.in_(run["players"])))
     }

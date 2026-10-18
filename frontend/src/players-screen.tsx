@@ -45,11 +45,7 @@ export function PlayersScreen({
       </div>
       <SeasonSelect {...seasonFilter} />
       <Leaderboards onPlayer={openStats} revision={dataRevision} season={seasonFilter.season} />
-      <GameRatingLeaderboard
-        onPlayer={openStats}
-        season={seasonFilter.season}
-        revision={dataRevision}
-      />
+      <GameRatingLeaderboard onPlayer={openStats} revision={dataRevision} />
       <input
         className="search"
         placeholder="Найти по имени или alias"
