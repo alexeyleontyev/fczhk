@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timedelta
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -655,7 +656,13 @@ def merge_guest(db: Session, actor: int, guest_id: int, target_id: int):
         raise DomainError(
             "Обе карточки есть в фактическом составе одной игры. Сначала исправьте результат.", 409
         )
+    guest_alias, target_alias = guest.alias, target.alias
+    # The unique alias belongs to the active card. Keep the source ID for historical
+    # events, but release its name before assigning it to the Telegram account.
+    guest.alias = f"Архив {guest.id} {uuid4().hex}"
     guest.merged_into = target_id
+    db.flush()
+    target.alias = guest_alias
     reconcile_linked_ratings(db, [*linked_ids, guest_id])
     from .models import ProfileClaim
 
@@ -666,7 +673,15 @@ def merge_guest(db: Session, actor: int, guest_id: int, target_id: int):
     ):
         claim.status = "accepted" if claim.player_id == target_id else "rejected"
         claim.updated_at = now()
-    audit(db, actor, "guest.linked", guest_id=guest_id, target_id=target_id)
+    audit(
+        db,
+        actor,
+        "guest.linked",
+        guest_id=guest_id,
+        target_id=target_id,
+        guest_alias=guest_alias,
+        previous_target_alias=target_alias,
+    )
 
 
 def ensure_pregame(db: Session, match: Match):

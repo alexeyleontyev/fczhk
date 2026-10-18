@@ -9,12 +9,14 @@ from .services import DomainError, audit, merge_guest
 def serialize(db, claim):
     if claim is None:
         return None
+    guest = db.get(Player, claim.guest_id)
+    guest = db.get(Player, guest.merged_into) if guest.merged_into else guest
     return dict(
         player_id=claim.player_id,
         guest_id=claim.guest_id,
         status=claim.status,
         player=db.get(Player, claim.player_id).alias,
-        guest=db.get(Player, claim.guest_id).alias,
+        guest=guest.alias,
         updated_at=claim.updated_at,
     )
 

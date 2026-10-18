@@ -173,6 +173,9 @@ test('player requests historical profile and admin confirms it and skips a week'
   await expect(page.getByText('Нет заявок на подтверждение.')).toBeVisible()
   const players = await (await request.get('/api/players', { headers })).json()
   expect(players.some((p: { id: number }) => p.id === guest.id)).toBe(false)
+  expect(
+    players.some((p: { alias: string; guest: boolean }) => p.alias === guest.alias && !p.guest),
+  ).toBe(true)
   await page.getByLabel('Пятница', { exact: true }).fill('2048-06-05')
   await page.getByLabel('Причина пропуска').fill('Тестовый перерыв')
   await page.getByRole('button', { name: 'Пропустить неделю', exact: true }).click()
@@ -181,4 +184,12 @@ test('player requests historical profile and admin confirms it and skips a week'
   await expect(page.getByText(/5 июня · Тестовый перерыв/)).toHaveCount(0)
   await page.screenshot({ path: 'test-results/operations-mobile.png', fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.getByRole('button', { name: 'Профиль', exact: true }).click()
+  await page.getByRole('button', { name: 'Выйти из аккаунта' }).click()
+  await page.getByRole('button', { name: 'Войти игроком', exact: true }).click()
+  await page.getByRole('button', { name: 'Профиль', exact: true }).click()
+  await expect(page.getByLabel('Игровой alias')).toHaveValue(guest.alias)
+  await expect(
+    page.getByRole('status').filter({ hasText: `Карточка привязана: ${guest.alias}` }),
+  ).toBeVisible()
 })

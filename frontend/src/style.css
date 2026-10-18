@@ -84,6 +84,9 @@ p {
   margin: auto;
   padding: 0 36px;
 }
+.back-navigation {
+  margin-top: 16px;
+}
 .topbar {
   height: 100px;
   display: flex;

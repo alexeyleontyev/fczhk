@@ -47,7 +47,14 @@ export function ProfileScreen({
         >
           <label>
             Игровой alias
-            <input name="alias" defaultValue={me.alias} required minLength={2} maxLength={60} />
+            <input
+              key={me.alias}
+              name="alias"
+              defaultValue={me.alias}
+              required
+              minLength={2}
+              maxLength={60}
+            />
           </label>
           <Button type="submit" disabled={busy}>
             Сохранить имя

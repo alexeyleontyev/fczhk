@@ -11,14 +11,14 @@ export function PlayersScreen({
   me,
   dataRevision,
   openStats,
-  setRatingTarget,
+  openRatings,
   setModal,
 }: {
   players: Player[]
   me: Player
   dataRevision: number
   openStats: (id: number) => void
-  setRatingTarget: (id: number | null) => void
+  openRatings: (id: number | null) => void
   setModal: (value: string | null) => void
 }) {
   const isAdmin = Boolean(me.is_admin)
@@ -33,14 +33,7 @@ export function PlayersScreen({
           </h1>
         </div>
         <div className="inline wrap">
-          <Button
-            onClick={() => {
-              setRatingTarget(null)
-              setModal('ratings')
-            }}
-          >
-            Оценить игроков
-          </Button>
+          <Button onClick={() => openRatings(null)}>Оценить игроков</Button>
           {isAdmin && (
             <Button onClick={() => setModal('guest')}>
               <Plus size={17} /> Гость
@@ -74,10 +67,7 @@ export function PlayersScreen({
                   <button
                     className="button ghost compact"
                     aria-label={`Оценки: ${p.alias}`}
-                    onClick={() => {
-                      setRatingTarget(p.id)
-                      setModal('ratings')
-                    }}
+                    onClick={() => openRatings(p.id)}
                   >
                     {p.id === me.id ? 'Посмотреть оценки' : 'Оценить'}
                   </button>

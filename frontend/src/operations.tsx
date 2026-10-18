@@ -227,7 +227,7 @@ export function ProfileClaims({ onResolved }: { onResolved: () => Promise<void> 
     if (
       accept &&
       !window.confirm(
-        `Подтверждаете, что «${claim.player}» и «${claim.guest}» — один человек? История будет объединена.`,
+        `Подтверждаете, что «${claim.player}» и «${claim.guest}» — один человек? История будет объединена, игровой alias станет «${claim.guest}».`,
       )
     )
       return

@@ -14,6 +14,7 @@ export function useClubData() {
   const selected = useRef<number | null>(null)
   const dirty = useRef(new Set<string>())
   const generation = useRef(0)
+  const loadedSelection = useRef<number | null | undefined>(undefined)
   const identityGeneration = useRef(0)
   const initial = useRef<Promise<void> | null>(null)
 
@@ -26,7 +27,10 @@ export function useClubData() {
   async function loadMatch(id: number | null) {
     const request = ++generation.current
     const next = await api<Match | null>(id ? `/matches/${id}` : '/matches/current')
-    if (request === generation.current) setMatch(next)
+    if (request === generation.current) {
+      loadedSelection.current = id
+      setMatch(next)
+    }
   }
 
   async function refresh(force = false) {
@@ -78,6 +82,7 @@ export function useClubData() {
     const expired = () => {
       ++generation.current
       ++identityGeneration.current
+      loadedSelection.current = undefined
       dirty.current.clear()
       setMe(null)
       setMatch(null)
@@ -131,7 +136,7 @@ export function useClubData() {
   }, [])
 
   useEffect(() => {
-    if (!me || loading || !selectedId || match?.id === selectedId) return
+    if (!me || loading || loadedSelection.current === selectedId) return
     void loadMatch(selectedId).catch((error) => setLoadError(error.message))
   }, [selectedId, me?.id, loading])
 

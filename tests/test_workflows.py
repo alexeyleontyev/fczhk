@@ -212,6 +212,11 @@ def test_guest_link_same_game_overlap_is_atomic(env, call, game):
         {"version": m["version"], "player_id": guest["id"], "position": "field"},
     )
     call("POST", f"/players/{guest['id']}/link", {"target_id": ids["player"]}, expected=409)
+    assert call("GET", "/me", role="player")["alias"] == "Игрок"
+    assert (
+        next(p for p in call("GET", "/players") if p["id"] == guest["id"])["alias"]
+        == guest["alias"]
+    )
     assert any(p["id"] == guest["id"] for p in call("GET", "/players"))
 
 

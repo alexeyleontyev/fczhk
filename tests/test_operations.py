@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 from sqlalchemy import select
 
+from fczhk.auth import player_for_telegram
 from fczhk.db import now
 from fczhk.models import GameTemplate, LoginSession, Player, Publication, ServiceHeartbeat
 from fczhk.operations import cleanup_sessions, heartbeat
@@ -158,10 +159,16 @@ def test_profile_claim_requires_admin_and_preserves_source(env, call):
     call("POST", path, {"guest_id": ids["admin"], "accept": True}, expected=409)
     accepted = call("POST", path, {**body, "accept": True})
     assert accepted["status"] == "accepted"
+    assert accepted["guest"] == accepted["player"] == "Старая карточка"
+    assert call("GET", "/me", role="player")["alias"] == "Старая карточка"
     assert call("GET", "/me/profile-claim")["status"] == "rejected"
     assert call("GET", "/profile-claims") == []
     with factory() as db:
         assert db.get(Player, guest["id"]).merged_into == ids["player"]
+        assert db.get(Player, guest["id"]).alias != "Старая карточка"
+        assert (
+            db.scalar(select(Player.id).where(Player.alias == "Старая карточка")) == ids["player"]
+        )
     call("POST", "/me/profile-claim", body, role="player", expected=409)
 
 
@@ -170,3 +177,21 @@ def test_direct_link_resolves_pending_claim(env, call):
     call("POST", "/me/profile-claim", {"guest_id": guest["id"]}, role="player")
     call("POST", f"/players/{guest['id']}/link", {"target_id": env[4]["player"]})
     assert call("GET", "/me/profile-claim", role="player")["status"] == "accepted"
+    assert call("GET", "/me", role="player")["alias"] == "Карточка гостя"
+    with env[1]() as db, db.begin():
+        assert player_for_telegram(db, 102, "Имя из Telegram").alias == "Карточка гостя"
+    call("POST", "/players/guests", {"alias": "Карточка гостя"}, expected=409)
+
+
+def test_rejected_claim_does_not_change_either_alias(call, env):
+    name = "Историческое имя " + "я" * 43  # Full 60-character alias.
+    guest = call("POST", "/players/guests", {"alias": name}, expected=201)
+    body = {"guest_id": guest["id"]}
+    call("POST", "/me/profile-claim", body, role="player")
+    path = f"/profile-claims/{env[4]['player']}/resolve"
+    call("POST", path, {**body, "accept": False})
+    assert call("GET", "/me", role="player")["alias"] == "Игрок"
+    assert next(p for p in call("GET", "/players") if p["id"] == guest["id"])["alias"] == name
+    call("POST", "/me/profile-claim", body, role="player")
+    call("POST", path, {**body, "accept": True})
+    assert call("GET", "/me", role="player")["alias"] == name

@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   ArrowUpRight,
+  ArrowLeft,
   CalendarDays,
   CircleUserRound,
   Clock3,
@@ -19,6 +20,7 @@ import { Button, Modal } from './ui'
 import { date, time, initial } from './format'
 import { GameForm, IncludeForm, TemplateForm } from './forms'
 import { useClubData } from './use-club-data'
+import { useNavigation } from './use-navigation'
 import { GameScreen } from './game-screen'
 import { ArchiveScreen } from './archive-screen'
 import { PlayersScreen } from './players-screen'
@@ -34,6 +36,7 @@ function App() {
     players,
     match: m,
     setSelectedId,
+    selectedId,
     dataRevision,
     demo,
     loading,
@@ -41,22 +44,24 @@ function App() {
     refresh,
     logout,
   } = useClubData()
-  const [tab, setTab] = useState('game')
+  const {
+    tab,
+    setTab,
+    modal,
+    setModal,
+    statsTarget,
+    openStats,
+    ratingTarget,
+    openRatings,
+    openGame,
+    back,
+    canBack,
+    nativeBack,
+    visited,
+  } = useNavigation(selectedId, setSelectedId, Boolean(me))
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
-  const [modal, setModal] = useState<string | null>(null)
   const [template, setTemplate] = useState<Template | null>(null)
-  const [statsTarget, setStatsTarget] = useState<number | null>(null)
-  const openStats = (id: number) => {
-    setStatsTarget(id)
-    setModal('stats')
-  }
-  const openGame = (id: number) => {
-    setSelectedId(id)
-    setModal(null)
-    setTab('game')
-  }
-  const [ratingTarget, setRatingTarget] = useState<number | null>(null)
   const [history, setHistory] = useState<History | null>(null)
   useEffect(() => {
     if (loadError) setNotice({ text: loadError, error: true })
@@ -223,6 +228,11 @@ function App() {
           </button>
         )}
       </nav>
+      {canBack && !nativeBack && !modal && (
+        <Button className="ghost compact back-navigation" onClick={back}>
+          <ArrowLeft size={18} /> Назад
+        </Button>
+      )}
       <main>
         {notice && !modal && (
           <div
@@ -251,16 +261,22 @@ function App() {
           />
         )}
         {tab === 'predictions' && <PredictionStandings me={me.id} onPlayer={openStats} />}
-        {tab === 'archive' && <ArchiveScreen onMatch={openGame} revision={dataRevision} />}
-        {tab === 'players' && (
-          <PlayersScreen
-            players={players}
-            me={me}
-            dataRevision={dataRevision}
-            openStats={openStats}
-            setRatingTarget={setRatingTarget}
-            setModal={setModal}
-          />
+        {visited('archive') && (
+          <div hidden={tab !== 'archive'}>
+            <ArchiveScreen onMatch={openGame} revision={dataRevision} />
+          </div>
+        )}
+        {visited('players') && (
+          <div hidden={tab !== 'players'}>
+            <PlayersScreen
+              players={players}
+              me={me}
+              dataRevision={dataRevision}
+              openStats={openStats}
+              openRatings={openRatings}
+              setModal={setModal}
+            />
+          </div>
         )}
         {tab === 'profile' && (
           <ProfileScreen
@@ -336,8 +352,8 @@ function App() {
             save={(data) =>
               run(async () => {
                 const created = await api<Match>('/matches', 'POST', data)
-                setSelectedId(created.id)
                 setModal(null)
+                setSelectedId(created.id)
               }, 'Черновик создан. Теперь можно открыть сбор.')
             }
           />
@@ -444,7 +460,7 @@ function App() {
               const alias = new FormData(e.currentTarget).get('alias')
               void run(async () => {
                 await api('/players/guests', 'POST', { alias })
-                setModal(tab === 'game' ? 'include' : null)
+                setModal(null)
               }, 'Карточка гостя создана')
             }}
           >
@@ -463,8 +479,9 @@ function App() {
           <p>
             Карточка:{' '}
             <strong>{players.find((p) => p.id === Number(modal?.split(':')[1]))?.alias}</strong>.
-            Убедитесь, что обе карточки принадлежат одному человеку. История гостя сохранится. При
-            заявках обеих карточек на одну игру автоматическое слияние недоступно.
+            Убедитесь, что обе карточки принадлежат одному человеку. Аккаунт получит alias
+            исторической карточки, история гостя сохранится. При заявках обеих карточек на одну игру
+            автоматическое слияние недоступно.
           </p>
           <form
             onSubmit={(e) => {

@@ -192,6 +192,12 @@ def test_guest_link_between_request_read_and_rating_lock_uses_current_identity(p
         # A different request links the card while this request has already read it.
         with factory() as linking, linking.begin():
             merge_guest(linking, actor, guest_id, target_id)
+        with factory() as check:
+            assert check.get(Player, target_id).alias == "Гость"
+            assert check.get(Player, guest_id).merged_into == target_id
+            assert list(check.scalars(select(Player.id).where(Player.alias == "Гость"))) == [
+                target_id
+            ]
         if operation == "temporary":
             with pytest.raises(DomainError, match="Есть оценки сообщества"):
                 set_temporary(

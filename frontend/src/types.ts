@@ -149,6 +149,13 @@ declare global {
         initDataUnsafe?: { start_param?: string }
         ready: () => void
         expand: () => void
+        isVersionAtLeast?: (version: string) => boolean
+        BackButton?: {
+          show: () => void
+          hide: () => void
+          onClick: (callback: () => void) => void
+          offClick: (callback: () => void) => void
+        }
       }
       Login?: {
         auth: (
