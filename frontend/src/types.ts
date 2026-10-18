@@ -32,6 +32,7 @@ export type Publication = {
   stale_marked: boolean
   error: string | null
 }
+export type Strength = { total: number | null; rated_total: number; rated: number; count: number }
 export type Match = {
   cancellation_reason?: string | null
   id: number
@@ -53,6 +54,7 @@ export type Match = {
   publications: Publication[]
   team_ratings: {
     summary: BalanceSummary | null
+    strength?: (Strength & { teams: Record<Team, Strength> }) | null
     game_summary?: {
       white_mu: number
       black_mu: number

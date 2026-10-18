@@ -371,11 +371,12 @@ def test_concurrent_result_edits_are_atomic(pg):
     from datetime import timedelta
 
     from fczhk.db import now
-    from fczhk.models import MatchResult, ResultGoal, ResultParticipant
+    from fczhk.models import MatchResult, Publication, ResultGoal, ResultParticipant
     from fczhk.results import save_result
     from fczhk.schemas import ResultEdit
 
     factory, actor = pg
+    cfg = Settings(_env_file=None, env="test", publication_chat_id="-1005678")
     with factory() as db, db.begin():
         other = Player(alias="Соперник", telegram_id=9999)
         match = Match(
@@ -400,7 +401,7 @@ def test_concurrent_result_edits_are_atomic(pg):
     def save(_):
         try:
             with factory() as db, db.begin():
-                save_result(db, actor, get_match(db, mid, version, lock=True), body)
+                save_result(db, actor, get_match(db, mid, version, lock=True), body, cfg)
             return "ok"
         except DomainError as exc:
             assert exc.status == 409
@@ -408,6 +409,9 @@ def test_concurrent_result_edits_are_atomic(pg):
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert sorted(pool.map(save, range(2))) == ["conflict", "ok"]
+    with factory() as db:
+        posts = list(db.scalars(select(Publication).where(Publication.kind == "result")))
+        assert len(posts) == 1 and posts[0].chat_id == cfg.publication_chat_id
     with factory() as db:
         assert db.get(MatchResult, mid).completed
         assert len(list(db.scalars(select(ResultGoal)))) == 1

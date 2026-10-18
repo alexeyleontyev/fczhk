@@ -15,12 +15,20 @@ from .services import schedule_tick
 log = logging.getLogger(__name__)
 
 
-def chunks(value: str, size: int = 3500) -> list[str]:
-    # Reserve room for a future "obsolete" prefix, split without parse_mode entities.
+def chunks(value: str, size: int = 3500, *, utf16=False) -> list[str]:
+    # Preserve legacy boundaries for retries/edits; new result posts also account for emoji.
     result = []
-    while len(value) > size:
-        cut = value.rfind("\n", 0, size)
-        cut = cut if cut > 0 else size
+    while (len(value.encode("utf-16-le")) // 2 if utf16 else len(value)) > size:
+        limit = size
+        if utf16:
+            units, limit = 0, 0
+            for char in value:
+                units += 2 if ord(char) > 0xFFFF else 1
+                if units > size:
+                    break
+                limit += 1
+        cut = value.rfind("\n", 0, limit + 1)
+        cut = cut if cut > 0 else limit
         result.append(value[:cut])
         value = value[cut:].lstrip("\n")
     return result + ([value] if value else [])
@@ -32,6 +40,15 @@ def app_link(cfg, match_id=None):
             f"game_{match_id}" if match_id else "home"
         )
     return cfg.public_url
+
+
+def publication_parts(kind, content):
+    # The bounded start notice contains two escaped captain links. Keep its HTML intact.
+    return (
+        [(content, "HTML")]
+        if kind == "auction_start"
+        else [(part, None) for part in chunks(content, utf16=kind == "result")]
+    )
 
 
 async def deliver_one(cfg, factory, bot=None) -> bool:
@@ -64,7 +81,13 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             return False
         pub.status, pub.claimed_at = "sending", now()
         pub.attempts += 1
-        pub_id, chat, content, match_id = pub.id, pub.chat_id, pub.text, pub.match_id
+        pub_id, chat, content, match_id, kind = (
+            pub.id,
+            pub.chat_id,
+            pub.text,
+            pub.match_id,
+            pub.kind,
+        )
         already_sent = list(pub.message_ids)
     if cfg.env == "demo":
         with factory() as db, db.begin():
@@ -77,8 +100,8 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             p.status, p.error = "failed", "Не настроен чат публикаций или бот"
         return True
     try:
-        parts = chunks(content)
-        for i, part in enumerate(parts):
+        parts = publication_parts(kind, content)
+        for i, (part, parse_mode) in enumerate(parts):
             if i < len(already_sent):
                 continue
             markup = (
@@ -90,7 +113,7 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
                 if i == len(parts) - 1
                 else None
             )
-            sent = await bot.send_message(chat, part, reply_markup=markup)
+            sent = await bot.send_message(chat, part, reply_markup=markup, parse_mode=parse_mode)
             already_sent.append(sent.message_id)
             with factory() as db, db.begin():
                 db.get(Publication, pub_id).message_ids = list(already_sent)
@@ -144,12 +167,20 @@ async def mark_stale(cfg, factory, bot=None):
             pub.stale_marked = True
             return
         try:
-            for mid, part in zip(pub.message_ids, chunks(pub.text), strict=True):
+            prefix = (
+                "⚠️ НЕАКТУАЛЬНО — результат исправлен\n\n"
+                if pub.kind == "result"
+                else "⚠️ НЕАКТУАЛЬНО — состав или параметры изменились\n\n"
+            )
+            for mid, (part, parse_mode) in zip(
+                pub.message_ids, publication_parts(pub.kind, pub.text), strict=True
+            ):
                 try:
                     await bot.edit_message_text(
-                        text="⚠️ НЕАКТУАЛЬНО — состав или параметры изменились\n\n" + part,
+                        text=prefix + part,
                         chat_id=pub.chat_id,
                         message_id=mid,
+                        parse_mode=parse_mode,
                     )
                 except TelegramBadRequest as exc:
                     if "message is not modified" not in str(exc):

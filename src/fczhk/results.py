@@ -5,9 +5,9 @@ from collections import Counter
 from sqlalchemy import delete, select
 
 from .db import now
-from .models import Audit, Match, MatchResult, Player, ResultGoal, ResultParticipant
+from .models import Audit, Match, MatchResult, Player, Publication, ResultGoal, ResultParticipant
 from .ratings import lock_ratings
-from .services import DomainError, audit, entries
+from .services import MOSCOW, DomainError, audit, entries
 
 
 def identities(db):
@@ -69,7 +69,68 @@ def result_data(db, match):
     )
 
 
-def save_result(db, actor, match, body):
+def result_text(match, data, corrected=False):
+    people = {p["player_id"]: p["alias"] for p in data["participants"]}
+    score = data["score"]
+    title = "🏁 Исправленный итог игры" if corrected else "🏁 Игра завершена"
+    lines = [
+        title,
+        f"ФКЖК · {match.starts_at.astimezone(MOSCOW):%d.%m.%Y · %H:%M МСК}",
+        f"📍 {match.location}",
+        f"⚪ Белые {score['white']} : {score['black']} Чёрные ⚫",
+        "Ничья"
+        if score["white"] == score["black"]
+        else "Победа белых"
+        if score["white"] > score["black"]
+        else "Победа чёрных",
+    ]
+    for team, label in (("white", "⚪ Белые"), ("black", "⚫ Чёрные")):
+        lines.extend(["", label])
+        for player in sorted(
+            data["participants"],
+            key=lambda p: (p["position"] != "keeper", p["alias"], p["player_id"]),
+        ):
+            if player["team"] == team:
+                lines.append(("🧤 " if player["position"] == "keeper" else "") + player["alias"])
+        lines.append("Голы и передачи:")
+        goals = [g for g in data["goals"] if g["team"] == team]
+        if not goals:
+            lines.append("Голов нет")
+        for number, goal in enumerate(goals, 1):
+            author = people.get(goal["author_id"], "автор не указан")
+            if goal["kind"] == "own_goal":
+                lines.append(f"{number}. Автогол — {author}")
+            else:
+                assist = people.get(goal["assist_id"], "не указана")
+                lines.append(f"{number}. ⚽ {author} · передача: {assist}")
+    return "\n".join(lines)
+
+
+def publish_result(db, match, data, cfg, corrected=False):
+    # The match lock serializes corrections and publication revisions with the result write.
+    for previous in db.scalars(
+        select(Publication).where(
+            Publication.match_id == match.id,
+            Publication.kind == "result",
+            Publication.stale.is_(False),
+        )
+    ):
+        previous.stale = True
+        if previous.status == "pending":
+            previous.status = "cancelled"
+    db.add(
+        Publication(
+            match_id=match.id,
+            kind="result",
+            version=match.version,
+            chat_id=cfg.publication_chat_id,
+            text=result_text(match, data, corrected),
+        )
+    )
+    db.flush()
+
+
+def save_result(db, actor, match, body, cfg):
     if match.status not in ("approved", "completed"):
         raise DomainError("Сначала утвердите составы")
     if now() < match.starts_at:
@@ -128,6 +189,13 @@ def save_result(db, actor, match, body):
     match.version += 1
     db.flush()
     new = result_data(db, match)
+    if body.completed and (
+        not old["completed"]
+        or sorted(old["participants"], key=lambda p: p["player_id"])
+        != sorted(new["participants"], key=lambda p: p["player_id"])
+        or old["goals"] != new["goals"]
+    ):
+        publish_result(db, match, new, cfg, corrected=old["completed"])
     audit(
         db,
         actor,

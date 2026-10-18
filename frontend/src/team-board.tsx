@@ -95,6 +95,13 @@ export function TeamBoard({
                 {team === 'white' ? 'Белые' : team === 'black' ? 'Черные' : 'Не распределены'}
                 <span>{list.length}</span>
               </h3>
+              {team && m.team_ratings.strength && (
+                <p className="muted caption">
+                  Сила команды: {score(m.team_ratings.strength.teams[team].total)}
+                  {m.team_ratings.strength.teams[team].total === null &&
+                    ' · есть игроки без оценок'}
+                </p>
+              )}
               {list.map((r) => (
                 <div className="team-player" key={r.id}>
                   <span>

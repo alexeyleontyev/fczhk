@@ -525,6 +525,33 @@ def apply_run(db: Session, actor: int, match: Match, run_id: int, variant: int):
     db.flush()
 
 
+def strength_summary(inputs, assignments):
+    def totals(rows):
+        values = []
+        for row in rows:
+            if row["defense"] is None or (row["position"] == "field" and row["attack"] is None):
+                continue
+            value = Fraction(str(row["defense"]))
+            if row["position"] == "field":
+                value += Fraction(str(row["attack"]))
+            values.append(value)
+        rated_total = float(sum(values, Fraction()))
+        return dict(
+            total=rated_total if len(values) == len(rows) else None,
+            rated_total=rated_total,
+            rated=len(values),
+            count=len(rows),
+        )
+
+    return {
+        **totals(inputs),
+        "teams": {
+            team: totals([row for row in inputs if assignments.get(row["registration_id"]) == team])
+            for team in ("white", "black")
+        },
+    }
+
+
 def team_rating_data(db: Session, match: Match, approval=False) -> dict:
     from .auctions import formation_method
 
@@ -539,8 +566,11 @@ def team_rating_data(db: Session, match: Match, approval=False) -> dict:
         if snapshot:
             return {**snapshot.data, "frozen": True, "stale": False}
         # MVP 1 historical teams have no rating snapshot; never retrofit today's ratings.
-        return dict(summary=None, inputs=[], method="legacy-manual", frozen=True, stale=False)
+        return dict(
+            summary=None, strength=None, inputs=[], method="legacy-manual", frozen=True, stale=False
+        )
     inputs, fingerprint = inputs_for(db, match)
+    strength_inputs = inputs
     draft = db.get(TeamRatingDraft, match.id)
     run = db.get(BalanceRun, draft.run_id) if draft else None
     if run and run.settings.get("method") == "game":
@@ -555,7 +585,9 @@ def team_rating_data(db: Session, match: Match, approval=False) -> dict:
         )
     if run:
         inputs = run.inputs
-    assignments = {r.id: r.team for r in entries(db, match.id) if r.selected}
+    regs = [r for r in entries(db, match.id) if r.selected]
+    assignments = {r.id: r.team for r in regs}
+    keepers = effective(db, [r for r in regs if r.position == "keeper"])
     game_summary = (
         game_balancing.game_summary(inputs, assignments)
         if draft and run and run.settings.get("method") == "game"
@@ -574,6 +606,7 @@ def team_rating_data(db: Session, match: Match, approval=False) -> dict:
         variant=draft.variant if draft else None,
         settings=run.settings if run else None,
         summary=balancing.summary(inputs, assignments),
+        strength=strength_summary([*strength_inputs, *keepers.values()], assignments),
         game_summary=game_summary,
         frozen=False,
         stale=stale,
@@ -584,5 +617,20 @@ def public_team_data(db: Session, match: Match) -> dict:
     data = team_rating_data(db, match)
     return {
         key: data.get(key)
-        for key in ("summary", "game_summary", "method", "frozen", "stale", "run_id", "variant")
+        for key in (
+            "summary",
+            "strength",
+            "game_summary",
+            "method",
+            "frozen",
+            "stale",
+            "run_id",
+            "variant",
+        )
     }
+
+
+def strength_text(value):
+    if value["total"] is not None:
+        return f"{value['total']:.2f}"
+    return f"неполная: {value['rated_total']:.2f} по {value['rated']} из {value['count']} игроков"

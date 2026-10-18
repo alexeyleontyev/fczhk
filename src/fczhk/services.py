@@ -223,8 +223,15 @@ def text_for(db: Session, match: Match, kind: str) -> str:
             f"{match.description}\n\nПриоритет — время записи среди оплативших."
         )
     lines = [f"Составы утверждены\n{header}"]
+    from .ratings import strength_text, team_rating_data
+
+    strength = team_rating_data(db, match).get("strength")
+    if strength:
+        lines.append(f"\nСила сбора: {strength_text(strength)}")
+        lines.append("Полевые: атака + защита; вратари: защита.")
     for team, label in (("white", "⚪ Белые"), ("black", "⚫ Черные")):
-        lines.append(f"\n{label}")
+        suffix = f" · сила {strength_text(strength['teams'][team])}" if strength else ""
+        lines.append(f"\n{label}{suffix}")
         for r in entries(db, match.id):
             if r.selected and r.team == team:
                 p = db.get(Player, r.player_id)

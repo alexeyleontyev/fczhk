@@ -2,7 +2,7 @@ import { ArrowUpRight, Check, Flag, MapPin, Plus, RefreshCw, Shield } from 'luci
 import { api } from './api'
 import { Button, Empty } from './ui'
 import { date, time, money, status } from './format'
-import { AutomaticTeams, TemporaryRatings } from './ratings'
+import { AutomaticTeams, TemporaryRatings, score } from './ratings'
 import { Roster } from './roster'
 import { TeamBoard } from './team-board'
 import { MatchResult } from './results'
@@ -158,6 +158,22 @@ export function GameScreen({
                   <h2>Сбор на игру</h2>
                   <span className="muted">{m.registrations.length} записались</span>
                 </div>
+                {['finalized', 'approved', 'completed'].includes(m.status) &&
+                  m.team_ratings.strength && (
+                    <div className="collection-strength">
+                      <p>
+                        <strong>Сила сбора: {score(m.team_ratings.strength.total)}</strong>
+                        {m.team_ratings.strength.total === null && (
+                          <> · известная сумма {score(m.team_ratings.strength.rated_total)}</>
+                        )}
+                      </p>
+                      <p className="muted caption">
+                        Полевые: атака + защита; вратари: защита. Оценены{' '}
+                        {m.team_ratings.strength.rated} из {m.team_ratings.strength.count} игроков.
+                        {m.team_ratings.frozen ? ' Зафиксировано при утверждении.' : ''}
+                      </p>
+                    </div>
+                  )}
                 <div className="counts">
                   {(['field', 'keeper'] as Position[]).map((pos) => {
                     const amount = m.registrations.filter(
@@ -377,9 +393,13 @@ export function GameScreen({
                           ? 'Составы'
                           : p.kind === 'cancellation'
                             ? 'Отмена игры'
-                            : p.kind === 'auction_lot'
-                              ? 'Аукцион'
-                              : 'Сбор'}
+                            : p.kind === 'auction_start'
+                              ? 'Старт аукциона'
+                              : p.kind === 'result'
+                                ? 'Итог игры'
+                                : p.kind === 'auction_lot'
+                                  ? 'Аукцион'
+                                  : 'Сбор'}
                       </strong>
                       <span>
                         {

@@ -1,6 +1,7 @@
 """Sealed bids serialize on the match row. Only resolved lots disclose both amounts."""
 
 from copy import deepcopy
+from html import escape
 from random import SystemRandom
 from uuid import uuid4
 
@@ -165,6 +166,30 @@ def announce_lot(db, match, auction, lot, cfg):
     announce(db, match, auction, text, cfg)
 
 
+def announce_start(db, match, auction, cfg):
+    lines = [
+        f"🎯 Аукцион #{auction.id} начат!",
+        f"Игра {match.starts_at.astimezone(MOSCOW):%d.%m.%Y · %H:%M МСК}",
+        "",
+    ]
+    for team, label in (("white", "⚪ Капитан белых"), ("black", "⚫ Капитан чёрных")):
+        player = db.get(Player, getattr(auction, team + "_captain"))
+        lines.append(
+            f'{label}: <a href="tg://user?id={player.telegram_id}">{escape(player.alias)}</a>'
+        )
+    lines.extend(["", "Капитаны, откройте игру и сделайте ставки. Бюджет каждого — 100 баллов."])
+    db.add(
+        Publication(
+            match_id=match.id,
+            kind="auction_start",
+            version=auction.id,
+            chat_id=cfg.publication_chat_id,
+            text="\n".join(lines),
+        )
+    )
+    db.flush()
+
+
 def advance(db, actor, match, auction, cfg):
     state = deepcopy(auction.state)
     full = next(
@@ -289,6 +314,8 @@ def start(db, actor, match, body, cfg):
         captains=sorted(captains),
         rules="sealed-captains/v1",
     )
+    # Queue the captain notification before any immediate automatic assignments.
+    announce_start(db, match, auction, cfg)
     advance(db, actor, match, auction, cfg)
     return auction
 

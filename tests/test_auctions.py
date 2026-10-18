@@ -136,10 +136,41 @@ def test_same_player_cannot_captain_both_teams(env, call, auction_game):
     assert call("GET", f"/matches/{mid}") == before
     assert call("GET", f"/matches/{mid}/auction") is None
     assert call("GET", f"/matches/{mid}/auctions/history") == []
+    with env[1]() as db:
+        assert not list(db.scalars(select(Publication)))
     assert start(call, env, mid)["captains"] == {
         "white": env[4]["admin"],
         "black": env[4]["player"],
     }
+
+
+def test_start_mentions_both_captains_once_and_escapes_names(env, call, auction_game):
+    cfg, factory, _, _, ids = env
+    cfg.publication_chat_id = "-1005678"
+    with factory() as db, db.begin():
+        db.get(Player, ids["admin"]).alias = 'Капитан <⚽> & "Белый"'
+    before = call("GET", f"/matches/{auction_game}")
+    auction = start(call, env, auction_game)
+    call(
+        "POST",
+        f"/matches/{auction_game}/auction",
+        dict(version=before["version"], white_captain=ids["admin"], black_captain=ids["player"]),
+        expected=409,
+    )
+    with factory() as db:
+        notice = db.scalar(select(Publication).where(Publication.kind == "auction_start"))
+        assert notice.version == auction["id"] and notice.chat_id == cfg.publication_chat_id
+        assert 'href="tg://user?id=101"' in notice.text and 'href="tg://user?id=102"' in notice.text
+        assert "Капитан &lt;⚽&gt; &amp; &quot;Белый&quot;" in notice.text
+        assert "Аукцион" in notice.text and "начат!" in notice.text
+        assert "white_bid" not in notice.text and "black_bid" not in notice.text
+        assert len(list(db.scalars(select(Publication)))) == 1
+    control(call, auction_game, auction, "cancel")
+    restarted = start(call, env, auction_game)
+    with factory() as db:
+        assert sorted(
+            db.scalars(select(Publication.version).where(Publication.kind == "auction_start"))
+        ) == [auction["id"], restarted["id"]]
 
 
 def test_secret_bids_reveal_only_after_resolution(env, call, auction_game):
@@ -222,7 +253,7 @@ def test_positive_tie_has_no_price_team_or_charge_and_announces_next_round(env, 
 async def test_auction_result_is_delivered_once_by_existing_worker(env, call, auction_game):
     from types import SimpleNamespace
 
-    from fczhk.worker import deliver_one
+    from fczhk.worker import deliver_one, mark_stale
 
     cfg, factory, _, _, _ = env
     cfg.publication_chat_id = "-1005678"
@@ -235,19 +266,32 @@ async def test_auction_result_is_delivered_once_by_existing_worker(env, call, au
     class Bot:
         def __init__(self):
             self.sent = []
+            self.edited = []
 
         async def send_message(self, chat, text, **kwargs):
-            self.sent.append((chat, text))
+            self.sent.append((chat, text, kwargs))
             return SimpleNamespace(message_id=42)
+
+        async def edit_message_text(self, **kwargs):
+            self.edited.append(kwargs)
 
     bot = Bot()
     assert await deliver_one(cfg, factory, bot)
+    assert await deliver_one(cfg, factory, bot)
     assert not await deliver_one(cfg, factory, bot)
-    assert len(bot.sent) == 1 and bot.sent[0][0] == cfg.publication_chat_id
-    assert alias in bot.sent[0][1] and "Белые получают игрока за 9 баллов" in bot.sent[0][1]
+    assert len(bot.sent) == 2 and all(row[0] == cfg.publication_chat_id for row in bot.sent)
+    assert bot.sent[0][2]["parse_mode"] == "HTML"
+    assert "tg://user?id=101" in bot.sent[0][1] and "tg://user?id=102" in bot.sent[0][1]
+    assert alias in bot.sent[1][1] and "Белые получают игрока за 9 баллов" in bot.sent[1][1]
+    assert bot.sent[1][2]["parse_mode"] is None
     with factory() as db:
         message = db.scalar(select(Publication).where(Publication.kind == "auction_lot"))
         assert message.status == "sent" and message.message_ids == [42]
+    with factory() as db, db.begin():
+        db.scalar(select(Publication).where(Publication.kind == "auction_start")).stale = True
+    await mark_stale(cfg, factory, bot)
+    assert len(bot.edited) == 1 and bot.edited[0]["parse_mode"] == "HTML"
+    assert "tg://user?id=101" in bot.edited[0]["text"]
 
 
 def test_ties_rounds_then_free_assignment_and_approval(env, call, auction_game):

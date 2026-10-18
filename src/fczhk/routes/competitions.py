@@ -63,7 +63,7 @@ def router(ctx):
         db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
-        return res.save_result(db, p.id, m, body)
+        return res.save_result(db, p.id, m, body, cfg)
 
     @app.get("/api/matches/{match_id}/auction")
     def auction_detail(

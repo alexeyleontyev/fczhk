@@ -71,6 +71,7 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
   await expect(startAuction).toBeEnabled()
   await startAuction.click()
   await expect(panel.getByText('Торги идут', { exact: true })).toBeVisible()
+  await expect(page.getByText('Старт аукциона', { exact: true })).toBeVisible()
   const second = await browser.newContext({ viewport: { width: 390, height: 844 } })
   try {
     const other = await second.newPage()

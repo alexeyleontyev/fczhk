@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select
 
 from fczhk import balancing
-from fczhk.models import MatchRating, Player, Rating, RatingHistory
+from fczhk.models import MatchRating, Player, Publication, Rating, RatingHistory
 from fczhk.schemas import BalanceSettings
 
 
@@ -261,6 +261,49 @@ def test_autoteams_keeper_assignment_edit_snapshot_and_publish(call, game):
     )
     assert m["status"] == "finalized" and m["team_ratings"]["method"] == "manual"
     assert all(r["team"] is None for r in m["registrations"])
+
+
+def test_collection_strength_includes_keepers_excludes_reserve_and_freezes_at_approval(
+    env, call, game
+):
+    # A regular unpaid registration stays in reserve and must not count towards strength.
+    game = call("POST", f"/matches/{game['id']}/join", {"position": "field"}, role="player")
+    vote(call, env[4]["player"], attack=5, defense=5)
+    m = prepared(call, game, n=4, keepers=2)
+    path = f"/matches/{m['id']}"
+    assert m["team_ratings"]["strength"]["total"] == 34
+    assert m["team_ratings"]["strength"]["count"] == 6
+    field = [r for r in m["registrations"] if r["selected"] and r["position"] == "field"]
+    keepers = [r for r in m["registrations"] if r["selected"] and r["position"] == "keeper"]
+    # Community values take precedence over temporary values, including for keepers.
+    vote(call, field[0]["player_id"], attack=5, defense=4)
+    vote(call, keepers[0]["player_id"], attack=None, defense=4, position="keeper")
+    m = call("GET", path)
+    assert m["team_ratings"]["strength"]["total"] == 36
+    selected = [r for r in m["registrations"] if r["selected"]]
+    white_ids = {r["id"] for r in field[:2] + keepers[:1]}
+    assignments = {r["id"]: "white" if r["id"] in white_ids else "black" for r in selected}
+    m = call("PUT", path + "/teams", dict(version=m["version"], assignments=assignments))
+    m = call("POST", path + "/actions/approve", {"version": m["version"]})
+    frozen = m["team_ratings"]["strength"]
+    assert frozen["teams"]["white"]["total"] == 19 and frozen["teams"]["black"]["total"] == 17
+    vote(call, field[0]["player_id"], attack=0, defense=0, revision=1)
+    vote(call, keepers[0]["player_id"], attack=None, defense=0, position="keeper", revision=1)
+    assert call("GET", path)["team_ratings"]["strength"] == frozen
+    call("POST", path + "/actions/publish", {"version": m["version"]})
+    with env[1]() as db:
+        post = db.scalar(select(Publication).where(Publication.kind == "teams"))
+        assert "Сила сбора: 36.00" in post.text
+        assert "⚪ Белые · сила 19.00" in post.text and "⚫ Черные · сила 17.00" in post.text
+
+
+def test_missing_strength_is_not_zero_and_zero_scores_are_rated(call, game):
+    m, _ = add_guest(call, game, "Без оценки", defense=None)
+    m, _ = add_guest(call, m, "Настоящий ноль", attack=0, defense=0)
+    m = call("POST", f"/matches/{m['id']}/actions/finalize", {"version": m["version"]})
+    strength = m["team_ratings"]["strength"]
+    assert strength["total"] is None and strength["rated_total"] == 0
+    assert strength["rated"] == 1 and strength["count"] == 2
 
 
 def test_changed_ratings_block_old_choice_and_approval_but_not_frozen_teams(env, call, game):

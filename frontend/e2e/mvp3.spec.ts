@@ -54,10 +54,16 @@ test('mobile result: unknown goals, actual rosters, corrections and player stati
   await result.getByRole('button', { name: 'Завершить матч', exact: true }).click()
   await expect(page.getByText('Матч завершён', { exact: true })).toBeVisible()
   await expect(result.getByLabel('Счёт матча')).toContainText('1 : 0')
+  await expect(page.getByText('Итог игры', { exact: true })).toBeVisible()
   await result.getByRole('button', { name: 'Исправить результат' }).click()
   await result.getByRole('button', { name: 'Гол: ⚫ Чёрные', exact: true }).click()
-  await result.getByRole('combobox', { name: 'Тип гола', exact: true }).last().selectOption('own_goal')
-  await expect(result.getByRole('combobox', { name: 'Автор гола', exact: true }).last()).toHaveValue('')
+  await result
+    .getByRole('combobox', { name: 'Тип гола', exact: true })
+    .last()
+    .selectOption('own_goal')
+  await expect(
+    result.getByRole('combobox', { name: 'Автор гола', exact: true }).last(),
+  ).toHaveValue('')
   await result.getByRole('button', { name: 'Сохранить исправления', exact: true }).click()
   await expect(result.getByLabel('Счёт матча')).toContainText('1 : 1')
   await expect(result.getByText(/Автор неизвестен — автогол/)).toBeVisible()
