@@ -145,17 +145,19 @@ test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing 
   })
   m = await api('POST', `/matches/${m.id}/actions/open`, { version: m.version })
   let firstGuestId = 0
+  let communityGuestId = 0
   for (let i = 0; i < 18; i++) {
     const alias = i < 16 ? `Баланс ${String(i + 1).padStart(2, '0')}` : `Вратарь ${i - 15}`
     const guest = await api('POST', '/players/guests', { alias })
     if (i === 0) firstGuestId = guest.id
+    if (i === 1) communityGuestId = guest.id
     const position = i < 16 ? 'field' : 'keeper'
     m = await api('POST', `/matches/${m.id}/participants`, {
       version: m.version,
       player_id: guest.id,
       position,
     })
-    if (i === 15) continue // Fill the last missing field rating from the phone UI.
+    if (i === 1 || i === 15) continue // Community-only player; last rating filled from the phone UI.
     const reg = m.registrations.find((r: { player_id: number }) => r.player_id === guest.id)
     m = await api('PUT', `/matches/${m.id}/registrations/${reg.id}/rating`, {
       version: m.version,
@@ -168,6 +170,12 @@ test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing 
     position: 'field',
     attack: 4.5,
     defense: 1.2,
+    revision: 0,
+  })
+  await api('PUT', `/players/${communityGuestId}/ratings`, {
+    position: 'field',
+    attack: 2.4,
+    defense: 2.5,
     revision: 0,
   })
   await page.goto(`/?game=${m.id}`)
@@ -193,8 +201,11 @@ test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing 
   const runs = await api('GET', `/matches/${m.id}/balance`)
   const firstVariant = page.getByRole('article', { name: 'Вариант 1', exact: true })
   const firstPlayer = firstVariant.locator('.variant-player').filter({ hasText: 'Баланс 01' })
-  await expect(firstPlayer.getByText('Сообщество: А 4,5 · З 1,2', { exact: true })).toBeVisible()
-  await expect(firstPlayer.getByText('На эту игру: А 2 · З 2', { exact: true })).toBeVisible()
+  await expect(firstPlayer.locator('small')).toHaveText('А 2 · З 2 · на игру')
+  const communityPlayer = firstVariant.locator('.variant-player').filter({ hasText: 'Баланс 02' })
+  await expect(communityPlayer.locator('small')).toHaveText('А 2,4 · З 2,5')
+  await expect(communityPlayer.getByText(/на игру/)).toHaveCount(0)
+  await expect(firstVariant.getByText(/нет оценок|оценка не задана|Сообщество:/)).toHaveCount(0)
   expect(runs[0].result.partition_count).toBe(6435)
   for (let i = 0; i < 3; i++)
     for (let j = i + 1; j < 3; j++) expect(runs[0].result.distances[i][j]).toBeGreaterThanOrEqual(6)

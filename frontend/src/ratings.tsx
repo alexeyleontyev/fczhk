@@ -791,19 +791,16 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
                       .map((r) => {
                         const community = r.community ?? (r.source === 'community' ? r : null)
                         const temporary = r.temporary ?? (r.source === 'temporary' ? r : null)
+                        const rating = temporary ?? community
                         return (
                           <div className="variant-player" key={r.registration_id}>
                             <span>{r.alias}</span>
-                            <small>
-                              {community
-                                ? `Сообщество: А ${score(community.attack)} · З ${score(community.defense)}`
-                                : 'Сообщество: нет оценок'}
-                            </small>
-                            <small>
-                              {temporary
-                                ? `На эту игру: А ${score(temporary.attack)} · З ${score(temporary.defense)}`
-                                : 'На эту игру: оценка не задана'}
-                            </small>
+                            {rating && (
+                              <small title={temporary ? 'Оценка на эту игру' : 'Оценка сообщества'}>
+                                А {score(rating.attack)} · З {score(rating.defense)}
+                                {temporary ? ' · на игру' : ''}
+                              </small>
+                            )}
                           </div>
                         )
                       })}
