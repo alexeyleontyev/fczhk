@@ -7,8 +7,9 @@ from sqlalchemy import select
 
 from .auth import check_member, player_for_telegram
 from .db import database, now
-from .models import BotCallbackReceipt, Match, Player
+from .models import BotCallbackReceipt, GameTemplate, Match, Player
 from .ratings import public_averages
+from .scheduling import schedule_description
 from .services import MOSCOW, DomainError, get_match, match_data, register
 from .worker import app_link, chunks
 
@@ -43,9 +44,15 @@ def dispatcher(cfg, factory):
             return
         try:
             await identify(message.from_user)
+
+            def read_schedule():
+                with factory() as db:
+                    return schedule_description(db.get(GameTemplate, 1))
+
+            description = await asyncio.to_thread(read_schedule)
             await message.answer(
-                "ФКЖК · футбол по пятницам\n\n"
-                "Запись открывается во вторник в 12:00 МСК. Приоритет — время записи среди оплативших.\n"
+                "ФКЖК · футбольное сообщество\n\n"
+                f"{description}\nПриоритет — время записи среди оплативших.\n"
                 "В приложении: alias, текущая игра, оценки игроков и подбор составов.\n\n"
                 "/game — текущая игра\n/players — игроки",
                 reply_markup=menu(),

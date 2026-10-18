@@ -126,6 +126,9 @@ export type Run = (work: () => Promise<unknown>, success?: string) => Promise<vo
 export type Template = {
   version: number
   enabled: boolean
+  opening_weekday: number
+  opening_time: string
+  game_weekday: number
   start_time: string
   location: string
   description: string

@@ -4,6 +4,8 @@ import { Button } from './ui'
 import { time } from './format'
 import type { Match, Template, Player, Position } from './types'
 
+const weekdays = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
+
 export function GameForm({
   match,
   template,
@@ -97,6 +99,9 @@ export function TemplateForm({
         void save({
           version: t.version,
           enabled: f.has('enabled'),
+          opening_weekday: Number(f.get('opening_weekday')),
+          opening_time: String(f.get('opening_time')),
+          game_weekday: Number(f.get('game_weekday')),
           start_time: String(f.get('start_time')),
           location: String(f.get('location')),
           description: String(f.get('description')),
@@ -107,10 +112,34 @@ export function TemplateForm({
     >
       <label className="checkbox">
         <input type="checkbox" name="enabled" defaultChecked={t.enabled} /> Автоматически открывать
-        сбор по вторникам
+        сбор
       </label>
       <label>
-        Время игры в пятницу · Москва
+        День открытия сбора
+        <select name="opening_weekday" defaultValue={t.opening_weekday} required>
+          {weekdays.map((day, i) => (
+            <option key={i} value={i}>
+              {day}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Время открытия сбора · Москва
+        <input name="opening_time" type="time" defaultValue={t.opening_time} required />
+      </label>
+      <label>
+        День игры
+        <select name="game_weekday" defaultValue={t.game_weekday} required>
+          {weekdays.map((day, i) => (
+            <option key={i} value={i}>
+              {day}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Время игры · Москва
         <input name="start_time" type="time" defaultValue={t.start_time} required />
       </label>
       <label>

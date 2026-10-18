@@ -4,11 +4,48 @@ from unittest.mock import AsyncMock
 import pytest
 from aiogram import Bot
 from aiogram.exceptions import TelegramMigrateToChat
-from aiogram.methods import GetChatMember
+from aiogram.methods import GetChatMember, SendMessage
 
 from fczhk.auth import check_member
 from fczhk.bot import handle_update
+from fczhk.models import GameTemplate
 from fczhk.services import DomainError
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_help_uses_saved_schedule_instead_of_fixed_days(env, monkeypatch, enabled):
+    cfg, factory, *_ = env
+    cfg.bot_token = "123456:abcdefghijklmnopqrstuvwxyzABCDE"
+    with factory() as db, db.begin():
+        template = db.get(GameTemplate, 1)
+        template.enabled = enabled
+        template.opening_weekday, template.opening_time = 6, "23:45"
+        template.game_weekday, template.start_time = 0, "00:15"
+    sender = AsyncMock(return_value=True)
+    monkeypatch.setattr(Bot, "__call__", sender)
+    await handle_update(
+        cfg,
+        factory,
+        {
+            "update_id": 124,
+            "message": {
+                "message_id": 1,
+                "date": 1700000000,
+                "chat": {"id": 102, "type": "private"},
+                "from": {"id": 102, "is_bot": False, "first_name": "Игрок"},
+                "text": "/help",
+                "entities": [{"offset": 0, "length": 5, "type": "bot_command"}],
+            },
+        },
+    )
+    message = next(
+        call.args[0] for call in sender.await_args_list if isinstance(call.args[0], SendMessage)
+    )
+    assert "Игра: понедельник, 00:15 МСК" in message.text
+    assert "вторник" not in message.text
+    assert (
+        "Сбор: воскресенье, 23:45 МСК" if enabled else "Автоматическое открытие сбора выключено"
+    ) in message.text
 
 
 async def test_duplicate_telegram_callback_cannot_rejoin_after_later_cancel(

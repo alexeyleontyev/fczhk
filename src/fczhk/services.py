@@ -1,7 +1,6 @@
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,8 +21,7 @@ from .models import (
     TeamRatingSnapshot,
     TeamSnapshot,
 )
-
-MOSCOW = ZoneInfo("Europe/Moscow")
+from .scheduling import MOSCOW, schedule_window
 
 
 class DomainError(Exception):
@@ -578,18 +576,13 @@ def schedule_tick(db: Session, cfg: Settings, at: datetime | None = None) -> int
     if not template or not template.enabled:
         return None
     local = (at or now()).astimezone(MOSCOW)
-    monday = local.date() - timedelta(days=local.weekday())
-    friday = monday + timedelta(days=4)
-    if db.get(SkippedGameDay, friday.isoformat()):
+    opening, starts = schedule_window(template, local)
+    game_day = starts.date().isoformat()
+    if db.get(SkippedGameDay, game_day):
         return None
-    opening = datetime.combine(monday + timedelta(days=1), datetime.min.time(), MOSCOW).replace(
-        hour=12
-    )
-    hour, minute = map(int, template.start_time.split(":"))
-    starts = datetime.combine(friday, datetime.min.time(), MOSCOW).replace(hour=hour, minute=minute)
     if not opening <= local < starts:
         return None
-    match = db.scalar(select(Match).where(Match.game_day == friday.isoformat()).with_for_update())
+    match = db.scalar(select(Match).where(Match.game_day == game_day).with_for_update())
     if match:
         # An existing manual draft is intentionally not opened by the worker.
         return None
@@ -717,8 +710,8 @@ def cancel_match(db, actor, match, reason, cfg):
 def skip_day(db, actor, day, reason):
     # Same ordering as manual/scheduled match creation.
     db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
-    if day.weekday() != 4 or day < now().astimezone(MOSCOW).date():
-        raise DomainError("Выберите будущую пятницу")
+    if day < now().astimezone(MOSCOW).date():
+        raise DomainError("Выберите дату игры не раньше сегодняшней")
     key = day.isoformat()
     if db.scalar(select(Match.id).where(Match.game_day == key)):
         raise DomainError("Игра уже создана. Отмените её в карточке игры.", 409)

@@ -176,7 +176,7 @@ test('player requests historical profile and admin confirms it and skips a week'
   expect(
     players.some((p: { alias: string; guest: boolean }) => p.alias === guest.alias && !p.guest),
   ).toBe(true)
-  await page.getByLabel('Пятница', { exact: true }).fill('2048-06-05')
+  await page.getByLabel('Дата игры', { exact: true }).fill('2048-06-05')
   await page.getByLabel('Причина пропуска').fill('Тестовый перерыв')
   await page.getByRole('button', { name: 'Пропустить неделю', exact: true }).click()
   await expect(page.getByText(/5 июня · Тестовый перерыв/)).toBeVisible()

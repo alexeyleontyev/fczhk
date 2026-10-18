@@ -81,10 +81,27 @@ test('desktop layout and template editing', async ({ page }) => {
   await page.screenshot({ path: 'test-results/desktop-game.png', fullPage: true })
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Расписание и шаблон' })).toBeVisible()
-  await page.getByLabel('Время игры в пятницу · Москва').fill('20:30')
+  await page.getByRole('combobox', { name: 'День открытия сбора', exact: true }).selectOption('6')
+  await page.getByLabel('Время открытия сбора · Москва', { exact: true }).fill('23:45')
+  await page.getByRole('combobox', { name: 'День игры', exact: true }).selectOption('0')
+  await page.getByLabel('Время игры · Москва', { exact: true }).fill('20:30')
   await page.getByRole('button', { name: 'Сохранить шаблон' }).click()
   await expect(page.getByRole('status')).toHaveText('Шаблон сохранен')
   await page.reload()
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await expect(page.getByLabel('Время игры в пятницу · Москва')).toHaveValue('20:30')
+  await expect(
+    page.getByRole('combobox', { name: 'День открытия сбора', exact: true }),
+  ).toHaveValue('6')
+  await expect(page.getByLabel('Время открытия сбора · Москва', { exact: true })).toHaveValue(
+    '23:45',
+  )
+  await expect(page.getByRole('combobox', { name: 'День игры', exact: true })).toHaveValue('0')
+  await expect(page.getByLabel('Время игры · Москва', { exact: true })).toHaveValue('20:30')
+  await page.screenshot({ path: 'test-results/configurable-schedule-desktop.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page
+    .getByRole('heading', { name: 'Расписание и шаблон', exact: true })
+    .scrollIntoViewIfNeeded()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: 'test-results/configurable-schedule-mobile.png', fullPage: false })
 })

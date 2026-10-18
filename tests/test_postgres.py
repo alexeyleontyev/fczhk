@@ -49,7 +49,12 @@ def pg(request):
         command.upgrade(config, getattr(request, "param", "head"))
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory() as db, db.begin():
-        db.add(GameTemplate(id=1, enabled=True, location="Стадион"))
+        db.execute(
+            text(
+                "INSERT INTO game_template (id, enabled, version, start_time, location, description, cost, payment_details) "
+                "VALUES (1, true, 1, '20:00', 'Стадион', '', 0, '')"
+            )
+        )
         # Old-schema fixtures must not insert columns introduced by later models.
         pid = db.execute(
             text(
@@ -65,13 +70,21 @@ def pg(request):
     control.dispose()
 
 
-def test_real_migration_scheduler_and_concurrent_duplicate_join(pg):
+@pytest.mark.parametrize("custom", [False, True])
+def test_real_migration_scheduler_and_concurrent_duplicate_join(pg, custom):
     factory, pid = pg
     cfg = Settings(_env_file=None, env="test")
+    at = datetime(2026, 9, 15, 12, tzinfo=MOSCOW)
+    if custom:
+        with factory() as db, db.begin():
+            template = db.get(GameTemplate, 1)
+            template.opening_weekday, template.opening_time = 6, "23:45"
+            template.game_weekday, template.start_time = 0, "00:15"
+        at = datetime.fromisoformat("2026-10-18T21:00:00+00:00")
 
     def schedule(_):
         with factory() as db, db.begin():
-            return schedule_tick(db, cfg, datetime(2026, 9, 15, 12, tzinfo=MOSCOW))
+            return schedule_tick(db, cfg, at)
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(schedule, range(4)))
@@ -236,6 +249,44 @@ def test_upgrade_from_mvp1_preserves_data_and_matches_metadata(pg):
         assert db.get(RatingState, 1).revision == 0
         differences = compare_metadata(MigrationContext.configure(conn), Base.metadata)
         assert differences == []
+
+
+@pytest.mark.parametrize("pg", ["a71f4b6d2e90"], indirect=True)
+def test_schedule_migration_preserves_settings_and_blocks_loss_on_downgrade(pg):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+    from sqlalchemy.exc import IntegrityError
+
+    from fczhk.db import Base
+
+    factory, _ = pg
+    with factory() as db, db.begin():
+        db.execute(text("UPDATE game_template SET enabled=false, version=7, start_time='21:35'"))
+    config = Config("alembic.ini")
+    with factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        assert compare_metadata(MigrationContext.configure(conn), Base.metadata) == []
+    with factory() as db, db.begin():
+        template = db.get(GameTemplate, 1)
+        assert not template.enabled and template.version == 7 and template.start_time == "21:35"
+        assert template.location == "Стадион"
+        assert (template.opening_weekday, template.opening_time, template.game_weekday) == (
+            1,
+            "12:00",
+            4,
+        )
+        template.opening_weekday, template.opening_time = 6, "23:45"
+        template.game_weekday, template.start_time = 0, "00:15"
+    with pytest.raises(ValueError, match="потеряет настройки"), factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.downgrade(config, "a71f4b6d2e90")
+    with pytest.raises(IntegrityError), factory() as db, db.begin():
+        db.get(GameTemplate, 1).opening_weekday = 7
+        db.flush()
+    with factory() as db:
+        assert db.get(GameTemplate, 1).opening_weekday == 6
 
 
 @pytest.mark.parametrize("pg", ["9c2d8f4a10b7"], indirect=True)

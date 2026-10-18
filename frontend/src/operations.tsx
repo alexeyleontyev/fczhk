@@ -158,7 +158,7 @@ export function ScheduleExceptions() {
     <section className="panel form-panel">
       <h2>Пропустить неделю</h2>
       <p>
-        В выбранную пятницу игра автоматически не создастся. Уже созданную игру отменяйте в её
+        В выбранную дату игра автоматически не создастся. Уже созданную игру отменяйте в её
         карточке.
       </p>
       {error && (
@@ -179,7 +179,7 @@ export function ScheduleExceptions() {
         }}
       >
         <label>
-          Пятница
+          Дата игры
           <input name="day" type="date" required />
         </label>
         <label>

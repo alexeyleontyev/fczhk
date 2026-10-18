@@ -93,6 +93,9 @@ class LinkGuest(Payload):
 
 class TemplateEdit(Version):
     enabled: bool
+    opening_weekday: int = Field(ge=0, le=6, strict=True)
+    opening_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    game_weekday: int = Field(ge=0, le=6, strict=True)
     start_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     location: str = Field(max_length=200)
     description: str = Field(default="", max_length=1500)
@@ -105,6 +108,12 @@ class TemplateEdit(Version):
         if info.data.get("enabled") and len(value) < 2:
             raise ValueError("Укажите место до включения расписания")
         return value
+
+    @model_validator(mode="after")
+    def opening_before_game(self):
+        if self.opening_weekday == self.game_weekday and self.opening_time >= self.start_time:
+            raise ValueError("В день игры сбор должен открываться раньше начала игры")
+        return self
 
 
 class RatingValues(Payload):

@@ -88,9 +88,20 @@ class Registration(Base):
 
 class GameTemplate(Base):
     __tablename__ = "game_template"
+    __table_args__ = (
+        CheckConstraint("opening_weekday BETWEEN 0 AND 6", name="ck_template_opening_weekday"),
+        CheckConstraint("game_weekday BETWEEN 0 AND 6", name="ck_template_game_weekday"),
+        CheckConstraint(
+            "opening_weekday != game_weekday OR opening_time < start_time",
+            name="ck_template_opening_before_game",
+        ),
+    )
     id: Mapped[int] = mapped_column(primary_key=True, default=1)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     version: Mapped[int] = mapped_column(default=1)
+    opening_weekday: Mapped[int] = mapped_column(default=1, server_default=text("1"))
+    opening_time: Mapped[str] = mapped_column(String(5), default="12:00", server_default="12:00")
+    game_weekday: Mapped[int] = mapped_column(default=4, server_default=text("4"))
     start_time: Mapped[str] = mapped_column(String(5), default="20:00")
     location: Mapped[str] = mapped_column(String(200), default="")
     description: Mapped[str] = mapped_column(Text, default="")
