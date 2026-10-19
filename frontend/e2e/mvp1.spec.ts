@@ -38,15 +38,23 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
     .getByRole('button', { name: 'Финализировать сбор', exact: true })
     .click()
   await expect(page.getByText('Сбор завершен', { exact: true })).toBeVisible()
-  await page.getByLabel('Команда: Алексей', { exact: true }).selectOption('white')
-  await expect(page.getByLabel('Команда: Михаил', { exact: true })).toBeEnabled()
-  await page.getByLabel('Команда: Михаил', { exact: true }).selectOption('black')
-  await expect(page.getByRole('button', { name: 'Утвердить команды' })).toBeEnabled()
-  await page.getByRole('button', { name: 'Утвердить команды' }).click()
-  await expect(page.getByText('Команды готовы', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Составы', exact: true }).click()
+  await page.getByRole('button', { name: 'Алексей: белые', exact: true }).click()
+  await page.getByRole('button', { name: 'Михаил: чёрные', exact: true }).click()
+  await page.getByRole('button', { name: 'Утвердить состав', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Состав утверждён' })).toBeVisible()
+  await page.getByText('Действия и подробности', { exact: true }).click()
   await page.getByRole('button', { name: 'Поменять цвета команд' }).click()
-  await expect(page.getByLabel('Команда: Алексей', { exact: true })).toHaveValue('black')
-  await expect(page.getByLabel('Команда: Михаил', { exact: true })).toHaveValue('white')
+  await expect(page.getByRole('button', { name: 'Алексей: чёрные', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(page.getByRole('button', { name: 'Михаил: белые', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await page.getByRole('button', { name: 'Утвердить состав', exact: true }).click()
+  await page.getByRole('tab', { name: 'Игра', exact: true }).click()
   await expect(page.getByText('Команды готовы', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Опубликовать составы' }).click()
   await expect(

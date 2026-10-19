@@ -17,7 +17,9 @@ export function useNavigation(
 ) {
   const [screen, setScreen] = useState<Screen>(() => ({
     ...root,
-    tab: new URLSearchParams(location.search).get('screen') === 'auction' ? 'auction' : 'game',
+    tab: ['auction', 'lineup'].includes(new URLSearchParams(location.search).get('screen') || '')
+      ? new URLSearchParams(location.search).get('screen')!
+      : 'game',
   }))
   const current = useRef<Frame>({ ...screen, matchId: selectedId, scroll: 0, modalScroll: 0 })
   const history = useRef<Frame[]>([])
@@ -55,7 +57,7 @@ export function useNavigation(
   const back = useCallback(() => {
     const previous =
       history.current.pop() ??
-      (current.current.tab === 'auction'
+      (['auction', 'lineup'].includes(current.current.tab)
         ? { ...current.current, ...root, scroll: 0, modalScroll: 0 }
         : undefined)
     if (!previous) return
@@ -79,8 +81,8 @@ export function useNavigation(
 
   useLayoutEffect(() => {
     const url = new URL(location.href)
-    if (screen.tab === 'auction') {
-      url.searchParams.set('screen', 'auction')
+    if (['auction', 'lineup'].includes(screen.tab)) {
+      url.searchParams.set('screen', screen.tab)
     } else {
       url.searchParams.delete('screen')
     }
@@ -95,7 +97,8 @@ export function useNavigation(
   const tg = window.Telegram?.WebApp
   const nativeBack =
     tg?.initData && (!tg.isVersionAtLeast || tg.isVersionAtLeast('6.1')) ? tg.BackButton : undefined
-  const canBack = authenticated && (history.current.length > 0 || screen.tab === 'auction')
+  const canBack =
+    authenticated && (history.current.length > 0 || ['auction', 'lineup'].includes(screen.tab))
   useEffect(() => {
     if (!nativeBack) return
     nativeBack.onClick(back)
@@ -128,6 +131,7 @@ export function useNavigation(
     openStats: (statsTarget: number) => navigate({ modal: 'stats', statsTarget }),
     openRatings: (ratingTarget: number | null) => navigate({ modal: 'ratings', ratingTarget }),
     openGame: (matchId: number) => navigate({ tab: 'game', modal: null, matchId }),
+    openLineup: (matchId: number) => navigate({ tab: 'lineup', modal: null, matchId }),
     openAuction: (matchId: number) => navigate({ tab: 'auction', modal: null, matchId }),
   }
 }

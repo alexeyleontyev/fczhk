@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import lineups
 from .. import ratings as rt
 from .. import schemas as S
 from .. import services as svc
+from ..auth import has_admin_access
 from ..models import (
     BalanceRun,
     Player,
@@ -16,6 +18,39 @@ def router(ctx):
     app = APIRouter()
     db_dep = ctx.db_dep
     admin = ctx.admin
+    current = ctx.current
+
+    def visible(db, match_id, player, version=None, lock=False):
+        match = svc.get_match(db, match_id, version, lock=lock)
+        if match.status == "draft" and not has_admin_access(player, ctx.cfg):
+            raise svc.DomainError("Игра не найдена", 404)
+        return match
+
+    @app.get("/api/matches/{match_id}/lineup")
+    def lineup_data(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        return lineups.data(db, visible(db, match_id, p), ctx.cfg)
+
+    @app.post("/api/matches/{match_id}/lineup/preview")
+    def lineup_preview(
+        match_id: int,
+        body: S.LineupPreview,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = visible(db, match_id, p, body.version, lock=True)
+        return lineups.preview(db, m, ctx.cfg, body.method)
+
+    @app.post("/api/matches/{match_id}/lineup/confirm")
+    def lineup_confirm(
+        match_id: int,
+        body: S.LineupConfirm,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = visible(db, match_id, p, body.version, lock=True)
+        return lineups.confirm(db, p.id, m, body, ctx.cfg)
 
     @app.put("/api/matches/{match_id}/registrations/{reg_id}/rating")
     def temporary_rating(

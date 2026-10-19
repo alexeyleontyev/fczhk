@@ -1,131 +1,52 @@
-import { api } from './api'
+import { ArrowUpRight } from 'lucide-react'
 import { Button } from './ui'
-import { TeamMeans, score } from './ratings'
-import type { Match, Team, Entry, Run } from './types'
+import type { Match, Team } from './types'
 
-export function TeamBoard({
-  match: m,
-  admin,
-  busy,
-  run,
+export function TeamDots({
+  alias,
+  team,
+  onChange,
+  disabled,
 }: {
-  match: Match
-  admin: boolean
-  busy: boolean
-  run: Run
+  alias: string
+  team: Team | null
+  onChange: (team: Team | null) => void
+  disabled?: boolean
 }) {
-  const regs = m.registrations.filter((r) => r.selected)
-  const move = (r: Entry, team: Team | null) =>
-    run(() =>
-      api(`/matches/${m.id}/teams`, 'PUT', {
-        version: m.version,
-        assignments: Object.fromEntries(regs.map((x) => [x.id, x.id === r.id ? team : x.team])),
-      }),
-    )
   return (
-    <section className="panel">
-      <div className="section-title">
+    <div className="team-dots" role="group" aria-label={`Команда: ${alias}`}>
+      {(['white', 'black'] as Team[]).map((color) => (
+        <button
+          key={color}
+          type="button"
+          className={`team-pick ${color}`}
+          aria-label={`${alias}: ${color === 'white' ? 'белые' : 'чёрные'}`}
+          aria-pressed={team === color}
+          disabled={disabled}
+          onClick={() => onChange(team === color ? null : color)}
+        >
+          <span>{team === color ? '✓' : ''}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function LineupEntry({ match, onOpen }: { match: Match; onOpen: () => void }) {
+  const rows = match.result?.participants ?? match.registrations.filter((r) => r.selected)
+  return (
+    <section className="panel lineup-entry">
+      <div>
         <h2>Составы команд</h2>
-        <span className="tag">
-          {m.status === 'approved'
-            ? 'Утверждены'
-            : m.team_ratings.method.startsWith('auto-game')
-              ? 'OpenSkill · черновик'
-              : m.team_ratings.method.startsWith('auto')
-                ? 'Автоподбор · черновик'
-                : m.team_ratings.method.startsWith('auction')
-                  ? 'Аукцион'
-                  : 'Ручное распределение'}
+        <span className="muted caption">
+          ⚪ {rows.filter((r) => r.team === 'white').length} · ⚫{' '}
+          {rows.filter((r) => r.team === 'black').length}
+          {match.team_ratings.frozen ? ' · Утверждены' : ''}
         </span>
       </div>
-      {m.team_ratings.game_summary ? (
-        <p className="muted caption">
-          OpenSkill · сумма μ полевых: белые {score(m.team_ratings.game_summary.white_total)} ·
-          чёрные {score(m.team_ratings.game_summary.black_total)} · нормированная Δ силы{' '}
-          {score(m.team_ratings.game_summary.mu_gap)}.
-          {m.team_ratings.frozen ? ' Зафиксировано при утверждении.' : ' Экспериментальный расчёт.'}
-        </p>
-      ) : (
-        <>
-          <TeamMeans summary={m.team_ratings.summary} />
-          <p className="muted caption">
-            Расчетные средние только полевых, после уменьшения меньшего рейтинга.{' '}
-            {m.team_ratings.frozen
-              ? 'Зафиксированы при утверждении.'
-              : 'Исходные оценки игроков не изменяются.'}
-          </p>
-        </>
-      )}
-      {m.team_ratings.stale && (
-        <p className="alert error" role="alert">
-          Рейтинги изменились. Для утверждения пересчитайте варианты или начните вручную с нуля.
-        </p>
-      )}
-      {admin && (
-        <p className="muted caption">
-          Выберите команду каждому игроку. Изменения сохраняются сразу. Для утверждения численность
-          полевых должна отличаться не более чем на одного.
-        </p>
-      )}
-      {admin &&
-        Date.now() < new Date(m.starts_at).getTime() &&
-        regs.some((r) => r.team === 'white') &&
-        regs.some((r) => r.team === 'black') && (
-          <Button
-            className="secondary compact"
-            disabled={busy}
-            onClick={() =>
-              void run(
-                () => api(`/matches/${m.id}/teams/swap-colors`, 'POST', { version: m.version }),
-                'Цвета команд поменяны. Если составы уже публиковались, опубликуйте их снова.',
-              )
-            }
-          >
-            Поменять цвета команд
-          </Button>
-        )}
-      <div className="team-grid">
-        {(['white', 'black', null] as (Team | null)[]).map((team) => {
-          const list = regs.filter((r) => r.team === team)
-          if (!list.length && team === null) return null
-          return (
-            <div className={`team ${team || 'unassigned'}`} key={team || 'none'}>
-              <h3>
-                <span className="team-dot" />
-                {team === 'white' ? 'Белые' : team === 'black' ? 'Черные' : 'Не распределены'}
-                <span>{list.length}</span>
-              </h3>
-              {team && m.team_ratings.strength && (
-                <p className="muted caption">
-                  Сила команды: {score(m.team_ratings.strength.teams[team].total)}
-                  {m.team_ratings.strength.teams[team].total === null &&
-                    ' · есть игроки без оценок'}
-                </p>
-              )}
-              {list.map((r) => (
-                <div className="team-player" key={r.id}>
-                  <span>
-                    {r.position === 'keeper' ? '🧤 ' : ''}
-                    {r.alias}
-                  </span>
-                  {admin && (
-                    <select
-                      aria-label={`Команда: ${r.alias}`}
-                      value={r.team || ''}
-                      disabled={busy}
-                      onChange={(e) => void move(r, (e.target.value || null) as Team | null)}
-                    >
-                      <option value="">—</option>
-                      <option value="white">Белые</option>
-                      <option value="black">Черные</option>
-                    </select>
-                  )}
-                </div>
-              ))}
-            </div>
-          )
-        })}
-      </div>
+      <Button className="secondary compact" onClick={onOpen}>
+        Открыть составы <ArrowUpRight size={16} />
+      </Button>
     </section>
   )
 }

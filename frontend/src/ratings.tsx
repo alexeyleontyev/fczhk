@@ -1,3 +1,4 @@
+import { RatingMark, RatingPair } from './rating-mark'
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { DEFAULT_MIN_GAMES, filterPlayers, PlayerListFilters } from './player-list-filters'
@@ -127,11 +128,20 @@ export function RatingAverages({ player }: { player: Player }) {
   return (
     <div className="rating-averages" aria-label={`Средние оценки: ${player.alias}`}>
       <span>
-        Полевой: <b>А {score(player.ratings?.field.attack)}</b> ·{' '}
-        <b>З {score(player.ratings?.field.defense)}</b>
+        Полевой:{' '}
+        <b>
+          <RatingMark kind="attack" /> {score(player.ratings?.field.attack)}
+        </b>{' '}
+        ·{' '}
+        <b>
+          <RatingMark kind="defense" /> {score(player.ratings?.field.defense)}
+        </b>
       </span>
       <span>
-        Вратарь: <b>З {score(player.ratings?.keeper.defense)}</b>
+        Вратарь:{' '}
+        <b>
+          <RatingMark kind="defense" /> {score(player.ratings?.keeper.defense)}
+        </b>
       </span>
       {player.ratings?.field.count !== undefined && (
         <small>
@@ -334,8 +344,12 @@ export function RatingFlow({
               <h3>{person.alias}</h3>
             </div>
             <span className="tag">
-              Средние: {position === 'field' ? `А ${score(data?.averages.attack)} · ` : ''}З{' '}
-              {score(data?.averages.defense)}
+              Средние:{' '}
+              <RatingPair
+                attack={data?.averages.attack ?? null}
+                defense={data?.averages.defense ?? null}
+                keeper={position === 'keeper'}
+              />
             </span>
           </div>
           {error && (
@@ -377,8 +391,12 @@ export function RatingFlow({
               {!data.own && data.imported_own && (
                 <p className="muted caption">
                   Ваша оценка из таблицы:{' '}
-                  {position === 'field' ? `А ${score(data.imported_own.attack)} · ` : ''}З{' '}
-                  {score(data.imported_own.defense)}. Новая оценка заменит её в общем зачёте.
+                  <RatingPair
+                    attack={data.imported_own.attack ?? null}
+                    defense={data.imported_own.defense ?? null}
+                    keeper={position === 'keeper'}
+                  />
+                  . Новая оценка заменит её в общем зачёте.
                 </p>
               )}
               {position === 'keeper' && (
@@ -416,8 +434,11 @@ export function RatingFlow({
                     {review.source === 'sheet' ? ' · из таблицы' : ''}
                   </strong>
                   <span>
-                    {position === 'field' ? `А ${score(review.attack)} · ` : ''}З{' '}
-                    {score(review.defense)}
+                    <RatingPair
+                      attack={review.attack ?? null}
+                      defense={review.defense ?? null}
+                      keeper={position === 'keeper'}
+                    />
                   </span>
                   {review.source !== 'sheet' && (
                     <details>
@@ -426,8 +447,12 @@ export function RatingFlow({
                         <p className="muted caption" key={h.revision}>
                           #{h.revision} ·{' '}
                           {new Date(h.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}{' '}
-                          МСК · {position === 'field' ? `А ${score(h.attack)} · ` : ''}З{' '}
-                          {score(h.defense)}
+                          МСК ·{' '}
+                          <RatingPair
+                            attack={h.attack ?? null}
+                            defense={h.defense ?? null}
+                            keeper={position === 'keeper'}
+                          />
                         </p>
                       ))}
                     </details>
@@ -471,8 +496,11 @@ export function TemporaryRatings({
           <span>
             {entry.alias}
             <small>
-              {entry.position === 'field' ? `А ${score(entry.rating.attack)} · ` : 'Вратарь · '}З{' '}
-              {score(entry.rating.defense)}
+              <RatingPair
+                attack={entry.rating.attack}
+                defense={entry.rating.defense}
+                keeper={entry.position === 'keeper'}
+              />
             </small>
           </span>
           <button
@@ -810,9 +838,17 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
                   <div key={team}>
                     <h4>{team === 'white' ? 'Белые' : 'Черные'}</h4>
                     <small className="muted variant-team-summary">
-                      {variant.game_rating
-                        ? `Сумма μ: ${score(team === 'white' ? variant.game_rating.white_total : variant.game_rating.black_total)}`
-                        : `Средние: А ${score(variant.summary[team].attack)} · З ${score(variant.summary[team].defense)}`}
+                      {variant.game_rating ? (
+                        `Сумма μ: ${score(team === 'white' ? variant.game_rating.white_total : variant.game_rating.black_total)}`
+                      ) : (
+                        <>
+                          Средние:{' '}
+                          <RatingPair
+                            attack={variant.summary[team].attack}
+                            defense={variant.summary[team].defense}
+                          />
+                        </>
+                      )}
                     </small>
                     {latest.inputs
                       .filter((r) => variant.assignments[r.registration_id] === team)
@@ -825,7 +861,7 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
                             <span>{r.alias}</span>
                             {rating && (
                               <small title={temporary ? 'Оценка на эту игру' : 'Оценка сообщества'}>
-                                А {score(rating.attack)} · З {score(rating.defense)}
+                                <RatingPair attack={rating.attack} defense={rating.defense} />
                                 {temporary ? ' · на игру' : ''}
                               </small>
                             )}
@@ -885,9 +921,14 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
               {latest.inputs.map((r) => (
                 <p className="caption" key={r.registration_id}>
                   {r.alias}:{' '}
-                  {latest.settings.method === 'game'
-                    ? `μ ${score(r.game_mu)} · σ ${score(r.game_sigma)} · ${r.game_count} игр`
-                    : `А ${score(r.attack)} / З ${score(r.defense)} · ${r.source === 'temporary' ? 'на эту игру' : 'среднее сообщества'}`}
+                  {latest.settings.method === 'game' ? (
+                    `μ ${score(r.game_mu)} · σ ${score(r.game_sigma)} · ${r.game_count} игр`
+                  ) : (
+                    <>
+                      <RatingPair attack={r.attack} defense={r.defense} /> ·{' '}
+                      {r.source === 'temporary' ? 'на эту игру' : 'среднее сообщества'}
+                    </>
+                  )}
                 </p>
               ))}
             </details>

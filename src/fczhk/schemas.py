@@ -182,6 +182,24 @@ class BalanceApply(Version):
     variant: int = Field(ge=0, le=2)
 
 
+class LineupPreview(Version):
+    method: Literal["community", "game"] = "community"
+
+
+class LineupPoint(Payload):
+    x: float = Field(ge=0, le=1, strict=True)
+    y: float = Field(ge=0, le=1, strict=True)
+
+
+class LineupConfirm(Version):
+    roster_version: int = Field(ge=0)
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    assignments: dict[int, Team | None]
+    placements: dict[int, LineupPoint] = Field(default_factory=dict)
+    source: Literal["manual", "community", "game", "auction"] = "manual"
+    variant: int = Field(default=0, ge=0, le=2)
+
+
 class ActualParticipant(Payload):
     player_id: int = Field(gt=0)
     team: Team

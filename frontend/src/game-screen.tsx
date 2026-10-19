@@ -2,9 +2,9 @@ import { ArrowUpRight, Check, Flag, MapPin, Plus, RefreshCw, Shield } from 'luci
 import { api } from './api'
 import { Button, Empty } from './ui'
 import { date, time, money, status } from './format'
-import { AutomaticTeams, TemporaryRatings, score } from './ratings'
+import { TemporaryRatings, score } from './ratings'
 import { Roster } from './roster'
-import { TeamBoard } from './team-board'
+import { LineupEntry } from './team-board'
 import { MatchResult } from './results'
 import { AuctionEntry } from './auctions'
 import { PredictionPanel } from './predictions'
@@ -23,6 +23,7 @@ export function GameScreen({
   setHistory,
   me,
   openAuction,
+  openLineup,
 }: {
   m: Match | null
   isAdmin: boolean
@@ -36,6 +37,7 @@ export function GameScreen({
   setHistory: (value: History) => void
   me: Player
   openAuction: (matchId: number) => void
+  openLineup: (matchId: number) => void
 }) {
   const auctionRunning = ['active', 'paused'].includes(m?.auction_status || '')
   const mine = m?.registrations.find((r) => r.player_id === me.id)
@@ -298,20 +300,7 @@ export function GameScreen({
                   <TemporaryRatings key={m.id} match={m} busy={busy} run={run} />
                 )}
               </section>
-              {isAdmin &&
-                !m.result &&
-                !auctionRunning &&
-                ['finalized', 'approved'].includes(m.status) && (
-                  <AutomaticTeams key={m.id} match={m} busy={busy} run={run} />
-                )}
-              {['finalized', 'approved'].includes(m.status) && !auctionRunning && (
-                <TeamBoard
-                  match={m}
-                  admin={isAdmin && !m.result && m.status !== 'cancelled'}
-                  busy={busy}
-                  run={run}
-                />
-              )}
+              {m.status !== 'draft' && <LineupEntry match={m} onOpen={() => openLineup(m.id)} />}
             </div>
             <aside>
               <section className="panel info-panel">
@@ -362,8 +351,8 @@ export function GameScreen({
                     </Button>
                   )}
                   {m.status === 'finalized' && !auctionRunning && (
-                    <Button disabled={busy} onClick={() => void action('approve')}>
-                      Утвердить команды
+                    <Button disabled={busy} onClick={() => openLineup(m.id)}>
+                      Подобрать составы
                     </Button>
                   )}
                   {m.status === 'approved' && (

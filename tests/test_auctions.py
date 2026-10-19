@@ -65,6 +65,26 @@ def control(call, mid, a, action, expected=200):
     )
 
 
+def test_lineup_preview_hides_pending_bids_and_cannot_override_active_auction(
+    env, call, auction_game
+):
+    a = start(call, env, auction_game)
+    a = bid(call, auction_game, a, 17)
+    path = f"/matches/{auction_game}"
+    m = call("GET", path)
+    p = call(
+        "POST", path + "/lineup/preview", dict(version=m["version"], method="game"), role="observer"
+    )
+    assert set(p["auction"]) == {"id", "status", "assignments", "prices"}
+    assert p["auction"]["prices"] == {}
+    body = {k: p[k] for k in ("version", "roster_version", "fingerprint")}
+    body.update(assignments=p["result"]["variants"][0]["assignments"])
+    call("POST", path + "/lineup/confirm", body, expected=409)
+    control(call, auction_game, a, "pause")
+    call("POST", path + "/lineup/confirm", body, expected=409)
+    assert call("GET", path + "/balance") == []
+
+
 def test_demo_concurrent_bids_wait_for_the_first_transaction(env, call, auction_game):
     from fczhk import auctions
     from fczhk.schemas import AuctionBid

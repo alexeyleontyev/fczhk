@@ -44,7 +44,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
     }
     throw new ApiError(message, response.status)
   }
-  if (method !== 'GET' && !path.startsWith('/auth/'))
+  if (method !== 'GET' && !path.startsWith('/auth/') && !path.endsWith('/lineup/preview'))
     window.dispatchEvent(new CustomEvent(DATA_CHANGED, { detail: { path, data } }))
   return data
 }

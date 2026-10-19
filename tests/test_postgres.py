@@ -29,6 +29,55 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def test_parallel_lineup_confirmation_creates_one_snapshot(pg):
+    from fczhk import lineups
+    from fczhk.models import TeamSnapshot
+    from fczhk.schemas import LineupConfirm
+
+    factory, pid = pg
+    cfg = Settings(_env_file=None, env="test")
+    with factory() as db, db.begin():
+        m = Match(
+            game_day="2026-10-02",
+            starts_at=datetime(2026, 10, 2, 20, tzinfo=MOSCOW),
+            location="Доска",
+            status="finalized",
+        )
+        other = Player(alias="Соперник")
+        db.add_all([m, other])
+        db.flush()
+        db.add_all(
+            [
+                Registration(match_id=m.id, player_id=p, position="field", selected=True)
+                for p in (pid, other.id)
+            ]
+        )
+        db.flush()
+        current = lineups.data(db, m, cfg)
+        regs = list(db.scalars(select(Registration)))
+        body = LineupConfirm(
+            version=m.version,
+            roster_version=m.roster_version,
+            fingerprint=current["fingerprint"],
+            assignments={regs[0].id: "white", regs[1].id: "black"},
+        )
+        mid = m.id
+
+    def confirm(_):
+        try:
+            with factory() as db, db.begin():
+                lineups.confirm(db, pid, get_match(db, mid, body.version, lock=True), body, cfg)
+            return "ok"
+        except DomainError as exc:
+            assert exc.status == 409
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(confirm, range(2))) == ["conflict", "ok"]
+    with factory() as db:
+        assert len(list(db.scalars(select(TeamSnapshot)))) == 1
+
+
 @pytest.fixture
 def pg(request):
     namespace = "test_mvp1_" + uuid4().hex

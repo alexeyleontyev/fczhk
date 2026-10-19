@@ -21,6 +21,7 @@ import { date, time, initial } from './format'
 import { GameForm, IncludeForm, TemplateForm } from './forms'
 import { useClubData } from './use-club-data'
 import { useNavigation } from './use-navigation'
+import { TacticsScreen } from './tactics-screen'
 import { GameScreen } from './game-screen'
 import { AuctionScreen } from './auctions'
 import { ArchiveScreen } from './archive-screen'
@@ -58,6 +59,7 @@ function App() {
     openRatings,
     openGame,
     openAuction,
+    openLineup,
     back,
     canBack,
     nativeBack,
@@ -211,7 +213,9 @@ function App() {
           return (
             <button
               key={id as string}
-              className={tab === id || (id === 'game' && tab === 'auction') ? 'active' : ''}
+              className={
+                tab === id || (id === 'game' && ['auction', 'lineup'].includes(tab)) ? 'active' : ''
+              }
               onClick={() => setTab(id as string)}
             >
               <I size={18} />
@@ -253,6 +257,27 @@ function App() {
             </button>
           </div>
         )}
+        {m && ['game', 'lineup'].includes(tab) && (
+          <div className="match-tabs" role="tablist" aria-label="Экраны игры">
+            <button role="tab" aria-selected={tab === 'game'} onClick={() => openGame(m.id)}>
+              Игра
+            </button>
+            <button role="tab" aria-selected={tab === 'lineup'} onClick={() => openLineup(m.id)}>
+              Составы
+            </button>
+          </div>
+        )}
+        {tab === 'lineup' && m && (
+          <TacticsScreen
+            key={`${m.id}:${me.id}`}
+            match={m}
+            me={me}
+            busy={busy}
+            run={run}
+            onChanged={() => refresh(true)}
+            onAuction={() => openAuction(m.id)}
+          />
+        )}
         {tab === 'game' && (
           <GameScreen
             m={m}
@@ -267,6 +292,7 @@ function App() {
             setHistory={setHistory}
             me={me}
             openAuction={openAuction}
+            openLineup={openLineup}
           />
         )}
         {tab === 'auction' && m && (
@@ -277,14 +303,7 @@ function App() {
             busy={busy}
             run={run}
             onStatusChange={() => void run(() => refresh(true))}
-            onTeams={() => {
-              openGame(m.id)
-              requestAnimationFrame(() => {
-                const target =
-                  document.querySelector('.team-grid') ?? document.querySelector('.result-panel')
-                target?.scrollIntoView({ block: 'start' })
-              })
-            }}
+            onTeams={() => openLineup(m.id)}
           />
         )}
         {tab === 'predictions' && (
