@@ -61,35 +61,31 @@ export function ArchiveScreen({
         <h1>Все игры</h1>
       </div>
       <SeasonSelect {...seasonFilter} />
+      <p className="muted caption archive-legend">Счёт: белые : чёрные</p>
       {error && (
         <p className="alert error" role="alert">
           {error}
         </p>
       )}
-      <div className="archive-grid">
+      <div className="panel archive-grid compact-archive">
         {games.map((game) => (
-          <button className="panel archive-card" key={game.id} onClick={() => onMatch(game.id)}>
-            <span className={`status-pill ${game.status}`}>
-              <span />
-              {status[game.status]}
+          <button className="archive-card" key={game.id} onClick={() => onMatch(game.id)}>
+            <span className="archive-date">
+              <h2>{date(game.starts_at)}</h2>
+              <small className="muted">
+                Сезон {game.season} · {game.participant_count} игроков
+              </small>
             </span>
-            <h2>{date(game.starts_at)}</h2>
-            <small className="muted">Сезон {game.season}</small>
-            {game.result && (
-              <strong>
-                Белые {game.result.score.white} : {game.result.score.black} Чёрные
-                {!game.result.completed && ' · черновик'}
-              </strong>
-            )}
-            <p>
-              {game.historical
-                ? 'Время и место неизвестны'
-                : `${time(game.starts_at)} МСК · ${game.location}`}
-            </p>
-            <div>
-              <span>{game.participant_count} в составе</span>
-              <ArrowUpRight />
-            </div>
+            <strong className="archive-score">
+              {game.result
+                ? `${game.result.score.white} : ${game.result.score.black}`
+                : game.historical
+                  ? '—'
+                  : `${time(game.starts_at)}`}
+              {game.result && !game.result.completed && <small>черновик</small>}
+            </strong>
+            <span className={`status-pill ${game.status}`}>{status[game.status]}</span>
+            <ArrowUpRight size={16} />
           </button>
         ))}
       </div>

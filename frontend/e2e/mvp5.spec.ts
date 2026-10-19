@@ -28,6 +28,7 @@ test('player outside roster: predict, revise, lock at kickoff and update overall
     m = await send(`/matches/${m.id}/actions/${action}`, 'POST', { version: m.version })
   await page.goto(`/?game=${m.id}`)
   await page.getByRole('button', { name: 'Войти игроком', exact: true }).click()
+  await page.getByText('Прогноз на игру', { exact: true }).click()
   const panel = page.locator('.prediction-panel')
   await expect(
     panel.getByText('Прогнозы откроются после утверждения составов', { exact: true }),
@@ -44,6 +45,7 @@ test('player outside roster: predict, revise, lock at kickoff and update overall
   })
   m = await send(`/matches/${m.id}/actions/approve`, 'POST', { version: m.version })
   await page.reload()
+  await page.getByText('Прогноз на игру', { exact: true }).click()
   await panel.getByLabel('Голы белых', { exact: true }).fill('3')
   await panel.getByLabel('Голы чёрных', { exact: true }).fill('1')
   await panel.getByRole('button', { name: 'Сделать прогноз', exact: true }).click()

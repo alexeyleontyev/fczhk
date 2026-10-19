@@ -65,10 +65,13 @@ export function Roster({
             <strong>
               {r.alias} {r.guest && <span className="guest-label">гость</span>}
             </strong>
-            <small>
-              {date(r.registered_at)} · {time(r.registered_at)}
-              {r.forced ? ' · добавлен админом' : ''}
-            </small>
+            <details className="roster-row-details">
+              <summary>Подробности записи</summary>
+              <small>
+                {date(r.registered_at)} · {time(r.registered_at)}
+                {r.forced ? ' · добавлен админом' : ''}
+              </small>
+            </details>
             <span className={`mini-state ${r.selected ? 'green' : ''}`}>
               {
                 (

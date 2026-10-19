@@ -50,14 +50,21 @@ test('season filter follows statistics, player profile, archive and predictions'
   await expect(page.getByRole('combobox', { name: 'Период статистики', exact: true })).toHaveValue(
     '2026',
   )
+  expect(
+    requests.some((url) => url.includes('/api/leaderboards') || url.endsWith('/api/game-ratings')),
+  ).toBe(false)
+  await page.getByRole('tab', { name: 'Зачёты', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Зачёты сезона 2026', exact: true })).toBeVisible()
-  await expect(page.getByText('20 завершённых игр.', { exact: false })).toBeVisible()
-  await expect.poll(() => requests.some((url) => url.endsWith('/api/game-ratings'))).toBe(true)
+  await expect(page.locator('.leaderboard-board')).toContainText('20 завершённых игр.')
+  await page.getByRole('tab', { name: 'Рейтинги', exact: true }).click()
+  await page.getByRole('tab', { name: 'OpenSkill', exact: true }).click()
   await expect(
     page.getByRole('heading', { name: 'Общий рейтинг OpenSkill', exact: true }),
   ).toBeVisible()
   await expect(page.locator('.game-rating-board')).toContainText('66 игр за всю историю')
-  await page.getByRole('textbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
+  await page.getByRole('tab', { name: 'Каталог', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
+  await page.locator('.catalog-person summary').first().click()
   await page
     .locator('.player-card')
     .filter({ has: page.getByRole('heading', { name: person.alias, exact: true }) })
@@ -73,16 +80,18 @@ test('season filter follows statistics, player profile, archive and predictions'
   await page
     .getByRole('combobox', { name: 'Период статистики', exact: true })
     .selectOption('2024-2025')
+  await page.getByRole('tab', { name: 'Зачёты', exact: true }).click()
   await expect(
     page.getByRole('heading', { name: 'Зачёты сезона 2024-2025', exact: true }),
   ).toBeVisible()
-  await expect(page.getByText('46 завершённых игр.', { exact: false })).toBeVisible()
-  await expect(
-    page.getByRole('heading', { name: 'Общий рейтинг OpenSkill', exact: true }),
-  ).toBeVisible()
+  await expect(page.locator('.leaderboard-board')).toContainText('46 завершённых игр.')
+  await page.getByRole('tab', { name: 'Рейтинги', exact: true }).click()
+  await page.getByRole('tab', { name: 'OpenSkill', exact: true }).click()
   await expect(page.locator('.game-rating-board')).toContainText('66 игр за всю историю')
   expect(requests.some((url) => url.includes('/api/game-ratings?'))).toBe(false)
-  await page.getByRole('textbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
+  await page.getByRole('tab', { name: 'Каталог', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
+  await page.locator('.catalog-person summary').first().click()
   await page
     .locator('.player-card')
     .filter({ has: page.getByRole('heading', { name: person.alias, exact: true }) })
@@ -99,6 +108,7 @@ test('season filter follows statistics, player profile, archive and predictions'
   await expect(page.getByRole('combobox', { name: 'Период статистики', exact: true })).toHaveValue(
     '',
   )
+  await page.getByRole('tab', { name: 'Зачёты', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Общие зачёты', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Профиль', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Период статистики', exact: true })).toHaveValue(
@@ -112,7 +122,7 @@ test('season filter follows statistics, player profile, archive and predictions'
     .poll(() => requests.some((url) => url.includes('/api/matches?limit=20&season=2024-2025')))
     .toBe(true)
   await expect(
-    page.locator('.archive-card').first().getByText('Сезон 2024-2025', { exact: true }),
+    page.locator('.archive-card').first().getByText('Сезон 2024-2025', { exact: false }),
   ).toBeVisible()
   await page.getByRole('button', { name: 'Прогнозы', exact: true }).click()
   await expect(

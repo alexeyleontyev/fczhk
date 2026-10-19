@@ -13,6 +13,7 @@ test('owner grants and revokes administrator access while protecting owner role'
   const ownerToken = await page.evaluate(() => sessionStorage.getItem('fczhk-session'))
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` }
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('tab', { name: 'Администраторы', exact: true }).click()
   const panel = page.getByRole('region', { name: 'Администраторы', exact: true })
   await expect(panel.getByText('Владелец · Telegram ID 1001')).toBeVisible()
   await expect(panel.getByRole('button', { name: 'Снять права' })).toHaveCount(0)
@@ -31,6 +32,7 @@ test('owner grants and revokes administrator access while protecting owner role'
     await adminPage.goto('/')
     await expect(adminPage.locator('.user-chip small')).toHaveText('Администратор')
     await adminPage.getByRole('button', { name: 'Настройки', exact: true }).click()
+    await adminPage.getByRole('tab', { name: 'Диагностика', exact: true }).click()
     await expect(adminPage.getByRole('heading', { name: 'Доставка сообщений' })).toBeVisible()
     await expect(
       adminPage.getByRole('region', { name: 'Администраторы', exact: true }),

@@ -1,7 +1,7 @@
 import { RatingMark, RatingPair } from './rating-mark'
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { DEFAULT_MIN_GAMES, filterPlayers, PlayerListFilters } from './player-list-filters'
+import { DEFAULT_MIN_GAMES, filterPlayers } from './player-list-filters'
 import type {
   Average,
   BalanceRun,
@@ -35,14 +35,15 @@ type GameRatingBoard = {
 export function GameRatingLeaderboard({
   onPlayer,
   revision,
+  name,
 }: {
+  name: string
   onPlayer: (id: number) => void
   revision: number
 }) {
   const [board, setBoard] = useState<GameRatingBoard | null>(null)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(false)
-  const [playerName, setPlayerName] = useState('')
   const [minimumGames, setMinimumGames] = useState(DEFAULT_MIN_GAMES)
   useEffect(() => {
     let active = true
@@ -60,7 +61,7 @@ export function GameRatingLeaderboard({
     }
   }, [revision])
   const qualifiedPlayers = filterPlayers(board?.players ?? [], '', minimumGames)
-  const players = filterPlayers(qualifiedPlayers, playerName, '0')
+  const players = filterPlayers(qualifiedPlayers, name, '0')
   return (
     <section className="panel game-rating-board">
       <div className="section-title">
@@ -70,23 +71,28 @@ export function GameRatingLeaderboard({
         </div>
         <span className="tag">Эксперимент</span>
       </div>
-      <p className="muted caption">
-        {board ? `${board.matches} игр за всю историю` : 'Загрузка…'} · Рейтинг накапливается по
-        датам матчей без сброса между сезонами. Только полевые игроки · Победа, поражение и ничья.
-        Разница мячей пока не влияет на рейтинг. Порядок учитывает неопределённость оценки; для
-        надёжного подбора пока мало игр, поэтому этот способ помечен как эксперимент.
-      </p>
-      <p className="muted caption">
-        Шкала начинается с 1500: рейтинг = 1500 + 10 × (μ − 3σ). μ — оценка силы, σ —
-        неопределённость.
-      </p>
-      <PlayerListFilters
-        name={playerName}
-        setName={setPlayerName}
-        minimumGames={minimumGames}
-        setMinimumGames={setMinimumGames}
-        scope="Фильтры OpenSkill"
-      />
+      <details className="compact-explanation">
+        <summary>Как считается OpenSkill</summary>
+        <p className="muted caption">
+          {board ? `${board.matches} игр за всю историю` : 'Загрузка…'} · Рейтинг накапливается по
+          датам матчей без сброса между сезонами. Только полевые игроки · Победа, поражение и ничья.
+          Разница мячей пока не влияет на рейтинг. Порядок учитывает неопределённость оценки; для
+          надёжного подбора пока мало игр, поэтому этот способ помечен как эксперимент.
+        </p>
+        <p className="muted caption">
+          Шкала начинается с 1500: рейтинг = 1500 + 10 × (μ − 3σ). μ — оценка силы, σ —
+          неопределённость.
+        </p>
+      </details>
+      <label className="compact-minimum">
+        Игр больше
+        <input
+          type="number"
+          min="0"
+          value={minimumGames}
+          onChange={(e) => setMinimumGames(e.target.value)}
+        />
+      </label>
       {error && <p className="alert error">{error}</p>}
       {board?.players.length === 0 && <p>Истории завершённых матчей пока нет.</p>}
       {board && board.players.length > 0 && !players.length && (
@@ -106,10 +112,12 @@ export function GameRatingLeaderboard({
                   {player.alias}
                 </button>
                 <span>{player.games} игр</span>
-                <span title={`μ ${score(player.mu)} · σ ${score(player.sigma)}`}>
-                  {player.rating.toLocaleString('ru-RU')} · μ {score(player.mu)} · σ{' '}
-                  {score(player.sigma)}
-                </span>
+                <details className="rating-details">
+                  <summary>{player.rating.toLocaleString('ru-RU')}</summary>
+                  <small>
+                    μ {score(player.mu)} · σ {score(player.sigma)}
+                  </small>
+                </details>
               </div>
             ))}
           </div>

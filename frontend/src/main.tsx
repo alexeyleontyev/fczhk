@@ -21,6 +21,7 @@ import { date, time, initial } from './format'
 import { GameForm, IncludeForm, TemplateForm } from './forms'
 import { useClubData } from './use-club-data'
 import { useNavigation } from './use-navigation'
+import { SectionTabs } from './section-tabs'
 import { TacticsScreen } from './tactics-screen'
 import { GameScreen } from './game-screen'
 import { AuctionScreen } from './auctions'
@@ -73,6 +74,8 @@ function App() {
   }, [me?.id])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
+  const [managementTab, setManagementTab] = useState('schedule')
+  useEffect(() => setManagementTab('schedule'), [me?.id])
   const [template, setTemplate] = useState<Template | null>(null)
   const [history, setHistory] = useState<History | null>(null)
   useEffect(() => {
@@ -280,6 +283,7 @@ function App() {
         )}
         {tab === 'game' && (
           <GameScreen
+            key={m?.id ?? 'empty'}
             m={m}
             isAdmin={isAdmin}
             busy={busy}
@@ -347,30 +351,60 @@ function App() {
         {tab === 'settings' && isAdmin && template && (
           <>
             <div className="page-heading">
-              <div className="eyebrow">РЕГУЛЯРНЫЙ ФУТБОЛ</div>
-              <h1>Расписание и шаблон</h1>
+              <h1>
+                {managementTab === 'schedule'
+                  ? 'Расписание и шаблон'
+                  : managementTab === 'claims'
+                    ? 'Привязка профилей'
+                    : managementTab === 'roles'
+                      ? 'Администраторы'
+                      : 'Диагностика'}
+              </h1>
             </div>
-            <section className="panel form-panel">
-              <p>
-                День и время открытия сбора и начала игры задаются отдельно. Всё время — московское.
-                Игра назначается на ближайший выбранный день после открытия сбора. В один день сбор
-                должен открываться раньше игры. Изменения шаблона не меняют уже созданные игры.
-              </p>
-              <TemplateForm
-                template={template}
-                busy={busy}
-                save={(data) =>
-                  run(
-                    async () => setTemplate(await api<Template>('/template', 'PUT', data)),
-                    'Шаблон сохранен',
-                  )
-                }
-              />
-            </section>
-            <ScheduleExceptions />
-            {me.is_owner && <AdministratorsPanel onChanged={() => refresh(true)} />}
-            <ProfileClaims onResolved={() => refresh(true)} />
-            <OperationsPanel onMatch={openGame} />
+            <SectionTabs
+              label="Разделы управления"
+              value={managementTab}
+              onChange={setManagementTab}
+              options={[
+                { value: 'schedule', label: 'Расписание' },
+                { value: 'claims', label: 'Профили' },
+                ...(me.is_owner ? [{ value: 'roles', label: 'Администраторы' }] : []),
+                { value: 'operations', label: 'Диагностика' },
+              ]}
+            >
+              {managementTab === 'schedule' && (
+                <>
+                  <section className="panel form-panel">
+                    <details className="compact-explanation">
+                      <summary>Как работает расписание</summary>
+                      <p>
+                        Открытие сбора и начало игры задаются отдельно, по московскому времени.
+                        Изменения шаблона не меняют созданные игры.
+                      </p>
+                    </details>
+                    <TemplateForm
+                      template={template}
+                      busy={busy}
+                      save={(data) =>
+                        run(
+                          async () => setTemplate(await api<Template>('/template', 'PUT', data)),
+                          'Шаблон сохранен',
+                        )
+                      }
+                    />
+                  </section>
+                  <details className="panel compact-explanation">
+                    <summary>Пропуски недель</summary>
+                    <ScheduleExceptions />
+                  </details>
+                </>
+              )}
+              {managementTab === 'roles' && me.is_owner && (
+                <AdministratorsPanel onChanged={() => refresh(true)} />
+              )}
+              {managementTab === 'claims' && <ProfileClaims onResolved={() => refresh(true)} />}
+              {managementTab === 'operations' && <OperationsPanel onMatch={openGame} />}
+            </SectionTabs>
           </>
         )}
       </main>

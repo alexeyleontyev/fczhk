@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { SectionTabs } from './section-tabs'
 import { api } from './api'
 import type { SeasonFilter } from './seasons'
 import { RatingAverages } from './ratings'
@@ -25,6 +27,7 @@ export function ProfileScreen({
   logout: () => Promise<void>
   players: Player[]
 }) {
+  const [section, setSection] = useState('stats')
   const isAdmin = Boolean(me.is_admin)
   return (
     <>
@@ -38,34 +41,54 @@ export function ProfileScreen({
         <span className="tag">
           {me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок клуба'}
         </span>
-        <RatingAverages player={me} />
-        <PlayerStats playerId={me.id} onMatch={openGame} onPlayer={openStats} {...seasonFilter} />
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            const alias = new FormData(e.currentTarget).get('alias')
-            void run(() => api('/me', 'PATCH', { alias }), 'Имя обновлено')
-          }}
+        <SectionTabs
+          label="Разделы профиля"
+          value={section}
+          onChange={setSection}
+          options={[
+            { value: 'stats', label: 'Статистика' },
+            { value: 'ratings', label: 'Оценки' },
+            { value: 'settings', label: 'Настройки' },
+          ]}
         >
-          <label>
-            Игровой alias
-            <input
-              key={me.alias}
-              name="alias"
-              defaultValue={me.alias}
-              required
-              minLength={2}
-              maxLength={60}
+          {section === 'ratings' && <RatingAverages player={me} />}
+          <div hidden={section !== 'stats'}>
+            <PlayerStats
+              playerId={me.id}
+              onMatch={openGame}
+              onPlayer={openStats}
+              {...seasonFilter}
             />
-          </label>
-          <Button type="submit" disabled={busy}>
-            Сохранить имя
-          </Button>
-        </form>
-        <p className="muted caption">
-          Ваше имя в заявках и составах. Профиль привязан к аккаунту Telegram.
-        </p>
-        <ProfileLink players={players} />
+          </div>
+          <div hidden={section !== 'settings'}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const alias = new FormData(e.currentTarget).get('alias')
+                void run(() => api('/me', 'PATCH', { alias }), 'Имя обновлено')
+              }}
+            >
+              <label>
+                Игровой alias
+                <input
+                  key={me.alias}
+                  name="alias"
+                  defaultValue={me.alias}
+                  required
+                  minLength={2}
+                  maxLength={60}
+                />
+              </label>
+              <Button type="submit" disabled={busy}>
+                Сохранить имя
+              </Button>
+            </form>
+            <p className="muted caption">
+              Ваше имя в заявках и составах. Профиль привязан к аккаунту Telegram.
+            </p>
+            <ProfileLink players={players} />
+          </div>
+        </SectionTabs>
         <Button className="secondary" onClick={() => void run(logout)} disabled={busy}>
           Выйти из аккаунта
         </Button>

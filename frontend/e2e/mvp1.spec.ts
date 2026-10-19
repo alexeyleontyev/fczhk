@@ -23,6 +23,7 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
   await expect(page.getByText('Запись открыта', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Записаться полевым' }).click()
   await expect(page.getByText('Вы записаны полевым', { exact: true }).first()).toBeVisible()
+  await page.getByRole('tab', { name: 'Участники', exact: true }).click()
   await page.getByRole('button', { name: 'Подтвердить оплату: Алексей', exact: true }).click()
   await expect(
     page.getByRole('button', { name: 'Снять оплату: Алексей', exact: true }),
@@ -32,6 +33,7 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
   await page.getByRole('combobox', { name: 'Игрок', exact: true }).selectOption({ label: 'Михаил' })
   await page.getByRole('button', { name: 'Добавить в состав', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Обзор', exact: true }).click()
   await page.getByRole('button', { name: 'Финализировать сбор', exact: true }).click()
   await page
     .getByRole('dialog')
@@ -75,6 +77,7 @@ test('player has no administrative controls; membership profile and archive work
   await page.getByLabel('Поиск игроков').fill('Михаил')
   await expect(page.getByRole('heading', { name: 'Михаил', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Профиль', exact: true }).click()
+  await page.getByRole('tab', { name: 'Настройки', exact: true }).click()
   await expect(page.getByLabel('Игровой alias')).toHaveValue('Михаил')
   await page.getByRole('button', { name: 'Архив', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Все игры' })).toBeVisible()

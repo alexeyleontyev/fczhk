@@ -52,6 +52,7 @@ test('expired session returns to login and admin can cancel a future game', asyn
     data: { version: match.version },
   })
   await page.goto(`/?game=${match.id}`)
+  await page.getByRole('tab', { name: 'Управление', exact: true }).click()
   await page.getByRole('button', { name: 'Отменить игру', exact: true }).click()
   await page.getByLabel('Причина отмены').fill('Поле закрыто')
   await page
@@ -61,6 +62,7 @@ test('expired session returns to login and admin can cancel a future game', asyn
   await expect(page.locator('.match-hero')).toContainText('Игра отменена')
   await expect(page.getByRole('button', { name: 'Записаться полевым' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('tab', { name: 'Диагностика', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Доставка сообщений' })).toBeVisible()
   await page.getByRole('button', { name: 'Игра', exact: true }).click()
   // Revoke when the explicit refresh reaches the server. A background poll must
@@ -111,6 +113,7 @@ test('navigation during login survives a slower game response', async ({ page })
     await expect(settings).toBeEnabled()
     await expect(page.getByRole('button', { name: 'Игроки', exact: true })).toHaveClass('active')
     await settings.click()
+    await page.getByRole('tab', { name: 'Диагностика', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Доставка сообщений' })).toBeVisible()
     await expect(settings).toHaveClass('active')
   } finally {
@@ -161,6 +164,7 @@ test('player requests historical profile and admin confirms it and skips a week'
   await page.goto('/')
   await page.getByRole('button', { name: 'Войти игроком', exact: true }).click()
   await page.getByRole('button', { name: 'Профиль', exact: true }).click()
+  await page.getByRole('tab', { name: 'Настройки', exact: true }).click()
   await page.getByLabel('Поиск исторической карточки').fill('История профиля E2E')
   await page.getByLabel('Моя прежняя карточка').selectOption(String(guest.id))
   await page.getByRole('button', { name: 'Запросить привязку' }).click()
@@ -168,6 +172,7 @@ test('player requests historical profile and admin confirms it and skips a week'
   await page.getByRole('button', { name: 'Выйти из аккаунта' }).click()
   await page.getByRole('button', { name: 'Войти администратором' }).click()
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('tab', { name: 'Профили', exact: true }).click()
   page.on('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Подтвердить связь' }).click()
   await expect(page.getByText('Нет заявок на подтверждение.')).toBeVisible()
@@ -176,6 +181,8 @@ test('player requests historical profile and admin confirms it and skips a week'
   expect(
     players.some((p: { alias: string; guest: boolean }) => p.alias === guest.alias && !p.guest),
   ).toBe(true)
+  await page.getByRole('tab', { name: 'Расписание', exact: true }).click()
+  await page.getByText('Пропуски недель', { exact: true }).click()
   await page.getByLabel('Дата игры', { exact: true }).fill('2048-06-05')
   await page.getByLabel('Причина пропуска').fill('Тестовый перерыв')
   await page.getByRole('button', { name: 'Пропустить неделю', exact: true }).click()
@@ -188,6 +195,7 @@ test('player requests historical profile and admin confirms it and skips a week'
   await page.getByRole('button', { name: 'Выйти из аккаунта' }).click()
   await page.getByRole('button', { name: 'Войти игроком', exact: true }).click()
   await page.getByRole('button', { name: 'Профиль', exact: true }).click()
+  await page.getByRole('tab', { name: 'Настройки', exact: true }).click()
   await expect(page.getByLabel('Игровой alias')).toHaveValue(guest.alias)
   await expect(
     page.getByRole('status').filter({ hasText: `Карточка привязана: ${guest.alias}` }),

@@ -288,11 +288,14 @@ export function PredictionStandings({
       </div>
       <SeasonSelect {...seasonFilter} />
       <section className="panel standings-panel">
-        <p className="muted">{rules}</p>
-        <p className="muted caption">
-          Учитываются только завершённые матчи. Исправления результата пересчитывают очки. При
-          равенстве очков место общее.
-        </p>
+        <details className="compact-explanation">
+          <summary>Правила конкурса</summary>
+          <p className="muted">{rules}</p>
+          <p className="muted caption">
+            Учитываются только завершённые матчи. Исправления результата пересчитывают очки. При
+            равенстве очков место общее.
+          </p>
+        </details>
         {error && (
           <p role="alert" className="alert error">
             {error}
@@ -321,10 +324,14 @@ export function PredictionStandings({
                       {row.alias}
                       {row.player_id === me ? ' · вы' : ''}
                     </button>
-                    <small>
-                      Учтено {row.settled} из {row.predictions} · 3 очк.: {row.three_points} · 1
-                      очк.: {row.one_point}
-                    </small>
+                    <details className="prediction-row-details">
+                      <summary>
+                        Учтено {row.settled} из {row.predictions}
+                      </summary>
+                      <small>
+                        Точный счёт: {row.three_points} · Исход: {row.one_point}
+                      </small>
+                    </details>
                   </td>
                   <td>
                     <strong>{row.points}</strong>

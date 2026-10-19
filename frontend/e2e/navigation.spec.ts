@@ -103,6 +103,7 @@ test('Telegram back restores nested statistics, catalog search and current game;
   expect(await page.evaluate(() => (window as TelegramTestWindow).telegramBackHandlers)).toBe(1)
   await page.getByRole('button', { name: 'Игроки', exact: true }).click()
   await page.getByLabel('Поиск игроков', { exact: true }).fill(person.alias)
+  await page.locator('.catalog-person summary').first().click()
   const open = page.locator('.player-card').getByRole('button', { name: 'Статистика', exact: true })
   await open.scrollIntoViewIfNeeded()
   const catalogScroll = await page.evaluate(() => window.scrollY)
@@ -110,6 +111,7 @@ test('Telegram back restores nested statistics, catalog search and current game;
   await expect(
     page.getByRole('heading', { name: `Статистика: ${person.alias}`, exact: true }),
   ).toBeVisible()
+  await page.getByRole('tab', { name: 'Партнёры', exact: true }).click()
   await page
     .getByRole('dialog')
     .getByRole('button', { name: new RegExp(partner.alias) })
@@ -121,6 +123,7 @@ test('Telegram back restores nested statistics, catalog search and current game;
   await expect(
     page.getByRole('heading', { name: `Статистика: ${person.alias}`, exact: true }),
   ).toBeVisible()
+  await page.getByRole('tab', { name: 'Матчи', exact: true }).click()
   await page.getByRole('dialog').locator('.stat-link').filter({ hasText: '1 : 0' }).click()
   await expect(page.locator('.match-hero')).toContainText('Игра из статистики')
   await pressBack(page)
@@ -183,6 +186,7 @@ test('browser back button preserves archive pagination and closes nested guest f
   await page.getByRole('button', { name: 'Назад', exact: true }).click()
   await expect(page.locator('.match-hero')).toContainText(current.location)
   await expect(page.getByRole('button', { name: 'Назад', exact: true })).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Участники', exact: true }).click()
   await page.getByRole('button', { name: 'Добавить', exact: true }).click()
   await page.getByRole('button', { name: 'Создать нового гостя', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Новый гость', exact: true })).toBeVisible()

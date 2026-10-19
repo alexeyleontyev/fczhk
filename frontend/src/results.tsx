@@ -1,3 +1,4 @@
+import { SectionTabs } from './section-tabs'
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { SeasonSelect, seasonQuery, type SeasonFilter } from './seasons'
@@ -123,21 +124,24 @@ export function MatchResult({
           )}
           {!editing && data.exists && (
             <>
-              <div className="actual-teams">
-                {teams.map((team) => (
-                  <div key={team}>
-                    <h3>{label(team)}</h3>
-                    {data.participants
-                      .filter((p) => p.team === team)
-                      .map((p) => (
-                        <p key={p.player_id}>
-                          {p.position === 'keeper' ? '🧤 ' : ''}
-                          {p.alias}
-                        </p>
-                      ))}
-                  </div>
-                ))}
-              </div>
+              <details className="compact-explanation">
+                <summary>Фактические составы</summary>
+                <div className="actual-teams">
+                  {teams.map((team) => (
+                    <div key={team}>
+                      <h3>{label(team)}</h3>
+                      {data.participants
+                        .filter((p) => p.team === team)
+                        .map((p) => (
+                          <p key={p.player_id}>
+                            {p.position === 'keeper' ? '🧤 ' : ''}
+                            {p.alias}
+                          </p>
+                        ))}
+                    </div>
+                  ))}
+                </div>
+              </details>
               <h3>Голы и передачи</h3>
               {!data.goals.length && <p className="muted">Без голов</p>}
               {data.goals.map((g) => (
@@ -164,84 +168,91 @@ export function MatchResult({
           )}
           {editing && (
             <fieldset disabled={busy} className="result-editor">
-              <h3>Кто фактически играл</h3>
-              <p className="muted caption">
-                Уберите неявившихся, добавьте замены и проверьте команды. Участника с голами или
-                передачами можно убрать после исправления этих событий.
-              </p>
-              {data.participants.map((p) => (
-                <div className="actual-row" key={p.player_id}>
-                  <strong>{p.alias}</strong>
-                  <label>
-                    Команда
-                    <select
-                      aria-label={`Фактическая команда: ${p.alias}`}
-                      value={p.team}
-                      onChange={(e) => updatePerson(p.player_id, { team: e.target.value as Team })}
-                    >
-                      {teams.map((t) => (
-                        <option key={t} value={t}>
-                          {label(t)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Амплуа
-                    <select
-                      aria-label={`Фактическое амплуа: ${p.alias}`}
-                      value={p.position}
-                      onChange={(e) =>
-                        updatePerson(p.player_id, { position: e.target.value as Position })
+              <details className="compact-explanation">
+                <summary>Участники и замены · {data.participants.length}</summary>
+                <h3>Кто фактически играл</h3>
+                <p className="muted caption">
+                  Уберите неявившихся, добавьте замены и проверьте команды. Участника с голами или
+                  передачами можно убрать после исправления этих событий.
+                </p>
+                {data.participants.map((p) => (
+                  <div className="actual-row" key={p.player_id}>
+                    <strong>{p.alias}</strong>
+                    <label>
+                      Команда
+                      <select
+                        aria-label={`Фактическая команда: ${p.alias}`}
+                        value={p.team}
+                        onChange={(e) =>
+                          updatePerson(p.player_id, { team: e.target.value as Team })
+                        }
+                      >
+                        {teams.map((t) => (
+                          <option key={t} value={t}>
+                            {label(t)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Амплуа
+                      <select
+                        aria-label={`Фактическое амплуа: ${p.alias}`}
+                        value={p.position}
+                        onChange={(e) =>
+                          updatePerson(p.player_id, { position: e.target.value as Position })
+                        }
+                      >
+                        <option value="field">Полевой</option>
+                        <option value="keeper">Вратарь</option>
+                      </select>
+                    </label>
+                    <button
+                      className="text-button danger"
+                      disabled={data.goals.some(
+                        (g) => g.author_id === p.player_id || g.assist_id === p.player_id,
+                      )}
+                      onClick={() =>
+                        setData({
+                          ...data,
+                          participants: data.participants.filter(
+                            (x) => x.player_id !== p.player_id,
+                          ),
+                        })
                       }
                     >
-                      <option value="field">Полевой</option>
-                      <option value="keeper">Вратарь</option>
-                    </select>
-                  </label>
-                  <button
-                    className="text-button danger"
-                    disabled={data.goals.some(
-                      (g) => g.author_id === p.player_id || g.assist_id === p.player_id,
-                    )}
-                    onClick={() =>
-                      setData({
-                        ...data,
-                        participants: data.participants.filter((x) => x.player_id !== p.player_id),
-                      })
-                    }
+                      Убрать {p.alias}
+                    </button>
+                  </div>
+                ))}
+                <label>
+                  Добавить фактического участника
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const p = players.find((x) => x.id === Number(e.target.value))
+                      if (p)
+                        setData({
+                          ...data,
+                          participants: [
+                            ...data.participants,
+                            { player_id: p.id, alias: p.alias, team: 'white', position: 'field' },
+                          ],
+                        })
+                    }}
                   >
-                    Убрать {p.alias}
-                  </button>
-                </div>
-              ))}
-              <label>
-                Добавить фактического участника
-                <select
-                  value=""
-                  onChange={(e) => {
-                    const p = players.find((x) => x.id === Number(e.target.value))
-                    if (p)
-                      setData({
-                        ...data,
-                        participants: [
-                          ...data.participants,
-                          { player_id: p.id, alias: p.alias, team: 'white', position: 'field' },
-                        ],
-                      })
-                  }}
-                >
-                  <option value="">Выберите игрока</option>
-                  {players
-                    .filter((p) => !data.participants.some((x) => x.player_id === p.id))
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.alias}
-                        {p.guest ? ' · гость' : ''}
-                      </option>
-                    ))}
-                </select>
-              </label>
+                    <option value="">Выберите игрока</option>
+                    {players
+                      .filter((p) => !data.participants.some((x) => x.player_id === p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.alias}
+                          {p.guest ? ' · гость' : ''}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              </details>
               <h3>События матча</h3>
               <p className="muted caption">
                 Каждая строка добавляет один гол. Для неизвестного автора оставьте соответствующий
@@ -444,6 +455,7 @@ export function PlayerStats({
 }) {
   const [data, setData] = useState<Stats | null>(null)
   const [error, setError] = useState('')
+  const [section, setSection] = useState('overview')
   useEffect(() => {
     let current = true
     setData(null)
@@ -509,50 +521,70 @@ export function PlayerStats({
       )}
       {data && (
         <>
-          <div className="stats-grid">
-            {(
-              [
-                ['games', 'Игры'],
-                ['wins', 'Победы'],
-                ['draws', 'Ничьи'],
-                ['losses', 'Поражения'],
-                ['goals', 'Голы'],
-                ['assists', 'Передачи'],
-              ] as const
-            ).map(([key, title]) => (
-              <div key={key}>
-                <strong>{data[key]}</strong>
-                <span>{title}</span>
+          <SectionTabs
+            label="Статистика игрока"
+            value={section}
+            onChange={setSection}
+            options={[
+              { value: 'overview', label: 'Обзор' },
+              { value: 'matches', label: 'Матчи' },
+              { value: 'partners', label: 'Партнёры' },
+            ]}
+          >
+            <div hidden={section !== 'overview'}>
+              {' '}
+              <div className="stats-grid">
+                {(
+                  [
+                    ['games', 'Игры'],
+                    ['wins', 'Победы'],
+                    ['draws', 'Ничьи'],
+                    ['losses', 'Поражения'],
+                    ['goals', 'Голы'],
+                    ['assists', 'Передачи'],
+                  ] as const
+                ).map(([key, title]) => (
+                  <div key={key}>
+                    <strong>{data[key]}</strong>
+                    <span>{title}</span>
+                  </div>
+                ))}
+                <div className="overall-win-rate-stat">
+                  <strong
+                    className={data.win_rate === null ? undefined : percentTone(data.win_rate)}
+                  >
+                    {data.win_rate === null
+                      ? '—'
+                      : `${data.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}
+                  </strong>
+                  <span>Винрейт</span>
+                </div>
               </div>
-            ))}
-            <div className="overall-win-rate-stat">
-              <strong className={data.win_rate === null ? undefined : percentTone(data.win_rate)}>
-                {data.win_rate === null
-                  ? '—'
-                  : `${data.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`}
-              </strong>
-              <span>Винрейт</span>
             </div>
-          </div>
-          <h3>История игр</h3>
-          {!data.matches.length && <p className="muted">Завершённых игр пока нет.</p>}
-          {data.matches.slice(0, 5).map(matchRow)}
-          {data.matches.length > 5 && (
-            <details className="history-more" key={`${playerId}:${seasonFilter.season}`}>
-              <summary>Остальные игры ({data.matches.length - 5})</summary>
-              {data.matches.slice(5).map(matchRow)}
-            </details>
-          )}
-          <h3>Частые партнёры</h3>
-          <p className="muted caption">В скобках: победы — ничьи — поражения.</p>
-          {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}
-          {data.partners.slice(0, 3).map(partnerRow)}
-          {data.partners.length > 3 && (
-            <details className="partner-more" key={`${playerId}:${seasonFilter.season}`}>
-              <summary>Остальные партнёры ({data.partners.length - 3})</summary>
-              {data.partners.slice(3).map(partnerRow)}
-            </details>
-          )}
+            <div hidden={section !== 'matches'}>
+              <h3>История игр</h3>
+              {!data.matches.length && <p className="muted">Завершённых игр пока нет.</p>}
+              {data.matches.slice(0, 5).map(matchRow)}
+              {data.matches.length > 5 && (
+                <details className="history-more" key={`${playerId}:${seasonFilter.season}`}>
+                  <summary>Остальные игры ({data.matches.length - 5})</summary>
+                  {data.matches.slice(5).map(matchRow)}
+                </details>
+              )}
+            </div>
+            <div hidden={section !== 'partners'}>
+              <h3>Частые партнёры</h3>
+              <p className="muted caption">В скобках: победы — ничьи — поражения.</p>
+              {!data.partners.length && <p className="muted">Появятся после завершения матчей.</p>}
+              {data.partners.slice(0, 3).map(partnerRow)}
+              {data.partners.length > 3 && (
+                <details className="partner-more" key={`${playerId}:${seasonFilter.season}`}>
+                  <summary>Остальные партнёры ({data.partners.length - 3})</summary>
+                  {data.partners.slice(3).map(partnerRow)}
+                </details>
+              )}
+            </div>
+          </SectionTabs>
         </>
       )}
     </section>
