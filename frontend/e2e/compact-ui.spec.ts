@@ -31,6 +31,7 @@ test('compact workspaces: one search, lazy ratings, circled metrics and details 
   await expect(search).toHaveCount(1)
   await search.fill(alias)
   const row = page.locator('.catalog-person').filter({ hasText: alias })
+  await expect(row.getByRole('heading', { name: alias, exact: true })).toBeVisible()
   await expect(row.locator('summary')).toContainText('4,6')
   await expect(row.getByRole('button', { name: 'Статистика', exact: true })).toBeHidden()
   await row.locator('summary').click()

@@ -2251,19 +2251,14 @@ footer > span:first-child {
 }
 .compact-explanation > summary {
   min-height: 40px;
-  display: flex;
+  display: list-item;
+  list-style-position: inside;
+  padding: 10px 0;
   align-items: center;
   gap: 8px;
   font-size: 13px;
   color: #5c705f;
   cursor: pointer;
-}
-.compact-explanation > summary::before {
-  content: '›';
-  font-size: 19px;
-}
-.compact-explanation[open] > summary::before {
-  transform: rotate(90deg);
 }
 .compact-explanation p {
   margin: 8px 0;
@@ -2708,13 +2703,12 @@ footer > span:first-child {
 .compact-catalog {
   max-width: 960px;
 }
-.catalog-person > summary h3::before {
-  content: '›';
+.catalog-chevron {
   display: inline-block;
   margin-right: 7px;
   color: #647a68;
 }
-.catalog-person[open] > summary h3::before {
+.catalog-person[open] .catalog-chevron {
   transform: rotate(90deg);
 }
 .compact-metric {

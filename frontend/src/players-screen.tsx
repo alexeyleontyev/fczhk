@@ -113,7 +113,12 @@ export function PlayersScreen({
             {filterPlayerNames(players, search).map((p) => (
               <details className="player-card catalog-person" key={p.id} name="catalog-player">
                 <summary>
-                  <h3>{p.alias}</h3>
+                  <h3>
+                    <span className="catalog-chevron" aria-hidden="true">
+                      ›
+                    </span>
+                    {p.alias}
+                  </h3>
                   <span>{ratingNumber(p.ratings?.field.attack ?? null)}</span>
                   <span>{ratingNumber(p.ratings?.field.defense ?? null)}</span>
                   <strong>
