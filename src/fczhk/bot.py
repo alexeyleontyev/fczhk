@@ -7,8 +7,8 @@ from sqlalchemy import select
 
 from .auth import check_member, player_for_telegram
 from .db import database, now
-from .models import BotCallbackReceipt, GameTemplate, Match, Player, Registration
-from .ratings import public_averages
+from .models import BotCallbackReceipt, GameTemplate, Match, Registration
+from .results import player_stats
 from .scheduling import schedule_description
 from .services import MOSCOW, DomainError, cancel, get_match, match_data, register
 from .worker import app_link, chunks
@@ -21,11 +21,25 @@ def dispatcher(cfg, factory):
     def menu(match_id=None):
         rows = [[InlineKeyboardButton(text="⚽ Открыть приложение", url=app_link(cfg, match_id))]]
         if match_id:
-            rows.extend([
-                [InlineKeyboardButton(text="Записаться полевым", callback_data=f"join:{match_id}:field")],
-                [InlineKeyboardButton(text="Записаться вратарем", callback_data=f"join:{match_id}:keeper")],
-                [InlineKeyboardButton(text="Отменить запись", callback_data=f"leave:{match_id}")],
-            ])
+            rows.extend(
+                [
+                    [
+                        InlineKeyboardButton(
+                            text="Записаться полевым", callback_data=f"join:{match_id}:field"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="Записаться вратарем", callback_data=f"join:{match_id}:keeper"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="Отменить запись", callback_data=f"leave:{match_id}"
+                        )
+                    ],
+                ]
+            )
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
     async def identify(user):
@@ -33,11 +47,11 @@ def dispatcher(cfg, factory):
 
         def save():
             with factory() as db, db.begin():
-                return player_for_telegram(db, user.id, user.first_name).id
+                return player_for_telegram(db, user.id, user.first_name, user.username).id
 
         return await asyncio.to_thread(save)
 
-    @router.message(Command("start", "help", "profile", "admin"))
+    @router.message(Command("start", "help", "admin"))
     async def start(message: Message):
         if not message.from_user:
             return
@@ -53,7 +67,7 @@ def dispatcher(cfg, factory):
                 "ФКЖК · футбольное сообщество\n\n"
                 f"{description}\nПриоритет — время записи среди оплативших.\n"
                 "В приложении: alias, текущая игра, оценки игроков и подбор составов.\n\n"
-                "/game — текущая игра\n/players — игроки",
+                "/game — текущая игра\n/profile — моя статистика",
                 reply_markup=menu(),
             )
         except DomainError as exc:
@@ -112,38 +126,37 @@ def dispatcher(cfg, factory):
         except DomainError as exc:
             await message.answer(exc.message)
 
-    @router.message(Command("players"))
-    async def players(message: Message):
+    @router.message(Command("profile"))
+    async def profile(message: Message):
         if not message.from_user:
             return
         try:
-            await identify(message.from_user)
+            pid = await identify(message.from_user)
 
-            def read_players():
+            def read_profile():
+                season = str(now().astimezone(MOSCOW).year)
                 with factory() as db:
-                    people = list(
-                        db.scalars(
-                            select(Player)
-                            .where(Player.merged_into.is_(None))
-                            .order_by(Player.alias)
-                        )
-                    )
-                    averages = public_averages(db, [p.id for p in people])
+                    return season, player_stats(db, pid), player_stats(db, pid, season=season)
 
-                    def score(value):
-                        return "—" if value is None else f"{value:.2f}".rstrip("0").rstrip(".")
-
-                    names = []
-                    for p in people:
-                        r = averages[p.id]
-                        names.append(
-                            f"{p.alias} · А {score(r['field']['attack'])} / З {score(r['field']['defense'])} · вратарь З {score(r['keeper']['defense'])}"
-                        )
-                return names
-
-            names = await asyncio.to_thread(read_players)
-            for part in chunks("Игроки · средние оценки\n\n" + "\n".join(names)):
-                await message.answer(part)
+            season, total, current = await asyncio.to_thread(read_profile)
+            lines = [f"👤 {total['alias']}"]
+            lines.append(
+                f"Telegram: @{total['telegram_username']}"
+                if total["telegram_username"]
+                else f"Telegram ID: {total['telegram_id']}"
+            )
+            for title, stats in (("Общая статистика", total), (f"Сезон {season}", current)):
+                lines.extend(
+                    [
+                        "",
+                        title,
+                        f"Игры: {stats['games']}",
+                        f"Победы: {stats['wins']} · Ничьи: {stats['draws']} · Поражения: {stats['losses']}",
+                        f"Голы: {stats['goals']} · Ассисты: {stats['assists']}",
+                        f"Гол + пас: {stats['goals'] + stats['assists']}",
+                    ]
+                )
+            await message.answer("\n".join(lines), reply_markup=menu(), parse_mode=None)
         except DomainError as exc:
             await message.answer(exc.message)
 
@@ -180,9 +193,12 @@ def dispatcher(cfg, factory):
                     match = get_match(db, int(mid), lock=True)
                     if db.get(BotCallbackReceipt, query.id):
                         return
-                    registration = db.scalar(select(Registration).where(
-                        Registration.match_id == match.id, Registration.player_id == pid,
-                    ))
+                    registration = db.scalar(
+                        select(Registration).where(
+                            Registration.match_id == match.id,
+                            Registration.player_id == pid,
+                        )
+                    )
                     if registration:
                         cancel(db, pid, match, registration)
                     db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=match.id))
@@ -190,7 +206,9 @@ def dispatcher(cfg, factory):
             await asyncio.to_thread(save_leave)
             await query.answer("Вы не записаны на эту игру.", show_alert=True)
         except (DomainError, ValueError) as exc:
-            await query.answer(exc.message if isinstance(exc, DomainError) else "Неизвестная игра", show_alert=True)
+            await query.answer(
+                exc.message if isinstance(exc, DomainError) else "Неизвестная игра", show_alert=True
+            )
 
     dp.include_router(router)
     return dp
@@ -218,8 +236,7 @@ async def configure_bot(cfg):
             [
                 BotCommand(command="start", description="Вход в клуб"),
                 BotCommand(command="game", description="Текущая игра и участники"),
-                BotCommand(command="players", description="Игроки клуба"),
-                BotCommand(command="profile", description="Мой профиль"),
+                BotCommand(command="profile", description="Профиль и статистика"),
                 BotCommand(command="help", description="Помощь"),
             ]
         )

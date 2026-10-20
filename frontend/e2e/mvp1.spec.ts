@@ -34,10 +34,10 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
   await page.getByRole('button', { name: 'Добавить в состав', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.getByRole('tab', { name: 'Обзор', exact: true }).click()
-  await page.getByRole('button', { name: 'Финализировать сбор', exact: true }).click()
+  await page.getByRole('button', { name: 'Зафиксировать составы на игру', exact: true }).click()
   await page
     .getByRole('dialog')
-    .getByRole('button', { name: 'Финализировать сбор', exact: true })
+    .getByRole('button', { name: 'Зафиксировать составы на игру', exact: true })
     .click()
   await expect(page.getByText('Сбор завершен', { exact: true })).toBeVisible()
   await page.getByRole('tab', { name: 'Составы', exact: true }).click()

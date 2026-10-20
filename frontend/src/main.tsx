@@ -492,7 +492,7 @@ function App() {
         </Modal>
       )}
       {modal === 'finalize' && m && (
-        <Modal title="Завершить сбор?" close={() => setModal(null)}>
+        <Modal title="Зафиксировать составы на игру?" close={() => setModal(null)}>
           <p>
             Пройдут первые {m.field_limit} оплативших полевых и {m.keeper_limit} вратаря по времени
             записи, с учетом закрепленных мест. При недоборе состав будет меньше. Самостоятельная
@@ -504,10 +504,10 @@ function App() {
               void run(async () => {
                 await api(`/matches/${m.id}/actions/finalize`, 'POST', { version: m.version })
                 setModal(null)
-              }, 'Список финализирован. Распределите команды.')
+              }, 'Составы на игру зафиксированы. Распределите команды.')
             }
           >
-            Финализировать сбор
+            Зафиксировать составы на игру
           </Button>
         </Modal>
       )}

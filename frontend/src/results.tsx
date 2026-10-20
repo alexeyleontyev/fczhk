@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import { SeasonSelect, seasonQuery, type SeasonFilter } from './seasons'
 import { percentTone } from './percent'
-import type { Match, Player, Position, Run, Team } from './types'
+import { TelegramIdentity } from './telegram-identity'
+import type { Match, Player, Position, Run, Team, TelegramProfile } from './types'
 
 export type Participant = { player_id: number; alias: string; team: Team; position: Position }
 export type Goal = {
@@ -415,7 +416,7 @@ export function MatchResult({
   )
 }
 
-type Stats = {
+type Stats = TelegramProfile & {
   player_id: number
   alias: string
   games: number
@@ -445,11 +446,13 @@ type Stats = {
 }
 export function PlayerStats({
   playerId,
+  showIdentity = true,
   onMatch,
   onPlayer,
   ...seasonFilter
 }: SeasonFilter & {
   playerId: number
+  showIdentity?: boolean
   onMatch: (id: number) => void
   onPlayer: (id: number) => void
 }) {
@@ -513,6 +516,7 @@ export function PlayerStats({
   return (
     <section className="statistics">
       <h2>{data ? `Статистика: ${data.alias}` : 'Статистика'}</h2>
+      {data && showIdentity && <TelegramIdentity {...data} />}
       <SeasonSelect {...seasonFilter} />
       {error && (
         <p role="alert" className="alert error">

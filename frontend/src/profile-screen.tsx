@@ -7,6 +7,7 @@ import { PlayerStats } from './results'
 import { initial } from './format'
 import { Button } from './ui'
 import { ProfileLink } from './profile-link'
+import { TelegramIdentity } from './telegram-identity'
 import type { Player, Run } from './types'
 
 export function ProfileScreen({
@@ -41,6 +42,7 @@ export function ProfileScreen({
         <span className="tag">
           {me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок клуба'}
         </span>
+        <TelegramIdentity {...me} />
         <SectionTabs
           label="Разделы профиля"
           value={section}
@@ -55,6 +57,7 @@ export function ProfileScreen({
           <div hidden={section !== 'stats'}>
             <PlayerStats
               playerId={me.id}
+              showIdentity={false}
               onMatch={openGame}
               onPlayer={openStats}
               {...seasonFilter}

@@ -8,8 +8,8 @@ from threading import Lock
 
 from sqlalchemy import select
 
-from . import auctions, balancing, game_balancing, game_ratings, ratings, services
-from .models import MatchResult, Player, ResultParticipant, TeamRatingSnapshot, TeamSnapshot
+from . import auctions, balancing, game_balancing, game_ratings, ratings, results, services
+from .models import MatchResult, ResultParticipant, TeamRatingSnapshot, TeamSnapshot
 from .schemas import BalanceSettings
 from .services import DomainError
 
@@ -24,6 +24,7 @@ def selected(db, match):
 
 def data(db, match, cfg):
     regs = selected(db, match)
+    people, canonical = results.identities(db)
     effective = ratings.effective(db, regs)
     skills = game_ratings.replay(db, before_day=match.game_day)["players"]
     inputs = []
@@ -32,7 +33,7 @@ def data(db, match, cfg):
         inputs.append(
             {
                 **effective[r.id],
-                "alias": db.get(Player, r.player_id).alias,
+                "alias": people[canonical[r.player_id]].alias,
                 "game_mu": skill.get("mu", 25.0),
                 "game_sigma": skill.get("sigma", 25.0 / 3),
                 "game_count": skill.get("games", 0),
@@ -40,6 +41,7 @@ def data(db, match, cfg):
         )
     fingerprint = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
     frozen = None
+    by_player = {}
     placements = {}
     if match.approved_version:
         snapshot = db.scalar(
@@ -52,7 +54,7 @@ def data(db, match, cfg):
         if snapshot:
             placements = snapshot.data.get("lineup_placements", {})
             by_player = {
-                (p["player_id"], p["position"]): p
+                (canonical[p["player_id"]], p["position"]): p
                 for p in snapshot.data.get("lineup_inputs", snapshot.data.get("inputs", []))
             }
             frozen = [
@@ -60,6 +62,7 @@ def data(db, match, cfg):
                     **p,
                     **by_player.get((p["player_id"], p["position"]), {}),
                     "registration_id": p["registration_id"],
+                    "player_id": p["player_id"],
                     "alias": p["alias"],
                     "attack": by_player.get((p["player_id"], p["position"]), {}).get("attack"),
                     "defense": by_player.get((p["player_id"], p["position"]), {}).get("defense"),
@@ -68,29 +71,47 @@ def data(db, match, cfg):
             ]
     assignments = {r.id: r.team for r in regs}
     if db.get(MatchResult, match.id):
-        # Historical results have no registrations. Never invent historical ratings.
-        by_player = {(p["player_id"], p["position"]): p for p in frozen or []}
+        # Imported games have no registrations. Prefer saved game ratings, then
+        # current community scores in the participant's actual position.
         actual = list(
             db.scalars(select(ResultParticipant).where(ResultParticipant.match_id == match.id))
         )
-        inputs = [
-            dict(
-                registration_id=-r.player_id,
-                player_id=r.player_id,
-                alias=db.get(Player, r.player_id).alias,
-                position=r.position,
-                attack=by_player.get((r.player_id, r.position), {}).get("attack"),
-                defense=by_player.get((r.player_id, r.position), {}).get("defense"),
-                source="snapshot",
-                game_mu=None,
-                game_sigma=None,
-                game_count=0,
+        current = ratings.public_averages(db, list({canonical[r.player_id] for r in actual}))
+        inputs = []
+        for r in actual:
+            pid = canonical[r.player_id]
+            saved = by_player.get((pid, r.position), {})
+            has_saved = saved.get("defense") is not None and (
+                r.position == "keeper" or saved.get("attack") is not None
             )
-            for r in actual
-        ]
+            score = saved if has_saved else current[pid][r.position]
+            source = (
+                "snapshot"
+                if has_saved
+                else "community"
+                if score["defense"] is not None
+                else "missing"
+            )
+            inputs.append(
+                dict(
+                    registration_id=-r.player_id,
+                    player_id=pid,
+                    alias=people[pid].alias,
+                    position=r.position,
+                    attack=score["attack"],
+                    defense=score["defense"],
+                    source=source,
+                    game_mu=None,
+                    game_sigma=None,
+                    game_count=0,
+                )
+            )
         assignments = {-r.player_id: r.team for r in actual}
+        actual_ids = {(canonical[r.player_id], r.position): -r.player_id for r in actual}
         placements = {
-            str(-r.player_id): placements[str(r.id)] for r in regs if str(r.id) in placements
+            str(actual_ids[canonical[r.player_id], r.position]): placements[str(r.id)]
+            for r in regs
+            if str(r.id) in placements and (canonical[r.player_id], r.position) in actual_ids
         }
         frozen = inputs
     auction = auctions.latest(db, match)

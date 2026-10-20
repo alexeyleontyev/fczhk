@@ -5,9 +5,9 @@ import { api } from './api'
 import { Button } from './ui'
 import { TeamDots } from './team-board'
 import { RatingMark, RatingPair, ratingNumber as fmt } from './rating-mark'
+import { tacticalLayout, type Point } from './tactical-layout'
 import type { Match, Player, Position, Team, Run, BalanceRun } from './types'
 
-type Point = { x: number; y: number }
 type Person = {
   registration_id: number
   player_id: number
@@ -85,47 +85,6 @@ function saved(key: string): Draft | null {
   }
 }
 
-function defaults(people: Person[], assignments: Lineup['assignments']): Record<string, Point> {
-  const result: Record<string, Point> = {}
-  for (const team of ['black', 'white'] as Team[]) {
-    const rows = people.filter((p) => assignments[p.registration_id] === team)
-    const field = rows.filter((p) => p.position === 'field')
-    const role = (p: Person) =>
-      p.attack === null || p.defense === null ? 0 : Math.sign(p.attack - p.defense)
-    const lines: Person[][] = []
-    // Separate the roles into lines so an attacker never shares a defensive line.
-    for (const category of [-1, 0, 1]) {
-      const group = field.filter((p) => role(p) === category)
-      for (let i = 0; i < group.length; i += 3) lines.push(group.slice(i, i + 3))
-    }
-    lines.forEach((line, i) => {
-      const depth =
-        lines.length > 1
-          ? 0.18 + (i * 0.26) / (lines.length - 1)
-          : field.length && role(field[0]) === -1
-            ? 0.2
-            : field.length && role(field[0]) === 1
-              ? 0.43
-              : 0.31
-      line.forEach((p, j) => {
-        result[p.registration_id] = {
-          x: (j + 1) / (line.length + 1),
-          y: team === 'black' ? depth : 1 - depth,
-        }
-      })
-    })
-    rows
-      .filter((p) => p.position === 'keeper')
-      .forEach((p, i, keepers) => {
-        result[p.registration_id] = {
-          x: (i + 1) / (keepers.length + 1),
-          y: team === 'black' ? 0.065 : 0.935,
-        }
-      })
-  }
-  return result
-}
-
 export function TacticsScreen({
   match: m,
   me,
@@ -200,7 +159,7 @@ export function TacticsScreen({
   const people = !draft && data.official_players ? data.official_players : data.players
   const assignments = draft?.assignments ?? data.assignments
   const placements = draft?.placements ?? data.placements
-  const positions = defaults(people, assignments)
+  const positions = tacticalLayout(people, assignments)
   for (const p of people) {
     const point = placements[p.registration_id]
     if (point && point.y >= 0.5 === (assignments[p.registration_id] === 'white'))
@@ -476,10 +435,9 @@ export function TacticsScreen({
           const teamPeople = people.filter((p) => assignments[p.registration_id] === team)
           const sum = (kind: 'attack' | 'defense') => {
             const relevant = teamPeople.filter((p) => kind === 'defense' || p.position === 'field')
+            const rated = relevant.filter((p) => p[kind] !== null)
             const known = relevant.reduce((n, p) => n + (p[kind] ?? 0), 0)
-            return teamPeople.length
-              ? `${relevant.some((p) => p[kind] === null) ? '≥ ' : ''}${fmt(known)}`
-              : '—'
+            return rated.length ? `${rated.length < relevant.length ? '≥ ' : ''}${fmt(known)}` : '—'
           }
           const total = teamPeople.reduce(
             (n, p) => n + (p.defense ?? 0) + (p.position === 'field' ? (p.attack ?? 0) : 0),
@@ -487,6 +445,9 @@ export function TacticsScreen({
           )
           const partial = teamPeople.some(
             (p) => p.defense === null || (p.position === 'field' && p.attack === null),
+          )
+          const rated = teamPeople.some(
+            (p) => p.defense !== null || (p.position === 'field' && p.attack !== null),
           )
           return (
             <div key={team}>
@@ -499,7 +460,7 @@ export function TacticsScreen({
               <span>
                 <RatingMark kind="defense" /> {sum('defense')}
               </span>
-              <span>Σ {teamPeople.length ? `${partial ? '≥ ' : ''}${fmt(total)}` : '—'}</span>
+              <span>Σ {rated ? `${partial ? '≥ ' : ''}${fmt(total)}` : '—'}</span>
               {draft?.source === 'game' && (
                 <small className="tactics-mu">
                   OpenSkill μ:{' '}
@@ -635,7 +596,9 @@ export function TacticsScreen({
                 Утвердить состав
               </Button>
               {m.status === 'open' && (
-                <small className="muted">Сначала финализируйте сбор на вкладке «Игра».</small>
+                <small className="muted">
+                  Сначала зафиксируйте составы на игру на вкладке «Игра».
+                </small>
               )}
               {auctionRunning && (
                 <small className="muted">Подтверждение доступно после завершения аукциона.</small>

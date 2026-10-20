@@ -4,6 +4,7 @@ from collections import Counter
 
 from sqlalchemy import delete, select
 
+from .auth import telegram_profile
 from .db import now
 from .models import Audit, Match, MatchResult, Player, Publication, ResultGoal, ResultParticipant
 from .ratings import lock_ratings
@@ -283,6 +284,7 @@ def player_stats(db, player_id, season: str | None = None):
     return dict(
         player_id=player_id,
         alias=people[player_id].alias,
+        **telegram_profile(people[player_id]),
         **total,
         win_rate=win_rate(total["wins"], total["draws"], total["games"]),
         matches=history,

@@ -101,6 +101,22 @@ def test_browser_login_registers_once_and_uses_numeric_admin_id(browser, env, si
     assert response.json()["player"]["is_admin"]
 
 
+@pytest.mark.parametrize("username", ["browser_username", None])
+def test_browser_login_syncs_verified_username_including_removal(
+    browser, env, signing_key, username
+):
+    client, _ = browser
+    with env[1]() as db, db.begin():
+        db.get(Player, env[4]["player"]).telegram_username = "previous_username"
+    response = finish(client, signing_key, start(client), preferred_username=username)
+    assert response.status_code == 200, response.text
+    profile = response.json()["player"]
+    assert profile["telegram_username"] == username and profile["telegram_id"] == 102
+    assert profile["alias"] == "Игрок"
+    with env[1]() as db:
+        assert db.get(Player, env[4]["player"]).telegram_username == username
+
+
 @pytest.mark.parametrize(
     "overrides",
     [

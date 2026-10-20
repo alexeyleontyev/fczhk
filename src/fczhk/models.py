@@ -23,6 +23,7 @@ class Player(Base):
     __table_args__ = (Index("uq_players_alias", "alias", unique=True),)
     id: Mapped[int] = mapped_column(primary_key=True)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
+    telegram_username: Mapped[str | None] = mapped_column(String(32))
     alias: Mapped[str] = mapped_column(String(60))
     # NULL preserves legacy ADMIN_IDS until the owner explicitly changes access.
     admin_access: Mapped[bool | None] = mapped_column(Boolean)

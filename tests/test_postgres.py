@@ -144,6 +144,44 @@ def pg(request):
     control.dispose()
 
 
+@pytest.mark.parametrize("pg", ["0b7c6d9e214f"], indirect=True)
+def test_telegram_username_migration_preserves_identity_and_sessions(pg):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from fczhk.db import Base, now
+    from fczhk.models import LoginSession
+
+    factory, pid = pg
+    with factory() as db, db.begin():
+        db.add(LoginSession(token_hash="a" * 64, player_id=pid, expires_at=now()))
+    config = Config("alembic.ini")
+    with factory.kw["bind"].begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+    with factory() as db, db.begin():
+        player = db.get(Player, pid)
+        assert player.telegram_id == 5678 and player.alias == "Тестовый игрок"
+        assert player.telegram_username is None
+        assert db.get(LoginSession, "a" * 64).player_id == pid
+        player.telegram_username = "saved_username"
+    with pytest.raises(ValueError, match="downgrade потеряет данные"), factory.kw["bind"].begin() as connection:
+        config.attributes["connection"] = connection
+        command.downgrade(config, "0b7c6d9e214f")
+    with factory() as db, db.begin():
+        assert db.get(Player, pid).telegram_username == "saved_username"
+        db.get(Player, pid).telegram_username = None
+    with factory.kw["bind"].begin() as connection:
+        config.attributes["connection"] = connection
+        command.downgrade(config, "0b7c6d9e214f")
+        command.upgrade(config, "head")
+    with factory() as db:
+        assert db.get(LoginSession, "a" * 64).player_id == pid
+        assert db.get(Player, pid).telegram_id == 5678
+
+
 @pytest.mark.parametrize("pg", ["f97c3e8d210a"], indirect=True)
 def test_notification_migration_preserves_games_posts_and_settings_and_guards_downgrade(pg):
     from fczhk.models import Publication

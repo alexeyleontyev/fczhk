@@ -229,7 +229,7 @@ export function GameScreen({
                       )}
                       {m.status === 'open' && (
                         <Button disabled={busy} onClick={() => setModal('finalize')}>
-                          Финализировать сбор <Flag size={16} />
+                          Зафиксировать составы на игру <Flag size={16} />
                         </Button>
                       )}
                       {m.status === 'approved' && (
@@ -416,7 +416,7 @@ export function GameScreen({
                     )}
                     {m.status === 'open' && (
                       <Button disabled={busy} onClick={() => setModal('finalize')}>
-                        Финализировать сбор <Flag size={16} />
+                        Зафиксировать составы на игру <Flag size={16} />
                       </Button>
                     )}
                     {m.status === 'finalized' && !auctionRunning && (

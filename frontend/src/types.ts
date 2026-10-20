@@ -1,7 +1,11 @@
 export type Position = 'field' | 'keeper'
 export type Team = 'white' | 'black'
 export type Average = { attack: number | null; defense: number | null; count?: number }
-export type Player = {
+export type TelegramProfile = {
+  telegram_id?: number | null
+  telegram_username?: string | null
+}
+export type Player = TelegramProfile & {
   id: number
   alias: string
   guest: boolean

@@ -96,7 +96,11 @@ class BrowserAuth:
             raise DomainError(
                 "Не удалось подтвердить вход. Попробуйте войти через Telegram заново.", 401
             ) from exc
-        return SimpleNamespace(id=claims["id"], first_name=claims["name"])
+        return SimpleNamespace(
+            id=claims["id"],
+            first_name=claims["name"],
+            username=claims.get("preferred_username"),
+        )
 
     def clear(self, response):
         response.delete_cookie(

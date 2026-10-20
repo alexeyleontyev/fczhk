@@ -1,5 +1,116 @@
 import { test, expect } from '@playwright/test'
 
+test('completed lineup shows missing ratings as dashes and keeps genuine zero scores', async ({
+  page,
+  request,
+}) => {
+  const { token } = await (await request.post('/api/auth/demo/player')).json()
+  const headers = { Authorization: `Bearer ${token}` }
+  const games = await (await request.get('/api/matches?limit=1', { headers })).json()
+  const m = await (await request.get(`/api/matches/${games[0].id}`, { headers })).json()
+  const players = [
+    {
+      registration_id: -801,
+      player_id: 81,
+      alias: 'Исторический полевой',
+      position: 'field',
+      attack: null as number | null,
+      defense: null as number | null,
+      game_mu: null,
+      source: 'missing',
+    },
+    {
+      registration_id: -802,
+      player_id: 82,
+      alias: 'Исторический вратарь',
+      position: 'keeper',
+      attack: null as number | null,
+      defense: null as number | null,
+      game_mu: null,
+      source: 'missing',
+    },
+  ]
+  const assignments: Record<string, 'white' | 'black'> = { '-801': 'white', '-802': 'black' }
+  await page.addInitScript((token) => sessionStorage.setItem('fczhk-session', token), token)
+  await page.route(`**/api/matches/${m.id}`, (route) =>
+    route.fulfill({
+      json: {
+        ...m,
+        historical: true,
+        status: 'completed',
+        registrations: [],
+        team_ratings: { summary: null, frozen: true, stale: false, method: 'legacy-manual' },
+        result: {
+          exists: true,
+          completed: true,
+          version: m.version,
+          score: { white: 0, black: 0 },
+          participants: players.map((p) => ({ ...p, team: assignments[p.registration_id] })),
+          goals: [],
+          assist_team_switches: [],
+        },
+      },
+    }),
+  )
+  await page.route(`**/api/matches/${m.id}/lineup`, (route) =>
+    route.fulfill({
+      json: {
+        version: m.version,
+        roster_version: m.roster_version,
+        fingerprint: 'historical-lineup',
+        players,
+        official_players: players,
+        assignments,
+        placements: {},
+        editable: false,
+        min_field_players: 2,
+        require_two_keepers: false,
+        auction: null,
+      },
+    }),
+  )
+  await page.goto(`/?game=${m.id}&screen=lineup`)
+  await expect(page.getByRole('button', { name: 'На поле: Исторический полевой' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'На поле: Исторический вратарь' })).toBeVisible()
+  const scores = page.getByLabel('Баллы команд')
+  await expect(scores.locator(':scope > div > span')).toHaveText([
+    'А —',
+    'З —',
+    'Σ —',
+    'А —',
+    'З —',
+    'Σ —',
+  ])
+  await expect(scores).not.toContainText('≥')
+  await expect(page.getByRole('button', { name: 'Утвердить состав' })).toHaveCount(0)
+  await page.screenshot({ path: 'test-results/historical-lineup-mobile.png', fullPage: true })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+
+  players[0].attack = players[0].defense = 0
+  players[0].source = 'community'
+  await page.reload()
+  const white = scores.locator(':scope > div').first()
+  await expect(white).toContainText('Σ 0')
+  await expect(white).not.toContainText('≥')
+  await expect(white).not.toContainText('—')
+  await expect(page.locator('.tactics-screen')).not.toContainText(
+    /Текущие оценки|Оценки сообщества/i,
+  )
+
+  players.push({
+    ...players[0],
+    registration_id: -803,
+    player_id: 83,
+    alias: 'Без оценки',
+    attack: null,
+    defense: null,
+    source: 'missing',
+  })
+  assignments[-803] = 'white'
+  await page.reload()
+  await expect(white).toContainText('Σ ≥ 0')
+})
+
 test('tactical positions follow ratings; member drag/tap drafts are private, persistent and isolated', async ({
   page,
   browser,
@@ -22,7 +133,17 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   })
   const names: Record<string, string> = {}
   for (const color of ['white', 'black'])
-    for (const role of ['forward', 'defender', 'equal', 'keeper']) {
+    for (const role of [
+      'forward',
+      'defender',
+      'defender2',
+      'defender3',
+      'equal',
+      'equal2',
+      'equal3',
+      'substitute',
+      'keeper',
+    ]) {
       const alias = `${color} ${role} ${stamp}`
       names[`${color}_${role}`] = alias
       const p = await send('/players/guests', 'POST', { alias })
@@ -36,8 +157,24 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
       m = await send(`/matches/${m.id}/registrations/${reg.id}/rating`, 'PUT', {
         version: m.version,
         position,
-        attack: role === 'keeper' ? null : role === 'forward' ? 5 : 2,
-        defense: role === 'defender' ? 5 : 2,
+        attack:
+          role === 'keeper'
+            ? null
+            : role === 'substitute'
+              ? 0
+              : role === 'forward'
+                ? 5
+                : role.startsWith('defender')
+                  ? 1
+                  : 3,
+        defense:
+          role === 'substitute'
+            ? 0
+            : role === 'forward'
+              ? 1
+              : role.startsWith('defender') || role === 'keeper'
+                ? 5
+                : 3,
       })
     }
   for (const action of ['open', 'finalize'])
@@ -54,7 +191,7 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   await page.setViewportSize({ width: 1440, height: 1600 })
   await page.goto(`/?game=${m.id}&screen=lineup`)
   await page.getByRole('button', { name: 'Войти игроком', exact: true }).click()
-  await expect(page.locator('.tactics-token')).toHaveCount(8)
+  await expect(page.locator('.tactics-token')).toHaveCount(18)
   await expect(page.getByRole('button', { name: 'Утвердить состав', exact: true })).toHaveCount(0)
   const token = (name: string) =>
     page.getByRole('button', { name: `На поле: ${name}`, exact: true })
@@ -73,7 +210,20 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
       expect(defender).toBeGreaterThan(equal)
       expect(equal).toBeGreaterThan(forward)
     }
+    for (const role of ['defender2', 'defender3'])
+      expect(await y(names[`${color}_${role}`])).toBeCloseTo(defender)
+    for (const role of ['equal2', 'equal3'])
+      expect(await y(names[`${color}_${role}`])).toBeCloseTo(equal)
+    const substitute = token(names[`${color}_substitute`])
+    expect(await y(names[`${color}_substitute`])).toBeCloseTo(keeper)
+    expect(
+      await substitute.evaluate((el) => parseFloat((el as HTMLElement).style.left)),
+    ).toBeCloseTo(color === 'black' ? 86 : 14)
   }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: 'test-results/tactics-331-mobile.png', fullPage: true })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 1600 })
   const player = names.black_defender
   const handle = page.getByRole('button', { name: `Перетащить: ${player}`, exact: true })
   const from = await handle.boundingBox(),
@@ -122,8 +272,13 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   await expect(
     page.getByRole('status').filter({ hasText: `Куда поставить ${player}?` }),
   ).toBeVisible()
-  await page.locator('.tactics-pitch').click({ position: { x: 100, y: 320 } })
+  const mobilePitch = await page.locator('.tactics-pitch').boundingBox()
+  // Use open space near the goal, away from the three defender tokens.
+  await page.locator('.tactics-pitch').click({
+    position: { x: mobilePitch!.width * 0.7, y: mobilePitch!.height * 0.89 },
+  })
   await expect(token(player)).toHaveClass(/white/)
+  expect(await y(player)).toBeCloseTo(89, 0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/tactics-mobile-placement.png', fullPage: true })
 })

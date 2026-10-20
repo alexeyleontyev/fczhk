@@ -1,4 +1,5 @@
 import hashlib
+import re
 import secrets
 from datetime import timedelta
 
@@ -56,7 +57,10 @@ def create_session(db, cfg, player: Player) -> str:
     return token
 
 
-def player_for_telegram(db, telegram_id: int, name: str) -> Player:
+_USERNAME_UNSET = object()
+
+
+def player_for_telegram(db, telegram_id: int, name: str, username=_USERNAME_UNSET) -> Player:
     # Serialize first registration across concurrent bot / web requests on PostgreSQL.
     if db.bind.dialect.name == "postgresql":
         from sqlalchemy import text
@@ -82,6 +86,14 @@ def player_for_telegram(db, telegram_id: int, name: str) -> Player:
         else:
             raise DomainError("Не удалось выбрать свободное имя. Повторите вход.", 409)
         audit(db, player.id, "player.registered")
+    # Omitted metadata (e.g. a manual prebinding) must not erase a known username.
+    # An explicit None from a verified Telegram profile means it was removed.
+    if username is not _USERNAME_UNSET:
+        player.telegram_username = (
+            username
+            if isinstance(username, str) and re.fullmatch(r"[A-Za-z0-9_]{1,32}", username)
+            else None
+        )
     return player
 
 
@@ -102,6 +114,11 @@ def has_admin_access(player: Player, cfg) -> bool:
 def public_player(player: Player, cfg, own=False):
     data = dict(id=player.id, alias=player.alias, guest=player.telegram_id is None)
     if own:
+        data.update(telegram_profile(player))
         data["is_admin"] = has_admin_access(player, cfg)
         data["is_owner"] = is_owner(player, cfg)
     return data
+
+
+def telegram_profile(player: Player):
+    return dict(telegram_id=player.telegram_id, telegram_username=player.telegram_username)

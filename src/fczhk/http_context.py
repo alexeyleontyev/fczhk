@@ -103,7 +103,7 @@ class HttpContext:
 
     def finish_login(self, user):
         with self.factory() as db, db.begin():
-            player = auth.player_for_telegram(db, user.id, user.first_name)
+            player = auth.player_for_telegram(db, user.id, user.first_name, user.username)
             result = dict(
                 token=auth.create_session(db, self.cfg, player),
                 player=auth.public_player(player, self.cfg, own=True),
