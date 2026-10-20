@@ -101,6 +101,26 @@ def test_browser_login_registers_once_and_uses_numeric_admin_id(browser, env, si
     assert response.json()["player"]["is_admin"]
 
 
+@pytest.mark.parametrize("telegram_id", [102, 101, 8_888_888_888, 2**52 - 1])
+@pytest.mark.parametrize("as_string", [False, True])
+def test_browser_login_accepts_verified_numeric_and_decimal_string_ids(
+    browser, env, signing_key, telegram_id, as_string
+):
+    client, member = browser
+    response = finish(
+        client, signing_key, start(client), id=str(telegram_id) if as_string else telegram_id
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    with env[1]() as db:
+        player = db.get(Player, data["player"]["id"])
+        assert player.telegram_id == telegram_id and type(player.telegram_id) is int
+    member.assert_awaited_once_with(env[0], telegram_id)
+    assert data["player"]["is_owner"] == (telegram_id == 101)
+    if telegram_id in (101, 102):
+        assert data["player"]["id"] == env[4]["admin" if telegram_id == 101 else "player"]
+
+
 @pytest.mark.parametrize("username", ["browser_username", None])
 def test_browser_login_syncs_verified_username_including_removal(
     browser, env, signing_key, username
@@ -128,9 +148,24 @@ def test_browser_login_syncs_verified_username_including_removal(
         {"iat": 9999999999},
         {"nonce": "another-browser"},
         {"nonce": None},
-        {"id": "102"},
+        {"id": "102.0"},
+        {"id": ""},
+        {"id": " 102"},
+        {"id": "+102"},
+        {"id": "0102"},
+        {"id": "١٠٢"},
+        {"id": "1e2"},
+        {"id": "x" * 100},
+        {"id": "9" * 100},
+        {"id": 102.0},
+        {"id": None},
         {"id": True},
         {"id": -1},
+        {"id": "-1"},
+        {"id": 0},
+        {"id": "0"},
+        {"id": 2**52},
+        {"id": str(2**52)},
         {"name": " "},
         {"sub": None},
     ],
@@ -158,6 +193,26 @@ def test_browser_login_rejects_forgery_and_missing_claims(browser, signing_key):
         response = client.post("/api/auth/telegram/browser", json={"id_token": value})
         assert response.status_code == 401
     member.assert_not_awaited()
+
+
+def test_rejected_browser_login_logs_only_stage_and_error_type(browser, signing_key, caplog):
+    client, _ = browser
+    nonce = start(client)
+    bad_token = token(signing_key, nonce, id="private-invalid-id", name="private-user-name")
+    cookie = client.cookies.get("fczhk-login")
+    response = client.post("/api/auth/telegram/browser", json={"id_token": bad_token})
+    assert response.status_code == 401
+    assert "stage=profile_claims error=InvalidTokenError" in caplog.text
+    assert all(
+        secret not in caplog.text
+        for secret in (bad_token, cookie, nonce, "private-invalid-id", "private-user-name")
+    )
+    caplog.clear()
+    client.cookies.clear()
+    assert (
+        client.post("/api/auth/telegram/browser", json={"id_token": bad_token}).status_code == 401
+    )
+    assert "stage=browser_session error=DecodeError" in caplog.text
 
 
 def test_challenge_is_bound_to_browser_and_latest_attempt(browser, signing_key):
