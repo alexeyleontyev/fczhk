@@ -117,6 +117,16 @@ export function TemplateForm({
           description: String(f.get('description')),
           payment_details: String(f.get('payment_details')),
           cost: Math.round(Number(f.get('cost')) * 100),
+          announcements_chat_id: String(f.get('announcements_chat_id')).trim(),
+          extended_chat_id: String(f.get('extended_chat_id')).trim(),
+          extended_auction_enabled: f.has('extended_auction_enabled'),
+          extended_registration_enabled: f.has('extended_registration_enabled'),
+          extended_cancellation_enabled: f.has('extended_cancellation_enabled'),
+          announcement_enabled: f.has('announcement_enabled'),
+          announcement_minutes: Number(f.get('announcement_minutes')),
+          payment_reminder_enabled: f.has('payment_reminder_enabled'),
+          payment_reminder_weekday: Number(f.get('payment_reminder_weekday')),
+          payment_reminder_time: String(f.get('payment_reminder_time')),
         })
       }}
     >
@@ -168,6 +178,109 @@ export function TemplateForm({
         Описание
         <textarea name="description" defaultValue={t.description} maxLength={1500} />
       </label>
+      <details className="compact-explanation notification-settings">
+        <summary>Анонсы и напоминание об оплате</summary>
+        <label>
+          Чат анонсов
+          <input
+            name="announcements_chat_id"
+            defaultValue={t.announcements_chat_id}
+            placeholder="-1001234567890 или @channel"
+            maxLength={100}
+          />
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            name="announcement_enabled"
+            defaultChecked={t.announcement_enabled}
+          />
+          Анонс перед открытием сбора
+        </label>
+        <label>
+          За сколько минут до открытия
+          <input
+            name="announcement_minutes"
+            type="number"
+            min="1"
+            max="10080"
+            step="1"
+            defaultValue={t.announcement_minutes}
+            required
+          />
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            name="payment_reminder_enabled"
+            defaultChecked={t.payment_reminder_enabled}
+          />
+          Напоминать об оплате футбола
+        </label>
+        <label>
+          День напоминания об оплате
+          <select name="payment_reminder_weekday" defaultValue={t.payment_reminder_weekday}>
+            {weekdays.map((day, i) => (
+              <option key={i} value={i}>
+                {day}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Время напоминания об оплате · Москва
+          <input
+            name="payment_reminder_time"
+            type="time"
+            defaultValue={t.payment_reminder_time}
+            required
+          />
+        </label>
+        <p className="muted caption">
+          Анонс следует расписанию автосбора. Напоминание об оплате приходит один раз на игру, после
+          открытия и до её начала.
+        </p>
+      </details>
+      <details className="compact-explanation notification-settings">
+        <summary>Расширенный чат и типы сообщений</summary>
+        <label>
+          Чат расширенных уведомлений
+          <input
+            name="extended_chat_id"
+            defaultValue={t.extended_chat_id}
+            placeholder="-1001234567890 или @channel"
+            maxLength={100}
+          />
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            name="extended_auction_enabled"
+            defaultChecked={t.extended_auction_enabled}
+          />{' '}
+          Аукцион
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            name="extended_registration_enabled"
+            defaultChecked={t.extended_registration_enabled}
+          />{' '}
+          Записи на игру
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            name="extended_cancellation_enabled"
+            defaultChecked={t.extended_cancellation_enabled}
+          />{' '}
+          Отмены записей
+        </label>
+        <p className="muted caption">
+          Без указанного чата подробные уведомления не отправляются. Бот должен иметь право
+          публиковать сообщения.
+        </p>
+      </details>
       <Button type="submit" disabled={busy}>
         Сохранить шаблон
       </Button>

@@ -110,6 +110,16 @@ class GameTemplate(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     cost: Mapped[int] = mapped_column(default=0)
     payment_details: Mapped[str] = mapped_column(Text, default="")
+    announcements_chat_id: Mapped[str] = mapped_column(String(100), default="", server_default="")
+    extended_chat_id: Mapped[str] = mapped_column(String(100), default="", server_default="")
+    extended_auction_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    extended_registration_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    extended_cancellation_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    announcement_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    announcement_minutes: Mapped[int] = mapped_column(default=30, server_default=text("30"))
+    payment_reminder_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    payment_reminder_weekday: Mapped[int] = mapped_column(default=3, server_default=text("3"))
+    payment_reminder_time: Mapped[str] = mapped_column(String(5), default="18:00", server_default="18:00")
 
 
 class Audit(Base):
@@ -135,7 +145,9 @@ class TeamSnapshot(Base):
 class Publication(Base):
     __tablename__ = "publications"
     id: Mapped[int] = mapped_column(primary_key=True)
-    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    match_id: Mapped[int | None] = mapped_column(ForeignKey("matches.id"), index=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(160), unique=True)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     kind: Mapped[str] = mapped_column(String(15))
     version: Mapped[int] = mapped_column()
     text: Mapped[str] = mapped_column(Text)

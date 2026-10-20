@@ -16,6 +16,7 @@ from ..models import (
     Publication,
     SkippedGameDay,
 )
+from ..notifications import EXTENDED_TYPES, SCHEDULED_KINDS, delivery_allowed, next_collection
 
 
 def router(ctx):
@@ -45,6 +46,12 @@ def router(ctx):
         t = db.get(GameTemplate, 1)
         return {key: getattr(t, key) for key in S.TemplateEdit.model_fields}
 
+    @app.get("/api/schedule/next")
+    def upcoming_collection(
+        p: Player = Depends(ctx.current), db: Session = Depends(db_dep, scope="function")
+    ):
+        return next_collection(db)
+
     @app.put("/api/template")
     def edit_template(
         body: S.TemplateEdit,
@@ -58,6 +65,12 @@ def router(ctx):
         for key, value in body.model_dump(exclude={"version"}).items():
             setattr(t, key, value)
         t.version += 1
+        for publication in db.scalars(select(Publication).where(
+            Publication.kind.in_((*SCHEDULED_KINDS, *EXTENDED_TYPES)),
+            Publication.status.in_(("pending", "failed")),
+        )):
+            if publication.kind in SCHEDULED_KINDS or not delivery_allowed(db, publication):
+                publication.status, publication.error = "cancelled", None
         svc.audit(db, p.id, "template.changed", old=before, new=body.model_dump())
         return {key: getattr(t, key) for key in S.TemplateEdit.model_fields}
 
@@ -68,6 +81,8 @@ def router(ctx):
         pub = db.scalar(select(Publication).where(Publication.id == pub_id).with_for_update())
         if not pub or pub.stale or pub.status not in ("failed", "uncertain"):
             raise svc.DomainError("Повторная публикация недоступна")
+        if not delivery_allowed(db, pub):
+            raise svc.DomainError("Сообщение отключено в настройках или время отправки истекло", 409)
         pub.status, pub.error, pub.attempts = "pending", None, 0
         pub.next_attempt_at = now()
         svc.audit(db, p.id, "publication.retry", pub.match_id, publication_id=pub.id)

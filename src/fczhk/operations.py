@@ -96,7 +96,7 @@ def publication_problems(db):
         )
         for p, day in db.execute(
             select(Publication, Match.game_day)
-            .join(Match)
+            .outerjoin(Match)
             .where(
                 or_(
                     Publication.status.in_(["failed", "uncertain", "pending", "sending"]),

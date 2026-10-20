@@ -5,10 +5,11 @@ from datetime import timedelta
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 
 from .db import database, now
 from .models import Publication
+from .notifications import SCHEDULED_KINDS, delivery_allowed
 from .operations import cleanup_sessions, heartbeat
 from .services import schedule_tick
 
@@ -73,12 +74,15 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
                 Publication.stale.is_(False),
                 Publication.next_attempt_at <= now(),
             )
-            .order_by(Publication.id)
+            .order_by(case((Publication.kind.in_(SCHEDULED_KINDS), 0), else_=1), Publication.id)
             .with_for_update(skip_locked=True)
             .limit(1)
         )
         if not pub:
             return False
+        if not delivery_allowed(db, pub):
+            pub.status, pub.error = "cancelled", None
+            return True
         pub.status, pub.claimed_at = "sending", now()
         pub.attempts += 1
         pub_id, chat, content, match_id, kind = (

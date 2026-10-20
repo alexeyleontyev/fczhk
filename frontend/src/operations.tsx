@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { Button } from './ui'
-import { date } from './format'
+import { date, publicationKind } from './format'
 import type { Claim } from './profile-link'
 
 type Problem = {
   id: number
-  match_id: number
-  game_day: string
+  match_id: number | null
+  game_day: string | null
   kind: string
   status: string
   stale: boolean
@@ -90,22 +90,15 @@ export function OperationsPanel({ onMatch }: { onMatch: (id: number) => void }) 
           {!data.problems.length && <p>Нет публикаций, требующих внимания.</p>}
           {data.problems.map((problem) => (
             <div className="publication" key={problem.id}>
-              <button className="text-button" onClick={() => onMatch(problem.match_id)}>
-                Игра {date(problem.game_day)}
-              </button>
+              {problem.match_id && problem.game_day ? (
+                <button className="text-button" onClick={() => onMatch(problem.match_id!)}>
+                  Игра {date(problem.game_day)}
+                </button>
+              ) : (
+                <span className="muted">Анонс по расписанию</span>
+              )}
               <strong>
-                {problem.kind === 'teams'
-                  ? 'Составы'
-                  : problem.kind === 'cancellation'
-                    ? 'Отмена игры'
-                    : problem.kind === 'auction_start'
-                      ? 'Старт аукциона'
-                      : problem.kind === 'result'
-                        ? 'Итог игры'
-                        : problem.kind === 'auction_lot'
-                          ? 'Аукцион'
-                          : 'Сбор'}{' '}
-                ·{' '}
+                {publicationKind[problem.kind] || problem.kind} ·{' '}
                 {
                   (
                     {

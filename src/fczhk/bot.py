@@ -7,10 +7,10 @@ from sqlalchemy import select
 
 from .auth import check_member, player_for_telegram
 from .db import database, now
-from .models import BotCallbackReceipt, GameTemplate, Match, Player
+from .models import BotCallbackReceipt, GameTemplate, Match, Player, Registration
 from .ratings import public_averages
 from .scheduling import schedule_description
-from .services import MOSCOW, DomainError, get_match, match_data, register
+from .services import MOSCOW, DomainError, cancel, get_match, match_data, register
 from .worker import app_link, chunks
 
 
@@ -21,12 +21,11 @@ def dispatcher(cfg, factory):
     def menu(match_id=None):
         rows = [[InlineKeyboardButton(text="⚽ Открыть приложение", url=app_link(cfg, match_id))]]
         if match_id:
-            rows.append(
-                [
-                    InlineKeyboardButton(text="Полевой", callback_data=f"join:{match_id}:field"),
-                    InlineKeyboardButton(text="Вратарь", callback_data=f"join:{match_id}:keeper"),
-                ]
-            )
+            rows.extend([
+                [InlineKeyboardButton(text="Записаться полевым", callback_data=f"join:{match_id}:field")],
+                [InlineKeyboardButton(text="Записаться вратарем", callback_data=f"join:{match_id}:keeper")],
+                [InlineKeyboardButton(text="Отменить запись", callback_data=f"leave:{match_id}")],
+            ])
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
     async def identify(user):
@@ -169,6 +168,29 @@ def dispatcher(cfg, factory):
             await query.answer(
                 exc.message if isinstance(exc, DomainError) else "Неизвестная игра", show_alert=True
             )
+
+    @router.callback_query(F.data.startswith("leave:"))
+    async def leave(query: CallbackQuery):
+        try:
+            _, mid = query.data.split(":")
+            pid = await identify(query.from_user)
+
+            def save_leave():
+                with factory() as db, db.begin():
+                    match = get_match(db, int(mid), lock=True)
+                    if db.get(BotCallbackReceipt, query.id):
+                        return
+                    registration = db.scalar(select(Registration).where(
+                        Registration.match_id == match.id, Registration.player_id == pid,
+                    ))
+                    if registration:
+                        cancel(db, pid, match, registration)
+                    db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=match.id))
+
+            await asyncio.to_thread(save_leave)
+            await query.answer("Вы не записаны на эту игру.", show_alert=True)
+        except (DomainError, ValueError) as exc:
+            await query.answer(exc.message if isinstance(exc, DomainError) else "Неизвестная игра", show_alert=True)
 
     dp.include_router(router)
     return dp

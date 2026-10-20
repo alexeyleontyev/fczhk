@@ -8,6 +8,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 
 from .models import Auction, AuctionLot, Player, Publication, TeamRatingDraft
+from .notifications import extended_chat
 from .ratings import lock_ratings
 from .services import MOSCOW, DomainError, audit, ensure_pregame, entries, invalidate, save_teams
 
@@ -128,6 +129,13 @@ def apply_assignments(db, actor, match, auction):
 
 def announce(db, match, auction, text, cfg):
     # The caller holds the match lock. Replayed bids return before creating an outbox row.
+    chat = extended_chat(db, "auction_lot")
+    if not chat:
+        return
+    text += (
+        f"\n\nОсталось баллов: ⚪ Белые — {auction.white_budget} · "
+        f"⚫ Чёрные — {auction.black_budget}."
+    )
     version = (
         db.scalar(
             select(func.max(Publication.version)).where(
@@ -141,7 +149,7 @@ def announce(db, match, auction, text, cfg):
             match_id=match.id,
             kind="auction_lot",
             version=version,
-            chat_id=cfg.publication_chat_id,
+            chat_id=chat,
             text=f"🎯 Аукцион #{auction.id} · {match.starts_at.astimezone(MOSCOW):%d.%m.%Y}\n{text}",
         )
     )
@@ -167,6 +175,9 @@ def announce_lot(db, match, auction, lot, cfg):
 
 
 def announce_start(db, match, auction, cfg):
+    chat = extended_chat(db, "auction_start")
+    if not chat:
+        return
     lines = [
         f"🎯 Аукцион #{auction.id} начат!",
         f"Игра {match.starts_at.astimezone(MOSCOW):%d.%m.%Y · %H:%M МСК}",
@@ -177,13 +188,13 @@ def announce_start(db, match, auction, cfg):
         lines.append(
             f'{label}: <a href="tg://user?id={player.telegram_id}">{escape(player.alias)}</a>'
         )
-    lines.extend(["", "Капитаны, откройте игру и сделайте ставки. Бюджет каждого — 100 баллов."])
+    lines.extend(["", "Капитаны, откройте игру и сделайте ставки.", f"Осталось баллов: ⚪ Белые — {auction.white_budget} · ⚫ Чёрные — {auction.black_budget}."])
     db.add(
         Publication(
             match_id=match.id,
             kind="auction_start",
             version=auction.id,
-            chat_id=cfg.publication_chat_id,
+            chat_id=chat,
             text="\n".join(lines),
         )
     )

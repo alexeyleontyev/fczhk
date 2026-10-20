@@ -86,6 +86,24 @@ for (const viewport of [
   })
 }
 
+test('a temporary profile failure preserves the browser session for reload', async ({ page }) => {
+  const token = await configure(page)
+  let failed = false
+  await page.route('**/api/me', async (route) => {
+    if (!failed) {
+      failed = true
+      await route.fulfill({ status: 503, json: { detail: 'Временная ошибка профиля' } })
+    } else await route.continue()
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Войти через Telegram', exact: true }).click()
+  await complete(page, { id_token: 'telegram-signed-token' })
+  await expect(page.getByRole('alert')).toHaveText('Временная ошибка профиля')
+  expect(await page.evaluate(() => sessionStorage.getItem('fczhk-session'))).toBe(token)
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Выходим на поле.' })).toBeVisible()
+})
+
 test('browser login recovers after cancellation, membership denial and explicit retry', async ({
   page,
 }) => {

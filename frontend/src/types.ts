@@ -135,6 +135,16 @@ export type Template = {
   description: string
   cost: number
   payment_details: string
+  announcements_chat_id: string
+  extended_chat_id: string
+  extended_auction_enabled: boolean
+  extended_registration_enabled: boolean
+  extended_cancellation_enabled: boolean
+  announcement_enabled: boolean
+  announcement_minutes: number
+  payment_reminder_enabled: boolean
+  payment_reminder_weekday: number
+  payment_reminder_time: string
 }
 
 export type TelegramLoginOptions = {

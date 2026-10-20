@@ -2737,3 +2737,31 @@ footer > span:first-child {
   font-weight: 400;
   color: #667768;
 }
+/* Scheduled collection: one quiet row, with server-synchronized time. */
+.collection-countdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.collection-countdown strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.collection-countdown p {
+  margin: 4px 0 0;
+}
+.countdown-value {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.notification-settings {
+  margin: 20px 0;
+}
+.notification-settings > summary {
+  margin-bottom: 12px;
+}

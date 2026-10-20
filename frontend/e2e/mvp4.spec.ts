@@ -13,6 +13,12 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
     return response.json()
   }
   const people = await send('/players')
+  const originalTemplate = await send('/template')
+  await send('/template', 'PUT', {
+    ...originalTemplate,
+    extended_chat_id: '-1005678',
+    extended_auction_enabled: true,
+  })
   const white = people.find((p: { alias: string }) => p.alias === 'Алексей')
   const black = people.find((p: { alias: string }) => p.alias === 'Михаил')
   const guests = []
@@ -149,5 +155,7 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   } finally {
     await second.close()
+    const currentTemplate = await send('/template')
+    await send('/template', 'PUT', { ...originalTemplate, version: currentTemplate.version })
   }
 })

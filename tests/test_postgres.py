@@ -78,6 +78,31 @@ def test_parallel_lineup_confirmation_creates_one_snapshot(pg):
         assert len(list(db.scalars(select(TeamSnapshot)))) == 1
 
 
+def test_parallel_scheduled_announcements_are_created_once(pg):
+    from fczhk.models import Publication
+
+    factory, _ = pg
+    cfg = Settings(_env_file=None, env="test")
+    with factory() as db, db.begin():
+        template = db.get(GameTemplate, 1)
+        template.enabled, template.location = True, "Поле"
+        template.announcements_chat_id = "-1001111111"
+        template.announcement_enabled, template.announcement_minutes = True, 30
+    at = datetime(2032, 6, 1, 11, 30, tzinfo=MOSCOW)
+
+    def announce(_):
+        with factory() as db, db.begin():
+            return schedule_tick(db, cfg, at)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert list(pool.map(announce, range(4))) == [None] * 4
+    with factory() as db:
+        posts = list(db.scalars(select(Publication)))
+        assert len(posts) == 1 and posts[0].kind == "opening_notice"
+        assert posts[0].match_id is None
+        assert not list(db.scalars(select(Match)))
+
+
 @pytest.fixture
 def pg(request):
     namespace = "test_mvp1_" + uuid4().hex
@@ -117,6 +142,43 @@ def pg(request):
     with control.begin() as conn:
         conn.execute(text(f'DROP SCHEMA "{namespace}" CASCADE'))
     control.dispose()
+
+
+@pytest.mark.parametrize("pg", ["f97c3e8d210a"], indirect=True)
+def test_notification_migration_preserves_games_posts_and_settings_and_guards_downgrade(pg):
+    from fczhk.models import Publication
+
+    factory, _ = pg
+    with factory() as db, db.begin():
+        db.execute(text("UPDATE game_template SET enabled=false, version=7, start_time='20:30'"))
+        match = Match(game_day="2032-06-04", starts_at=datetime(2032, 6, 4, 20, 30, tzinfo=MOSCOW), location="Манеж", status="open")
+        db.add(match)
+        db.flush()
+        mid = match.id
+        db.execute(text(
+            "INSERT INTO publications (match_id, kind, version, text, status, attempts, message_ids, chat_id, stale, stale_marked, next_attempt_at) "
+            "VALUES (:mid, 'collection', 1, 'Старый пост', 'sent', 1, '[]', '-1005678', false, false, now())"
+        ), {"mid": mid})
+    config = Config("alembic.ini")
+    with factory.kw["bind"].begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+    with factory() as db, db.begin():
+        template = db.get(GameTemplate, 1)
+        assert not template.enabled and template.version == 7 and template.start_time == "20:30"
+        assert template.announcements_chat_id == template.extended_chat_id == ""
+        assert template.extended_auction_enabled and template.extended_registration_enabled and template.extended_cancellation_enabled
+        old = db.scalar(select(Publication))
+        assert old.text == "Старый пост" and old.match_id == mid and old.dedupe_key is None
+        assert not template.announcement_enabled and not template.payment_reminder_enabled
+        db.add(Publication(kind="opening_notice", version=1, dedupe_key="opening:test", text="Анонс"))
+    with pytest.raises(ValueError, match="downgrade потеряет данные"), factory.kw["bind"].begin() as connection:
+        config.attributes["connection"] = connection
+        command.downgrade(config, "f97c3e8d210a")
+    with factory() as db:
+        assert db.get(Match, mid).location == "Манеж"
+        assert len(list(db.scalars(select(Publication)))) == 2
 
 
 @pytest.mark.parametrize("custom", [False, True])
@@ -533,6 +595,7 @@ def test_simultaneous_auction_bids_resolve_once_and_persist(pg):
     factory, actor = pg
     cfg = Settings(_env_file=None, env="test", publication_chat_id="-1005678")
     with factory() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1005678"
         people = [Player(alias=f"Торги {i}", telegram_id=6000 + i) for i in range(3)]
         m = Match(game_day="2020-01-03", starts_at=now(), location="Поле", status="finalized")
         db.add_all([m, *people])

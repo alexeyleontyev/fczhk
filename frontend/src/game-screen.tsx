@@ -3,13 +3,14 @@ import { SectionTabs } from './section-tabs'
 import { ArrowUpRight, Check, Flag, MapPin, Plus, RefreshCw, Shield } from 'lucide-react'
 import { api } from './api'
 import { Button, Empty } from './ui'
-import { date, time, money, status } from './format'
+import { date, time, money, status, publicationKind } from './format'
 import { TemporaryRatings, score } from './ratings'
 import { Roster } from './roster'
 import { LineupEntry } from './team-board'
 import { MatchResult } from './results'
 import { AuctionEntry } from './auctions'
 import { PredictionPanel } from './predictions'
+import { CollectionCountdown } from './collection-countdown'
 import type { Match, Player, Position, Run, History } from './types'
 
 export function GameScreen({
@@ -74,6 +75,7 @@ export function GameScreen({
           )}
         </div>
       </div>
+      <CollectionCountdown refresh={refresh} currentGame={m} />
       {!m ? (
         <Empty
           title="Скоро новая игра"
@@ -279,7 +281,7 @@ export function GameScreen({
                               ? 'Оплата подтверждена'
                               : 'Оплату подтвердит администратор после перевода'}
                           </p>
-                          <div className="inline">
+                          <div className="inline wrap">
                             <Button
                               disabled={busy}
                               className="secondary compact"
@@ -307,7 +309,7 @@ export function GameScreen({
                       ) : (
                         <>
                           <strong>Будете играть?</strong>
-                          <div className="inline">
+                          <div className="inline wrap">
                             <Button
                               disabled={busy}
                               onClick={() =>
@@ -332,7 +334,7 @@ export function GameScreen({
                                 )
                               }
                             >
-                              Я вратарь
+                              Записаться вратарем
                             </Button>
                           </div>
                         </>
@@ -446,19 +448,7 @@ export function GameScreen({
                     <h3>Публикации</h3>
                     {m.publications.map((p) => (
                       <div className="publication" key={p.id}>
-                        <strong>
-                          {p.kind === 'teams'
-                            ? 'Составы'
-                            : p.kind === 'cancellation'
-                              ? 'Отмена игры'
-                              : p.kind === 'auction_start'
-                                ? 'Старт аукциона'
-                                : p.kind === 'result'
-                                  ? 'Итог игры'
-                                  : p.kind === 'auction_lot'
-                                    ? 'Аукцион'
-                                    : 'Сбор'}
-                        </strong>
+                        <strong>{publicationKind[p.kind] || p.kind}</strong>
                         <span>
                           {
                             (

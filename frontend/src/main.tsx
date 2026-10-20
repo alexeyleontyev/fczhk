@@ -114,12 +114,9 @@ function App() {
   async function loginBrowser(token: string) {
     setToken(token)
     setNotice(null)
-    try {
-      await refresh(true)
-    } catch (error) {
-      setToken('')
-      throw error
-    }
+    // Only a 401 invalidates the session (handled centrally in api.ts).
+    // A failed or navigation-aborted data request must preserve a valid login.
+    await refresh(true)
   }
   const action = (name: string) =>
     m

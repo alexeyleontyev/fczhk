@@ -283,6 +283,7 @@ def register(db: Session, actor: int, match: Match, position: str):
     )
     if r and r.active and r.position == position:
         return  # A duplicate join is deliberately a no-op.
+    changed = bool(r and r.active)
     if not r:
         r = Registration(match_id=match.id, player_id=actor, position=position)
         db.add(r)
@@ -298,6 +299,9 @@ def register(db: Session, actor: int, match: Match, position: str):
     match.version += 1
     db.flush()
     audit(db, actor, "registration.joined", match.id, registration_id=r.id, position=position)
+    from .notifications import registration_notice
+
+    registration_notice(db, match, actor, "changed" if changed else "joined", position)
 
 
 def cancel(db: Session, actor: int, match: Match, r: Registration, admin=False):
@@ -317,6 +321,10 @@ def cancel(db: Session, actor: int, match: Match, r: Registration, admin=False):
     if was_selected:
         invalidate(db, match)
     match.version += 1
+
+    from .notifications import registration_notice
+
+    registration_notice(db, match, r.player_id, "cancelled", r.position, actor)
 
 
 def confirm_payment(db: Session, actor: int, match: Match, r: Registration, paid: bool):
@@ -391,6 +399,9 @@ def add_participant(
     invalidate(db, match)
     match.version += 1
     audit(db, actor, "participant.added", match.id, player_id=player_id, replaced=replace_id)
+    from .notifications import registration_notice
+
+    registration_notice(db, match, player_id, "joined", position, actor)
 
 
 def promote(db: Session, actor: int, match: Match, position: str):
@@ -575,9 +586,14 @@ def publish_teams(db: Session, actor: int, match: Match, cfg: Settings):
 
 def schedule_tick(db: Session, cfg: Settings, at: datetime | None = None) -> int | None:
     template = db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
-    if not template or not template.enabled:
+    if not template:
         return None
     local = (at or now()).astimezone(MOSCOW)
+    from .notifications import schedule_notifications
+
+    schedule_notifications(db, template, local)
+    if not template.enabled:
+        return None
     opening, starts = schedule_window(template, local)
     game_day = starts.date().isoformat()
     if db.get(SkippedGameDay, game_day):

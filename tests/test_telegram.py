@@ -71,6 +71,33 @@ async def test_duplicate_telegram_callback_cannot_rejoin_after_later_cancel(
     assert call("GET", f"/matches/{game['id']}")["registrations"] == []
 
 
+async def test_bot_cancel_button_removes_own_registration_once(env, call, game, monkeypatch):
+    cfg, factory, *_ = env
+    cfg.bot_token = "123456:abcdefghijklmnopqrstuvwxyzABCDE"
+    monkeypatch.setattr(Bot, "__call__", AsyncMock(return_value=True))
+    with factory() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1002222222"
+    call("POST", f"/matches/{game['id']}/join", {"position": "keeper"}, role="player")
+    update = {
+        "update_id": 125,
+        "callback_query": {
+            "id": "cancel-once", "from": {"id": 102, "is_bot": False, "first_name": "Игрок"},
+            "chat_instance": "abc", "inline_message_id": "inline", "data": f"leave:{game['id']}",
+        },
+    }
+    await handle_update(cfg, factory, update)
+    assert call("GET", f"/matches/{game['id']}")["registrations"] == []
+    call("POST", f"/matches/{game['id']}/join", {"position": "field"}, role="player")
+    await handle_update(cfg, factory, update)
+    assert len(call("GET", f"/matches/{game['id']}")["registrations"]) == 1
+    from sqlalchemy import select
+
+    from fczhk.models import Publication
+
+    with factory() as db:
+        assert len(list(db.scalars(select(Publication).where(Publication.kind == "withdrawal")))) == 1
+
+
 async def test_membership_fails_closed_for_left_or_unavailable(env, monkeypatch):
     cfg = env[0]
     cfg.env = "production"

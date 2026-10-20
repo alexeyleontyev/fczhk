@@ -11,6 +11,18 @@ export const time = (s: string) =>
     timeZone: 'Europe/Moscow',
   })
 export const money = (n: number) => (n / 100).toLocaleString('ru-RU') + ' ₽'
+export const publicationKind: Record<string, string> = {
+  collection: 'Сбор',
+  teams: 'Составы',
+  cancellation: 'Отмена игры',
+  auction_start: 'Старт аукциона',
+  auction_lot: 'Аукцион',
+  result: 'Итог игры',
+  opening_notice: 'Анонс открытия',
+  payment_notice: 'Напоминание об оплате',
+  registration: 'Запись на игру',
+  withdrawal: 'Отмена записи',
+}
 export const status = {
   draft: 'Черновик',
   open: 'Запись открыта',

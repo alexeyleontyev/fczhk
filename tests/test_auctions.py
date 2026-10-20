@@ -7,13 +7,14 @@ from sqlalchemy import select
 
 from fczhk.auth import create_session
 from fczhk.db import now
-from fczhk.models import Auction, AuctionLot, Match, Player, Publication, Registration
+from fczhk.models import Auction, AuctionLot, GameTemplate, Match, Player, Publication, Registration
 
 
 @pytest.fixture
 def auction_game(env, call):
     cfg, factory, _, tokens, ids = env
     with factory() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1005678"
         m = Match(
             game_day="2020-01-03",
             starts_at=now() + timedelta(days=1),
@@ -217,6 +218,17 @@ def test_secret_bids_reveal_only_after_resolution(env, call, auction_game):
     assert call("GET", f"/matches/{mid}/auction", role="observer")["lots"] == second["lots"]
 
 
+def test_auction_notifications_can_be_disabled_without_disabling_bids(env, call, auction_game):
+    with env[1]() as db, db.begin():
+        db.get(GameTemplate, 1).extended_auction_enabled = False
+    auction = start(call, env, auction_game)
+    bid(call, auction_game, auction, 20)
+    result = bid(call, auction_game, auction, 10, "player")
+    assert result["budgets"] == {"white": 80, "black": 100}
+    with env[1]() as db:
+        assert not list(db.scalars(select(Publication)))
+
+
 def test_prices_and_chat_results_are_revealed_once_after_both_bids(env, call, auction_game):
     cfg, factory, _, _, _ = env
     cfg.publication_chat_id = "-1005678"
@@ -238,6 +250,7 @@ def test_prices_and_chat_results_are_revealed_once_after_both_bids(env, call, au
         assert player["alias"] in message.text
         assert "Белые: 17" in message.text and "Чёрные: 12" in message.text
         assert "Белые получают игрока за 17 баллов" in message.text
+        assert "Осталось баллов: ⚪ Белые — 83 · ⚫ Чёрные — 100" in message.text
     control(call, mid, resolved, "cancel")
     restarted = start(call, env, mid)
     bid(call, mid, restarted, 1)

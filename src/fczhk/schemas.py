@@ -102,6 +102,26 @@ class TemplateEdit(Version):
     description: str = Field(default="", max_length=1500)
     cost: int = Field(default=0, ge=0, le=100_000_000)
     payment_details: str = Field(default="", max_length=500)
+    announcements_chat_id: str = Field(default="", max_length=100)
+    extended_chat_id: str = Field(default="", max_length=100)
+    extended_auction_enabled: bool = True
+    extended_registration_enabled: bool = True
+    extended_cancellation_enabled: bool = True
+    announcement_enabled: bool = False
+    announcement_minutes: int = Field(default=30, ge=1, le=10080, strict=True)
+    payment_reminder_enabled: bool = False
+    payment_reminder_weekday: int = Field(default=3, ge=0, le=6, strict=True)
+    payment_reminder_time: str = Field(default="18:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+    @field_validator("announcements_chat_id", "extended_chat_id")
+    @classmethod
+    def valid_notification_chat(cls, value):
+        import re
+
+        value = value.strip()
+        if value and not re.fullmatch(r"-\d{1,20}|@[A-Za-z0-9_]{5,32}", value):
+            raise ValueError("Укажите ID чата вида -1001234567890 или @username канала")
+        return value
 
     @field_validator("location")
     @classmethod
@@ -114,6 +134,18 @@ class TemplateEdit(Version):
     def opening_before_game(self):
         if self.opening_weekday == self.game_weekday and self.opening_time >= self.start_time:
             raise ValueError("В день игры сбор должен открываться раньше начала игры")
+        if (self.announcement_enabled or self.payment_reminder_enabled) and not self.announcements_chat_id:
+            raise ValueError("Укажите чат анонсов до включения уведомлений")
+        if self.payment_reminder_enabled:
+            def minute(day, clock):
+                hour, minute = map(int, clock.split(":"))
+                return day * 1440 + hour * 60 + minute
+
+            opening = minute(self.opening_weekday, self.opening_time)
+            game = (minute(self.game_weekday, self.start_time) - opening) % 10080
+            reminder = (minute(self.payment_reminder_weekday, self.payment_reminder_time) - opening) % 10080
+            if not 0 < reminder < game:
+                raise ValueError("Напоминание об оплате должно быть после открытия сбора и до игры")
         return self
 
 
