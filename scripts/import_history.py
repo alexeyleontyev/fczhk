@@ -399,6 +399,21 @@ def import_games(
         overlapping = existing_days & {game["game_day"] for game in games}
         if overlapping:
             raise ValueError(f"Игры с такими датами уже есть: {sorted(overlapping)}")
+        imported_sheets = {
+            (entry.data.get("spreadsheet_id"), entry.data.get("sheet"))
+            for entry in db.scalars(select(Audit).where(Audit.action == "history.imported"))
+        }
+        repeated = [
+            game.get("sheet", game["game_day"])
+            for game in games
+            if (corrections["spreadsheet_id"], game.get("sheet", game["game_day"]))
+            in imported_sheets
+        ]
+        if repeated:
+            # An administrator may correct the game date without changing its source identity.
+            raise ValueError(
+                f"Эти листы уже есть в истории, возможно с уточнённой датой: {repeated}"
+            )
         for game in games:
             day = date.fromisoformat(game["game_day"])
             match = Match(

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import archive as arc
 from .. import predictions as pred
 from .. import results as res
 from .. import schemas as S
@@ -123,6 +124,18 @@ def router(ctx):
             old=before,
             new={key: str(getattr(m, key)) for key in S.GameFields.model_fields},
         )
+        return svc.match_data(db, m)
+
+    @app.put("/api/matches/{match_id}/archive-details")
+    def archive_details(
+        match_id: int,
+        body: S.ArchiveDetailsEdit,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
+        m = svc.get_match(db, match_id, body.version, lock=True)
+        arc.edit_details(db, p.id, m, body)
         return svc.match_data(db, m)
 
     @app.post("/api/matches/{match_id}/actions/{action}")
@@ -264,9 +277,25 @@ def router(ctx):
     def history(
         match_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
     ):
+        svc.get_match(db, match_id)
+        people = {person.id: person for person in db.scalars(select(Player))}
+
+        def actor_name(actor_id):
+            person = people.get(actor_id)
+            if person and person.merged_into:
+                person = people.get(person.merged_into)
+            return person.display_alias if person else None
+
         return dict(
             audit=[
-                dict(id=a.id, actor_id=a.actor_id, action=a.action, data=a.data, at=a.created_at)
+                dict(
+                    id=a.id,
+                    actor_id=a.actor_id,
+                    actor=actor_name(a.actor_id),
+                    action=a.action,
+                    data=a.data,
+                    at=a.created_at,
+                )
                 for a in db.scalars(
                     select(Audit)
                     .where(Audit.match_id == match_id)

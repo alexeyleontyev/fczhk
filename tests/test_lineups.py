@@ -1,4 +1,6 @@
 import copy
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import func, select
@@ -6,14 +8,176 @@ from sqlalchemy import func, select
 from fczhk.models import (
     Audit,
     BalanceRun,
+    GameTemplate,
     Match,
     MatchResult,
     Player,
+    Publication,
     ResultParticipant,
     TeamRatingSnapshot,
     TeamSnapshot,
 )
 from tests.test_ratings import add_guest, prepared, vote
+
+
+def share_payload(p):
+    return {k: p[k] for k in ("version", "roster_version", "fingerprint")} | dict(
+        assignments=p["result"]["variants"][0]["assignments"]
+    )
+
+
+def test_member_shares_proposal_with_verified_author_and_without_changing_teams(env, call, game):
+    m = prepared(call, game, n=16, keepers=2)
+    with env[1]() as db, db.begin():
+        template = db.get(GameTemplate, 1)
+        template.extended_chat_id = "-1001247505259"
+        # These switches govern automatic notices, not an explicit member publication.
+        template.extended_auction_enabled = False
+        template.extended_registration_enabled = False
+        db.get(Player, env[4]["player"]).telegram_username = "football_member"
+    p = preview(call, m, role="player")
+    assert p["share_available"]
+    body = share_payload(p)
+    before = counts(env)
+    sent = call("POST", f"/matches/{m['id']}/lineup/share", body, role="player")
+    assert sent["status"] == "pending"
+    assert call("POST", f"/matches/{m['id']}/lineup/share", body, role="player") == sent
+    after = counts(env)
+    assert after[0] == before[0] + 1
+    assert after[1:] == before[1:]
+    with env[1]() as db:
+        publication = db.get(Publication, sent["publication_id"])
+        assert publication.chat_id == "-1001247505259"
+        assert publication.kind == "lineup_share"
+        assert "Автор: Игрок (@football_member)" in publication.text
+        assert "⚽ Вариант состава" in publication.text
+        assert "⚪ Белые · 9" in publication.text and "⚫ Чёрные · 9" in publication.text
+        assert publication.text.count("Атака 24 · Защита 29 · Σ 53") == 2
+        assert all(person["alias"] in publication.text for person in p["players"])
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(Publication)
+                .where(Publication.kind == "lineup_share")
+            )
+            == 1
+        )
+    changed = call("GET", f"/matches/{m['id']}")
+    assert changed["registrations"] == m["registrations"]
+    assert changed["version"] == m["version"]
+    assert changed["status"] == m["status"]
+    assert changed["team_ratings"] == m["team_ratings"]
+    other = copy.deepcopy(body)
+    other["assignments"] = {
+        rid: "black" if team == "white" else "white" for rid, team in body["assignments"].items()
+    }
+    call("POST", f"/matches/{m['id']}/lineup/share", other, role="player", expected=429)
+
+
+@pytest.mark.parametrize(
+    "bad", ["no_chat", "missing", "extra", "unassigned", "one_team", "stale", "spoof", "anonymous"]
+)
+def test_invalid_shared_proposals_never_queue_messages(env, call, game, bad):
+    m = prepared(call, game)
+    with env[1]() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "" if bad == "no_chat" else "-1001247505259"
+    p = preview(call, m)
+    body = share_payload(p)
+    rid = next(iter(body["assignments"]))
+    expected = 409
+    if bad == "missing":
+        body["assignments"].pop(rid)
+    elif bad == "extra":
+        body["assignments"][99999] = "white"
+    elif bad == "unassigned":
+        body["assignments"][rid] = None
+        expected = 400
+    elif bad == "one_team":
+        body["assignments"] = {rid: "white" for rid in body["assignments"]}
+        expected = 400
+    elif bad == "stale":
+        vote(call, m["registrations"][0]["player_id"], attack=5, defense=1)
+    elif bad == "spoof":
+        body["author"] = "Администратор"
+        expected = 422
+    elif bad == "anonymous":
+        expected = 401
+    before = counts(env)
+    call(
+        "POST",
+        f"/matches/{m['id']}/lineup/share",
+        body,
+        role=None if bad == "anonymous" else "player",
+        expected=expected,
+    )
+    assert counts(env) == before
+    with env[1]() as db:
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(Publication)
+                .where(Publication.kind == "lineup_share")
+            )
+            == 0
+        )
+
+
+def test_shared_proposal_delivery_respects_current_chat(env, call, game):
+    from fczhk.notifications import delivery_allowed
+
+    m = prepared(call, game)
+    with env[1]() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1001247505259"
+    p = preview(call, m)
+    sent = call("POST", f"/matches/{m['id']}/lineup/share", share_payload(p), role="player")
+    with env[1]() as db, db.begin():
+        pub = db.get(Publication, sent["publication_id"])
+        assert delivery_allowed(db, pub)
+        db.get(GameTemplate, 1).extended_chat_id = ""
+        assert not delivery_allowed(db, pub)
+
+
+async def test_shared_proposal_worker_delivers_once_with_game_button(env, call, game):
+    from fczhk.worker import deliver_one
+
+    m = prepared(call, game)
+    with env[1]() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1001247505259"
+        # The fixture's collection post has already been delivered.
+        for pub in db.scalars(select(Publication)):
+            pub.status = "sent"
+    p = preview(call, m)
+    sent = call("POST", f"/matches/{m['id']}/lineup/share", share_payload(p), role="player")
+    bot = SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=123)))
+    assert await deliver_one(env[0], env[1], bot)
+    assert not await deliver_one(env[0], env[1], bot)
+    bot.send_message.assert_awaited_once()
+    assert bot.send_message.await_args.args[0] == "-1001247505259"
+    assert "Автор: Игрок" in bot.send_message.await_args.args[1]
+    assert bot.send_message.await_args.kwargs["parse_mode"] is None
+    button = bot.send_message.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
+    assert button.text == "Открыть игру"
+    with env[1]() as db:
+        pub = db.get(Publication, sent["publication_id"])
+        assert pub.status == "sent" and pub.message_ids == [123]
+
+
+def test_sharing_official_lineup_uses_frozen_scores(env, call, game):
+    m = prepared(call, game, keepers=2)
+    with env[1]() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1001247505259"
+    p = preview(call, m)
+    call("POST", f"/matches/{m['id']}/lineup/confirm", payload(p))
+    field = next(r for r in m["registrations"] if r["position"] == "field")
+    vote(call, field["player_id"], attack=0, defense=0)
+    current = call("GET", f"/matches/{m['id']}/lineup")
+    body = {k: current[k] for k in ("version", "roster_version", "fingerprint", "assignments")}
+    sent = call(
+        "POST", f"/matches/{m['id']}/lineup/share", {**body, "official": True}, role="player"
+    )
+    with env[1]() as db:
+        text = db.get(Publication, sent["publication_id"]).text
+        assert text.count("Атака 6 · Защита 11 · Σ 17") == 2
 
 
 def preview(call, m, method="community", **kwargs):

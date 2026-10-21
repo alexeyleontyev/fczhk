@@ -52,6 +52,16 @@ def router(ctx):
         m = visible(db, match_id, p, body.version, lock=True)
         return lineups.confirm(db, p.id, m, body, ctx.cfg)
 
+    @app.post("/api/matches/{match_id}/lineup/share")
+    def lineup_share(
+        match_id: int,
+        body: S.LineupShare,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = visible(db, match_id, p, body.version, lock=True)
+        return lineups.share(db, p, m, body, ctx.cfg)
+
     @app.put("/api/matches/{match_id}/registrations/{reg_id}/rating")
     def temporary_rating(
         match_id: int,

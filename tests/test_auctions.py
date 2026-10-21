@@ -185,7 +185,10 @@ def test_start_mentions_both_captains_once_and_escapes_names(env, call, auction_
         assert "Капитан &lt;⚽&gt; &amp; &quot;Белый&quot;" in notice.text
         assert "Аукцион" in notice.text and "начат!" in notice.text
         assert "white_bid" not in notice.text and "black_bid" not in notice.text
-        assert len(list(db.scalars(select(Publication)))) == 1
+        assert [p.kind for p in db.scalars(select(Publication).order_by(Publication.id))] == [
+            "auction_start",
+            "auction_open",
+        ]
     control(call, auction_game, auction, "cancel")
     restarted = start(call, env, auction_game)
     with factory() as db:
@@ -266,6 +269,84 @@ def test_prices_and_chat_results_are_revealed_once_after_both_bids(env, call, au
         assert [message.version for message in messages] == [1, 2]
 
 
+def test_new_lot_and_result_contain_current_teams_without_pending_bids(env, call, auction_game):
+    _, factory, _, _, ids = env
+    with factory() as db, db.begin():
+        keeper = Player(alias="Вратарь команды белых")
+        db.add(keeper)
+        db.flush()
+        db.add(
+            Registration(
+                match_id=auction_game,
+                player_id=keeper.id,
+                position="keeper",
+                selected=True,
+                team="white",
+            )
+        )
+    a = start(call, env, auction_game)
+    player = a["current"]["player"]
+    with factory() as db:
+        opened = db.scalar(select(Publication).where(Publication.kind == "auction_open"))
+        original = opened.text
+        assert f"Новый лот 1 · круг 1\nИгрок: {player['alias']}" in original
+        assert "⚪ Белые · полевые 1/3\n• Администратор · капитан" in original
+        assert "⚫ Чёрные · полевые 1/3\n• Игрок · капитан" in original
+        assert "🧤 Вратарь команды белых" in original
+        assert player["alias"] not in original.split("Текущие команды\n")[1]
+        assert "Осталось баллов: ⚪ Белые — 100 · ⚫ Чёрные — 100" in original
+    first = bid(call, auction_game, a, 17)
+    bid(call, auction_game, a, 17)  # Replay and reading the state do not open another lot.
+    call("GET", f"/matches/{auction_game}/auction", role="observer")
+    with factory() as db:
+        posts = list(db.scalars(select(Publication).order_by(Publication.id)))
+        assert [p.kind for p in posts] == ["auction_start", "auction_open"]
+        assert posts[1].text == original
+        assert "17 баллов" not in posts[1].text  # Current captain's bid remains private.
+    resolved = bid(call, auction_game, first, 12, "player")
+    bid(call, auction_game, a, 12, "player")
+    with factory() as db:
+        posts = list(db.scalars(select(Publication).order_by(Publication.id)))
+        assert [p.kind for p in posts] == [
+            "auction_start",
+            "auction_open",
+            "auction_lot",
+            "auction_open",
+        ]
+        assert posts[1].text == original  # Opening messages remain a snapshot of that moment.
+        for post in posts[2:]:
+            teams = post.text.split("Текущие команды\n")[1]
+            assert (
+                f"⚪ Белые · полевые 2/3\n• Администратор · капитан\n• {player['alias']} · 17 баллов"
+                in teams
+            )
+            assert "⚫ Чёрные · полевые 1/3\n• Игрок · капитан" in teams
+            assert "Осталось баллов: ⚪ Белые — 83 · ⚫ Чёрные — 100" in teams
+        assert f"Игрок: {resolved['current']['player']['alias']}" in posts[3].text
+        assert "Новый лот 2 · круг 1" in posts[3].text
+        assert "Белые: 17 баллов" in posts[2].text and "Чёрные: 12 баллов" in posts[2].text
+        assert "Белые: 17 баллов" not in posts[3].text and "Чёрные: 12 баллов" not in posts[3].text
+        assert ids["admin"] == resolved["captains"]["white"]
+
+
+async def test_disabled_auction_notifications_cancel_queued_new_lot(env, call, auction_game):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from fczhk.worker import deliver_one
+
+    start(call, env, auction_game)
+    with env[1]() as db, db.begin():
+        db.get(GameTemplate, 1).extended_auction_enabled = False
+        db.scalar(select(Publication).where(Publication.kind == "auction_start")).status = "sent"
+    bot = SimpleNamespace(send_message=AsyncMock())
+    assert await deliver_one(env[0], env[1], bot)
+    bot.send_message.assert_not_awaited()
+    with env[1]() as db:
+        opened = db.scalar(select(Publication).where(Publication.kind == "auction_open"))
+        assert opened.status == "cancelled"
+
+
 def test_positive_tie_has_no_price_team_or_charge_and_announces_next_round(env, call, auction_game):
     mid = auction_game
     auction = start(call, env, mid)
@@ -311,12 +392,16 @@ async def test_auction_result_is_delivered_once_by_existing_worker(env, call, au
     bot = Bot()
     assert await deliver_one(cfg, factory, bot)
     assert await deliver_one(cfg, factory, bot)
+    assert await deliver_one(cfg, factory, bot)
+    assert await deliver_one(cfg, factory, bot)
     assert not await deliver_one(cfg, factory, bot)
-    assert len(bot.sent) == 2 and all(row[0] == cfg.publication_chat_id for row in bot.sent)
+    assert len(bot.sent) == 4 and all(row[0] == cfg.publication_chat_id for row in bot.sent)
     assert bot.sent[0][2]["parse_mode"] == "HTML"
     assert "tg://user?id=101" in bot.sent[0][1] and "tg://user?id=102" in bot.sent[0][1]
-    assert alias in bot.sent[1][1] and "Белые получают игрока за 9 баллов" in bot.sent[1][1]
-    assert bot.sent[1][2]["parse_mode"] is None
+    assert alias in bot.sent[1][1] and "Новый лот 1" in bot.sent[1][1]
+    assert alias in bot.sent[2][1] and "Белые получают игрока за 9 баллов" in bot.sent[2][1]
+    assert "Новый лот 2" in bot.sent[3][1]
+    assert all(row[2]["parse_mode"] is None for row in bot.sent[1:])
     with factory() as db:
         message = db.scalar(select(Publication).where(Publication.kind == "auction_lot"))
         assert message.status == "sent" and message.message_ids == [42]
@@ -337,6 +422,17 @@ def test_ties_rounds_then_free_assignment_and_approval(env, call, auction_game):
         a = bid(call, mid, a, 0, "player")
     assert a["current"]["round"] == 2
     assert a["current"]["player"]["registration_id"] in original_ids
+    with env[1]() as db:
+        opened = list(
+            db.scalars(
+                select(Publication)
+                .where(Publication.kind == "auction_open")
+                .order_by(Publication.id)
+            )
+        )
+        assert len(opened) == 5
+        assert "Новый лот 5 · круг 2" in opened[-1].text
+        assert f"Игрок: {a['current']['player']['alias']}" in opened[-1].text
     for _ in range(2):
         bid(call, mid, a, 1)
         a = bid(call, mid, a, 0, "player")
@@ -348,6 +444,18 @@ def test_ties_rounds_then_free_assignment_and_approval(env, call, auction_game):
         messages = list(db.scalars(select(Publication).where(Publication.kind == "auction_lot")))
         assert len(messages) == 8  # Four ties, two won lots and two automatic assignments.
         assert sum("0 баллов.\nБез торгов" in message.text for message in messages) == 2
+        free = [message for message in messages if "0 баллов.\nБез торгов" in message.text]
+        for index, message in enumerate(free, 2):
+            alias = message.text.split("\n")[1].split(" → ")[0]
+            teams = message.text.split("Текущие команды\n", 1)[1]
+            assert "⚪ Белые · полевые 3/3" in teams
+            assert f"⚫ Чёрные · полевые {index}/3" in teams
+            assert f"• {alias} · 0 баллов" in teams
+            assert "Осталось баллов: ⚪ Белые — 98 · ⚫ Чёрные — 100" in teams
+        assert (
+            len(list(db.scalars(select(Publication).where(Publication.kind == "auction_open"))))
+            == 6
+        )
     assert sorted(a["assignments"].values()) == ["black"] * 3 + ["white"] * 3
     m = call("GET", f"/matches/{mid}")
     assert m["team_ratings"]["method"] == "auction"

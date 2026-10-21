@@ -32,15 +32,19 @@ export function MatchResult({
   admin,
   busy,
   run,
+  initialEditing = false,
+  onDone,
 }: {
   match: Match
   players: Player[]
   admin: boolean
   busy: boolean
   run: Run
+  initialEditing?: boolean
+  onDone?: () => void
 }) {
   const [data, setData] = useState<Result | null>(null)
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(initialEditing)
   const [error, setError] = useState('')
   useEffect(() => {
     let current = true
@@ -78,8 +82,9 @@ export function MatchResult({
   const score = (team: Team) => data?.goals.filter((g) => g.team === team).length || 0
   const name = (id: number | null) =>
     data?.participants.find((p) => p.player_id === id)?.alias || 'Автор неизвестен'
-  const save = (completed: boolean) =>
-    run(
+  const save = async (completed: boolean) => {
+    let success = false
+    await run(
       async () => {
         if (!data) return
         const saved = await api<Result>(`/matches/${m.id}/result`, 'PUT', {
@@ -94,9 +99,12 @@ export function MatchResult({
         })
         setData(saved)
         setEditing(false)
+        success = true
       },
       completed ? 'Результат сохранён. Статистика обновлена.' : 'Черновик результата сохранён',
     )
+    if (success) onDone?.()
+  }
   return (
     <section className="panel result-panel">
       <div className="section-title">
@@ -237,7 +245,12 @@ export function MatchResult({
                           ...data,
                           participants: [
                             ...data.participants,
-                            { player_id: p.id, alias: p.alias, team: 'white', position: 'field' },
+                            {
+                              player_id: p.id,
+                              alias: p.alias,
+                              team: 'white',
+                              position: p.shared_keeper ? 'keeper' : 'field',
+                            },
                           ],
                         })
                     }}
@@ -402,6 +415,7 @@ export function MatchResult({
                     void run(async () => {
                       setData(await api<Result>(`/matches/${m.id}/result`))
                       setEditing(false)
+                      onDone?.()
                     })
                   }
                 >

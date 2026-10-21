@@ -79,7 +79,7 @@ export function ArchiveScreen({
             <strong className="archive-score">
               {game.result
                 ? `${game.result.score.white} : ${game.result.score.black}`
-                : game.historical
+                : !(game.time_known ?? !game.historical)
                   ? '—'
                   : `${time(game.starts_at)}`}
               {game.result && !game.result.completed && <small>черновик</small>}

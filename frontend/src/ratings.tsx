@@ -232,14 +232,16 @@ export function RatingFlow({
   run: Run
   busy: boolean
 }) {
-  const eligible = players.filter((p) => p.id !== me.id)
+  const rateable = players.filter((p) => !p.shared_keeper)
+  const eligible = rateable.filter((p) => p.id !== me.id)
   const key = `fczhk-rating-progress:${me.id}`
   const [position, setPosition] = useState<Position>(() =>
     localStorage.getItem(`${key}:position`) === 'keeper' ? 'keeper' : 'field',
   )
-  const [playerId, setPlayerId] = useState<number | null>(
-    () => target ?? (Number(localStorage.getItem(key)) || eligible[0]?.id || null),
-  )
+  const [playerId, setPlayerId] = useState<number | null>(() => {
+    const saved = target ?? Number(localStorage.getItem(key))
+    return rateable.some((p) => p.id === saved) ? saved : (eligible[0]?.id ?? null)
+  })
   const [done, setDone] = useState(false)
   const [loaded, setData] = useState<ReviewData | null>(null)
   const [loadedKey, setLoadedKey] = useState('')
@@ -248,7 +250,7 @@ export function RatingFlow({
   const [defense, setDefense] = useState('')
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
-  const person = players.find((p) => p.id === playerId)
+  const person = rateable.find((p) => p.id === playerId)
   const index = eligible.findIndex((p) => p.id === playerId)
   useEffect(() => {
     let active = true
@@ -313,7 +315,7 @@ export function RatingFlow({
           onChange={(e) => setPlayerId(Number(e.target.value))}
         >
           {!person && <option value="">Выберите игрока</option>}
-          {(me.is_admin ? players : eligible).map((p) => (
+          {(me.is_admin ? rateable : eligible).map((p) => (
             <option key={p.id} value={p.id}>
               {p.alias}
             </option>

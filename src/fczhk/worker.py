@@ -48,7 +48,7 @@ def publication_parts(kind, content):
     return (
         [(content, "HTML")]
         if kind == "auction_start"
-        else [(part, None) for part in chunks(content, utf16=kind == "result")]
+        else [(part, None) for part in chunks(content, utf16=kind in ("result", "lineup_share"))]
     )
 
 

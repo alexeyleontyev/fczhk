@@ -11,6 +11,7 @@ import { MatchResult } from './results'
 import { AuctionEntry } from './auctions'
 import { PredictionPanel } from './predictions'
 import { CollectionCountdown } from './collection-countdown'
+import { ArchivedGameScreen, isArchivedMatch } from './archived-game-screen'
 import type { Match, Player, Position, Run, History } from './types'
 
 export function GameScreen({
@@ -27,6 +28,7 @@ export function GameScreen({
   me,
   openAuction,
   openLineup,
+  revision,
 }: {
   m: Match | null
   isAdmin: boolean
@@ -41,6 +43,7 @@ export function GameScreen({
   me: Player
   openAuction: (matchId: number) => void
   openLineup: (matchId: number) => void
+  revision: number
 }) {
   const [section, setSection] = useState('overview')
   const activeSection =
@@ -50,6 +53,18 @@ export function GameScreen({
       : section
   const auctionRunning = ['active', 'paused'].includes(m?.auction_status || '')
   const mine = m?.registrations.find((r) => r.player_id === me.id)
+  if (m && isArchivedMatch(m))
+    return (
+      <ArchivedGameScreen
+        match={m}
+        players={players}
+        admin={isAdmin}
+        busy={busy}
+        run={run}
+        revision={revision}
+        openLineup={openLineup}
+      />
+    )
   return (
     <>
       <div className="page-heading">

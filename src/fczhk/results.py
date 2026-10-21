@@ -51,7 +51,7 @@ def result_data(db, match):
         participants=[
             dict(
                 player_id=canonical[p.player_id],
-                alias=people[canonical[p.player_id]].alias,
+                alias=people[canonical[p.player_id]].display_alias,
                 team=p.team,
                 position=p.position,
             )
@@ -150,6 +150,8 @@ def save_result(db, actor, match, body, cfg):
     people, _ = identities(db)
     if any(pid not in people or people[pid].merged_into for pid in participants):
         raise DomainError("Игрок не найден или его карточка объединена. Обновите результат.", 409)
+    if any(people[pid].shared_keeper and p.position != "keeper" for pid, p in participants.items()):
+        raise DomainError("Общая карточка вратаря может участвовать только в воротах")
     if body.completed and {p.team for p in participants.values()} != {"white", "black"}:
         raise DomainError("Подтвердите фактических участников обеих команд")
     if len({g.id for g in body.goals}) != len(body.goals):
@@ -217,6 +219,8 @@ def player_stats(db, player_id, season: str | None = None):
     if player_id not in people:
         raise DomainError("Игрок не найден", 404)
     player_id = canonical[player_id]
+    if people[player_id].shared_keeper:
+        raise DomainError("У общей карточки вратаря нет персональной статистики")
     total = dict(games=0, wins=0, losses=0, draws=0, goals=0, assists=0)
     history, partners = [], Counter()
     partner_outcomes = {outcome: Counter() for outcome in ("wins", "draws", "losses")}
@@ -267,7 +271,9 @@ def player_stats(db, player_id, season: str | None = None):
         teammates = {
             canonical[p.player_id]
             for p in participants
-            if p.team == mine.team and canonical[p.player_id] != player_id
+            if p.team == mine.team
+            and canonical[p.player_id] != player_id
+            and not people[canonical[p.player_id]].shared_keeper
         }
         partners.update(teammates)
         partner_outcomes[outcome].update(teammates)
@@ -351,7 +357,7 @@ def leaderboards(db, season: str | None = None):
             goal_assist=total["goals"] + total["assists"],
         )
         for pid, total in totals.items()
-        if total["games"]
+        if total["games"] and not people[pid].shared_keeper
     ]
     metrics = ("points", "win_rate", "goals", "assists", "goal_assist")
     return {

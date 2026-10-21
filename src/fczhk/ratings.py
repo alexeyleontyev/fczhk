@@ -49,6 +49,8 @@ def catalog_player(db: Session, player_id: int) -> Player:
     p = db.get(Player, player_id)
     if not p or p.merged_into:
         raise DomainError("Игрок не найден", 404)
+    if p.shared_keeper:
+        raise DomainError("У общей карточки вратаря нет персональных оценок")
     return p
 
 
@@ -156,7 +158,11 @@ def public_averages(db: Session, ids: list[int], admin=False) -> dict:
 
 def community_leaderboards(db: Session) -> dict:
     """Current mean community scores, excluding unrated positions."""
-    people = list(db.scalars(select(Player).where(Player.merged_into.is_(None))))
+    people = [
+        p
+        for p in db.scalars(select(Player).where(Player.merged_into.is_(None)))
+        if not p.shared_keeper
+    ]
     scores = aggregate(db, [p.id for p in people])
     boards = {}
     for metric, position in (

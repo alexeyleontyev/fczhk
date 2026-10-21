@@ -281,4 +281,48 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   expect(await y(player)).toBeCloseTo(89, 0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/tactics-mobile-placement.png', fullPage: true })
+  const originalTemplate = await send('/template')
+  try {
+    await send('/template', 'PUT', {
+      ...originalTemplate,
+      extended_chat_id: '-1001247505259',
+    })
+    await page.reload()
+    const share = page.getByRole('button', { name: 'Поделиться в чат', exact: true })
+    await expect(share).toBeEnabled()
+    const shared = page.waitForResponse(
+      (r) => r.url().endsWith(`/matches/${m.id}/lineup/share`) && r.request().method() === 'POST',
+    )
+    await share.click()
+    expect((await shared).ok()).toBe(true)
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Состав поставлен в очередь' }),
+    ).toBeVisible()
+    const beforeClear = await send(`/matches/${m.id}`)
+    expect(
+      beforeClear.publications.filter((p: { kind: string }) => p.kind === 'lineup_share'),
+    ).toHaveLength(1)
+    await page.getByRole('button', { name: 'Очистить доску', exact: true }).click()
+    await expect(page.locator('.tactics-token')).toHaveCount(0)
+    await expect(
+      page.getByText('Выберите вариант или добавьте игроков из списка', { exact: true }),
+    ).toBeVisible()
+    await expect(share).toBeDisabled()
+    await page.reload()
+    await expect(page.locator('.tactics-empty')).toBeVisible()
+    await expect(page.locator('.tactics-token')).toHaveCount(0)
+    const afterClear = await send(`/matches/${m.id}`)
+    expect(afterClear.registrations).toEqual(beforeClear.registrations)
+    expect(afterClear.version).toBe(beforeClear.version)
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      )
+    }
+    await page.screenshot({ path: 'test-results/tactics-clear-mobile.png', fullPage: true })
+  } finally {
+    const current = await send('/template')
+    await send('/template', 'PUT', { ...originalTemplate, version: current.version })
+  }
 })

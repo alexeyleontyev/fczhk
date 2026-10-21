@@ -120,8 +120,11 @@ export function useNavigation(
     reset,
     visited: (tab: string) => visited.current.has(tab),
     setTab: (tab: string) => {
-      if (tab === 'game') reset()
-      else navigate({ tab, modal: null })
+      if (tab === 'game') {
+        current.current.matchId = null
+        select.current(null)
+        reset()
+      } else navigate({ tab, modal: null })
     },
     setModal: (modal: string | null) => {
       if (modal === null) {

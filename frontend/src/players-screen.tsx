@@ -128,31 +128,42 @@ export function PlayersScreen({
                   </strong>
                 </summary>
                 <div className="catalog-details">
-                  <span className="muted caption">{p.guest ? 'Гость' : 'Игрок клуба'}</span>
-                  <RatingAverages player={p} />
-                  <div className="inline wrap">
-                    <button className="button secondary compact" onClick={() => openStats(p.id)}>
-                      Статистика
-                    </button>
-                    {(p.id !== me.id || isAdmin) && (
-                      <button
-                        className="button ghost compact"
-                        aria-label={`Оценки: ${p.alias}`}
-                        onClick={() => openRatings(p.id)}
-                      >
-                        {p.id === me.id ? 'Посмотреть оценки' : 'Оценить'}
-                      </button>
-                    )}
-                    {isAdmin && p.guest && (
-                      <button
-                        className="button ghost compact"
-                        aria-label={`Связать гостя ${p.alias}`}
-                        onClick={() => setModal(`link:${p.id}`)}
-                      >
-                        <ArrowUpRight size={16} /> Связать с аккаунтом
-                      </button>
-                    )}
-                  </div>
+                  {p.shared_keeper ? (
+                    <span className="muted caption">
+                      Для игр с неизвестным или сменным вратарём.
+                    </span>
+                  ) : (
+                    <>
+                      <span className="muted caption">{p.guest ? 'Гость' : 'Игрок клуба'}</span>
+                      <RatingAverages player={p} />
+                      <div className="inline wrap">
+                        <button
+                          className="button secondary compact"
+                          onClick={() => openStats(p.id)}
+                        >
+                          Статистика
+                        </button>
+                        {(p.id !== me.id || isAdmin) && (
+                          <button
+                            className="button ghost compact"
+                            aria-label={`Оценки: ${p.alias}`}
+                            onClick={() => openRatings(p.id)}
+                          >
+                            {p.id === me.id ? 'Посмотреть оценки' : 'Оценить'}
+                          </button>
+                        )}
+                        {isAdmin && p.guest && (
+                          <button
+                            className="button ghost compact"
+                            aria-label={`Связать гостя ${p.alias}`}
+                            onClick={() => setModal(`link:${p.id}`)}
+                          >
+                            <ArrowUpRight size={16} /> Связать с аккаунтом
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </details>
             ))}

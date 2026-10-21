@@ -190,3 +190,29 @@ def test_import_reuses_linked_historical_alias_and_rejects_repeat_atomically(env
     unsafe["issues"] = ["Нерешённое уточнение"]
     with pytest.raises(ValueError, match="замечания"):
         importer.import_games([unsafe], env[0].database_url, corrections, "a" * 64, False)
+
+
+def test_corrected_archive_date_does_not_allow_reimporting_the_same_source_sheet(env, call):
+    import pytest
+    from sqlalchemy import func
+
+    cells, corrections = source()
+    game = importer.parse_game("2026-10-09", cells, corrections)
+    importer.import_games([game], env[0].database_url, corrections, "a" * 64, False)
+    match = call("GET", "/matches")[0]
+    call(
+        "PUT",
+        f"/matches/{match['id']}/archive-details",
+        dict(
+            version=match["version"],
+            game_day="2026-10-08",
+            start_time=None,
+            location="",
+            season="2026",
+        ),
+    )
+    with pytest.raises(ValueError, match="уточнённой датой"):
+        importer.import_games([game], env[0].database_url, corrections, "a" * 64, False)
+    with env[1]() as db:
+        assert db.scalar(select(func.count()).select_from(Match)) == 1
+        assert db.scalar(select(Match)).game_day == "2026-10-08"

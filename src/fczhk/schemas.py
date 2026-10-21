@@ -65,6 +65,20 @@ class GameEdit(GameFields, Version):
     pass
 
 
+class ArchiveDetailsEdit(Version):
+    game_day: date
+    start_time: str | None = Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+    location: str = Field(max_length=200)
+    season: str = Field(min_length=1, max_length=40)
+
+    @field_validator("location")
+    @classmethod
+    def valid_location(cls, value):
+        if value and len(value) < 2:
+            raise ValueError("Укажите место или оставьте поле пустым")
+        return value
+
+
 class Join(Payload):
     position: Position
 
@@ -230,6 +244,13 @@ class LineupConfirm(Version):
     placements: dict[int, LineupPoint] = Field(default_factory=dict)
     source: Literal["manual", "community", "game", "auction"] = "manual"
     variant: int = Field(default=0, ge=0, le=2)
+
+
+class LineupShare(Version):
+    roster_version: int = Field(ge=0)
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    assignments: dict[int, Team | None]
+    official: bool = False
 
 
 class ActualParticipant(Payload):

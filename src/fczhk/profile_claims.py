@@ -24,7 +24,7 @@ def serialize(db, claim):
 def request_claim(db, player_id, guest_id):
     lock_ratings(db)
     guest = db.get(Player, guest_id)
-    if not guest or guest.telegram_id is not None or guest.merged_into:
+    if not guest or guest.telegram_id is not None or guest.merged_into or guest.shared_keeper:
         raise DomainError("Выберите доступную историческую карточку", 409)
     claim = db.get(ProfileClaim, player_id)
     if claim and claim.status == "accepted":

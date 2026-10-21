@@ -98,6 +98,7 @@ def invalidate(db: Session, match: Match, roster_changed=True):
 
 
 def match_data(db: Session, match: Match) -> dict:
+    from .archive import metadata_flags
     from .auctions import latest
     from .ratings import effective, public_team_data
     from .results import result_data
@@ -118,7 +119,7 @@ def match_data(db: Session, match: Match) -> dict:
             dict(
                 id=r.id,
                 player_id=p.id,
-                alias=p.alias,
+                alias=p.display_alias,
                 guest=p.telegram_id is None,
                 position=r.position,
                 registered_at=r.registered_at,
@@ -141,14 +142,7 @@ def match_data(db: Session, match: Match) -> dict:
         )
     )
     auction = latest(db, match)
-    historical = (
-        db.scalar(
-            select(Audit.id)
-            .where(Audit.match_id == match.id, Audit.action == "history.imported")
-            .limit(1)
-        )
-        is not None
-    )
+    metadata = metadata_flags(db, [match.id])[match.id]
     cancellation = (
         db.scalar(
             select(Audit.data)
@@ -164,7 +158,7 @@ def match_data(db: Session, match: Match) -> dict:
         starts_at=match.starts_at,
         game_day=match.game_day,
         season=match.season,
-        historical=historical,
+        **metadata,
         location=match.location,
         description=match.description,
         cost=match.cost,
@@ -236,7 +230,7 @@ def text_for(db: Session, match: Match, kind: str) -> str:
         for r in entries(db, match.id):
             if r.selected and r.team == team:
                 p = db.get(Player, r.player_id)
-                lines.append(f"{'🧤 ' if r.position == 'keeper' else ''}{p.alias}")
+                lines.append(f"{'🧤 ' if r.position == 'keeper' else ''}{p.display_alias}")
     return "\n".join(lines)
 
 
@@ -361,6 +355,8 @@ def add_participant(
     p = db.get(Player, player_id)
     if not p or p.merged_into:
         raise DomainError("Игрок не найден", 404)
+    if p.shared_keeper and position != "keeper":
+        raise DomainError("Общую карточку можно добавить только вратарём")
     regs = entries(db, match.id)
     existing = next((r for r in regs if r.player_id == player_id), None)
     if existing and (existing.selected or existing.forced):
@@ -480,7 +476,7 @@ def swap_team_colors(db: Session, actor: int, match: Match):
             else [
                 dict(
                     player_id=r.player_id,
-                    alias=db.get(Player, r.player_id).alias,
+                    alias=db.get(Player, r.player_id).display_alias,
                     position=r.position,
                     team=r.team,
                 )
@@ -564,7 +560,7 @@ def approve(db: Session, actor: int, match: Match, cfg: Settings):
         teams=[
             dict(
                 player_id=r.player_id,
-                alias=db.get(Player, r.player_id).alias,
+                alias=db.get(Player, r.player_id).display_alias,
                 position=r.position,
                 team=r.team,
             )
@@ -640,6 +636,7 @@ def merge_guest(db: Session, actor: int, guest_id: int, target_id: int):
         or target.telegram_id is None
         or guest.merged_into
         or target.merged_into
+        or guest.shared_keeper
     ):
         raise DomainError("Нужны отдельная карточка гостя и зарегистрированный игрок")
     regs = list(db.scalars(select(Registration).where(Registration.player_id == guest_id)))

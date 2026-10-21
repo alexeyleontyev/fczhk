@@ -9,6 +9,7 @@ from .. import results as res
 from .. import schemas as S
 from .. import services as svc
 from ..auth import has_admin_access, public_player
+from ..guest_keepers import GUEST_KEEPER_ALIAS, LEGACY_KEEPER_ALIASES, SHARED_KEEPER_ALIASES
 from ..models import (
     Match,
     Player,
@@ -34,6 +35,8 @@ def router(ctx):
     def update_me(
         body: S.Name, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
     ):
+        if body.alias in SHARED_KEEPER_ALIASES:
+            raise svc.DomainError("Это имя общей карточки вратаря. Выберите другое.", 409)
         if db.scalar(select(Player.id).where(Player.alias == body.alias, Player.id != p.id)):
             raise svc.DomainError("Это имя игрока уже используется. Выберите другое.", 409)
         p = db.get(Player, p.id)
@@ -47,6 +50,11 @@ def router(ctx):
         people = list(
             db.scalars(select(Player).where(Player.merged_into.is_(None)).order_by(Player.alias))
         )
+        keepers = [x for x in people if x.shared_keeper]
+        if keepers:
+            representative = min(keepers, key=lambda x: x.id)
+            people = [x for x in people if not x.shared_keeper or x.id == representative.id]
+            people.sort(key=lambda x: x.display_alias)
         averages = rt.public_averages(db, [x.id for x in people], has_admin_access(p, cfg))
         return [{**public_player(x, cfg), "ratings": averages[x.id]} for x in people]
 
@@ -114,6 +122,16 @@ def router(ctx):
     def guest(
         body: S.Name, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
     ):
+        if body.alias in LEGACY_KEEPER_ALIASES:
+            raise svc.DomainError(f"Используйте общую карточку «{GUEST_KEEPER_ALIAS}».")
+        if body.alias == GUEST_KEEPER_ALIAS and db.scalar(
+            select(Player.id).where(
+                Player.alias.in_(SHARED_KEEPER_ALIASES),
+                Player.telegram_id.is_(None),
+                Player.merged_into.is_(None),
+            )
+        ):
+            raise svc.DomainError("Общая карточка вратаря уже есть в каталоге.", 409)
         if db.scalar(select(Player.id).where(Player.alias == body.alias)):
             raise svc.DomainError("Это имя игрока уже используется. Выберите другое.", 409)
         new = Player(alias=body.alias)

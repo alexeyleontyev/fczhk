@@ -59,16 +59,17 @@ test('expired session returns to login and admin can cancel a future game', asyn
     .getByRole('dialog')
     .getByRole('button', { name: 'Подтвердить отмену игры', exact: true })
     .click()
-  await expect(page.locator('.match-hero')).toContainText('Игра отменена')
+  await expect(page.locator('.archived-game')).toContainText('Игра отменена')
   await expect(page.getByRole('button', { name: 'Записаться полевым' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await page.getByRole('tab', { name: 'Диагностика', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Доставка сообщений' })).toBeVisible()
   await page.getByRole('button', { name: 'Игра', exact: true }).click()
+  await expect(page.locator('.match-hero')).toBeVisible()
   // Revoke when the explicit refresh reaches the server. A background poll must
   // not log out the app before Playwright can click the authenticated controls.
   await page.route(
-    `**/api/matches/${match.id}`,
+    '**/api/matches/current',
     async (route) => {
       const revoked = await page.request.post('/api/auth/logout', { headers })
       expect(revoked.ok()).toBe(true)
@@ -78,7 +79,7 @@ test('expired session returns to login and admin can cancel a future game', asyn
   )
   const expired = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === `/api/matches/${match.id}` && response.status() === 401,
+      new URL(response.url()).pathname === '/api/matches/current' && response.status() === 401,
   )
   await page.getByRole('button', { name: 'Обновить игру' }).click()
   await expired

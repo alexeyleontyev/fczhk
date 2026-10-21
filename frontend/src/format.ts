@@ -16,10 +16,12 @@ export const publicationKind: Record<string, string> = {
   teams: 'Составы',
   cancellation: 'Отмена игры',
   auction_start: 'Старт аукциона',
+  auction_open: 'Новый лот аукциона',
   auction_lot: 'Аукцион',
   result: 'Итог игры',
   opening_notice: 'Анонс открытия',
   payment_notice: 'Напоминание об оплате',
+  lineup_share: 'Вариант состава',
   registration: 'Запись на игру',
   withdrawal: 'Отмена записи',
 }

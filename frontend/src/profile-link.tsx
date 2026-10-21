@@ -77,7 +77,9 @@ export function ProfileLink({ players }: { players: Player[] }) {
               {players
                 .filter(
                   (p) =>
-                    p.guest && p.alias.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
+                    p.guest &&
+                    !p.shared_keeper &&
+                    p.alias.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
                 )
                 .map((p) => (
                   <option key={p.id} value={p.id}>

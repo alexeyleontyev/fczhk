@@ -17,13 +17,15 @@ import { PlayerStats } from './results'
 import { PredictionStandings } from './predictions'
 import { BrowserLogin } from './browser-login'
 import { Button, Modal } from './ui'
-import { date, time, initial } from './format'
+import { initial } from './format'
 import { GameForm, IncludeForm, TemplateForm } from './forms'
 import { useClubData } from './use-club-data'
 import { useNavigation } from './use-navigation'
 import { SectionTabs } from './section-tabs'
 import { TacticsScreen } from './tactics-screen'
 import { GameScreen } from './game-screen'
+import { isArchivedMatch } from './archived-game-screen'
+import { MatchHistory } from './match-history'
 import { AuctionScreen } from './auctions'
 import { ArchiveScreen } from './archive-screen'
 import { PlayersScreen } from './players-screen'
@@ -103,6 +105,13 @@ function App() {
   }
 
   const isAdmin = Boolean(me?.is_admin)
+  const archived = isArchivedMatch(m)
+  const activeNavigation =
+    archived && ['game', 'lineup'].includes(tab)
+      ? 'archive'
+      : ['auction', 'lineup'].includes(tab)
+        ? 'game'
+        : tab
 
   async function loginDemo(role: string) {
     await run(async () => {
@@ -213,9 +222,7 @@ function App() {
           return (
             <button
               key={id as string}
-              className={
-                tab === id || (id === 'game' && ['auction', 'lineup'].includes(tab)) ? 'active' : ''
-              }
+              className={activeNavigation === id ? 'active' : ''}
               onClick={() => setTab(id as string)}
             >
               <I size={18} />
@@ -257,13 +264,13 @@ function App() {
             </button>
           </div>
         )}
-        {m && ['game', 'lineup'].includes(tab) && (
+        {m && ['game', 'lineup'].includes(tab) && (!archived || tab === 'lineup') && (
           <div className="match-tabs" role="tablist" aria-label="Экраны игры">
             <button role="tab" aria-selected={tab === 'game'} onClick={() => openGame(m.id)}>
-              Игра
+              {archived ? 'Итог' : 'Игра'}
             </button>
             <button role="tab" aria-selected={tab === 'lineup'} onClick={() => openLineup(m.id)}>
-              Составы
+              {archived ? 'Поле' : 'Составы'}
             </button>
           </div>
         )}
@@ -294,6 +301,7 @@ function App() {
             me={me}
             openAuction={openAuction}
             openLineup={openLineup}
+            revision={dataRevision}
           />
         )}
         {tab === 'auction' && m && (
@@ -606,27 +614,7 @@ function App() {
       )}
       {modal === 'history' && history && (
         <Modal title="История изменений" close={() => setModal(null)}>
-          {history.teams.map((t) => (
-            <details key={t.version}>
-              <summary>
-                Состав версии {t.version} · {date(t.at)}
-              </summary>
-              {t.teams.map((p, i) => (
-                <p key={i}>
-                  {p.team === 'white' ? '⚪' : '⚫'} {p.alias}
-                </p>
-              ))}
-            </details>
-          ))}
-          {history.audit.map((a) => (
-            <div className="history-row" key={a.id}>
-              <strong>{a.action}</strong>
-              <small>
-                {date(a.at)} {time(a.at)}
-              </small>
-              <code>{JSON.stringify(a.data)}</code>
-            </div>
-          ))}
+          <MatchHistory history={history} />
         </Modal>
       )}
     </div>

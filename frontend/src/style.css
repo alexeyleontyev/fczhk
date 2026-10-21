@@ -2770,3 +2770,236 @@ footer > span:first-child {
 .notification-settings > summary {
   margin-bottom: 12px;
 }
+
+/* A completed game is a report, without collection or payment controls. */
+.archived-game {
+  max-width: 920px;
+  margin: 0 auto;
+}
+.archive-game-heading h1 {
+  font-size: clamp(26px, 4vw, 36px);
+  margin: 7px 0 13px;
+  letter-spacing: -1px;
+}
+.archive-game-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.archive-game-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.archive-game-meta svg {
+  flex-shrink: 0;
+}
+.archive-game-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 13px 0;
+}
+.archive-game-actions .button {
+  padding-left: 0;
+  padding-right: 0;
+}
+.archive-scoreboard {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 18px;
+  padding: 25px 0 13px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.archive-scoreboard > span {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.archive-scoreboard > strong {
+  font-size: clamp(36px, 6vw, 48px);
+  line-height: 1.2;
+  letter-spacing: -2px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.archive-team-dot {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.archive-team-dot.black {
+  background: #203b32;
+}
+.archive-outcome {
+  text-align: center;
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+.archive-strength {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: #eaf0e3;
+  border-radius: 12px;
+  margin-bottom: 23px;
+  gap: 12px;
+}
+.archive-strength strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.archive-teams {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.archive-team.panel {
+  padding: 17px;
+  min-width: 0;
+  margin: 0;
+}
+.archive-team .section-title {
+  gap: 7px;
+}
+.archive-team .section-title h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 16px;
+}
+.archive-team .section-title small {
+  font-size: 12px;
+  font-weight: 400;
+}
+.archive-team .section-title strong {
+  white-space: nowrap;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.archive-team .archive-team-dot {
+  width: 13px;
+  height: 13px;
+}
+.archive-player-ratings {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  font-size: 13px;
+}
+.archive-player-ratings th {
+  color: var(--muted);
+  font-weight: 400;
+}
+.archive-player-ratings th:first-child {
+  width: 52%;
+  text-align: left;
+}
+.archive-player-ratings th:not(:first-child) {
+  width: 16%;
+}
+.archive-player-ratings td,
+.archive-player-ratings th {
+  padding: 9px 0;
+  text-align: right;
+  vertical-align: middle;
+}
+.archive-player-ratings td {
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.archive-player-ratings td:first-child {
+  text-align: left;
+  overflow-wrap: anywhere;
+  padding-right: 6px;
+  font-variant-numeric: normal;
+}
+.archive-player-ratings td:last-child {
+  font-weight: 600;
+}
+.archive-player-ratings td:first-child svg {
+  color: var(--muted);
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.archive-player-ratings .rating-mark {
+  width: 17px;
+  height: 17px;
+  font-size: 11px;
+}
+.archive-goals {
+  border-top: 1px solid var(--line);
+  padding-top: 15px;
+  margin-top: 5px;
+}
+.archive-goals h4 {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 9px;
+  font-weight: 500;
+}
+.archive-goal {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.archive-goal > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.archive-goal small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.archive-editor {
+  margin: 18px 0;
+}
+.archive-details-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.archive-details-fields .button {
+  align-self: end;
+}
+.match-history .history-row {
+  font-size: 13px;
+}
+.match-history .history-row p {
+  margin-top: 5px;
+}
+.match-history .history-row small {
+  font-size: 11px;
+}
+.match-history details {
+  margin-top: 12px;
+}
+@media (max-width: 650px) {
+  .archive-teams {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .archive-details-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,15 +1,25 @@
-"""Read-only personal lineup previews; only confirmation writes the shared teams."""
+"""Personal previews and chat proposals; only confirmation changes shared teams."""
 
 import hashlib
 import json
 from copy import deepcopy
+from datetime import timedelta
 from functools import lru_cache
 from threading import Lock
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from . import auctions, balancing, game_balancing, game_ratings, ratings, results, services
-from .models import MatchResult, ResultParticipant, TeamRatingSnapshot, TeamSnapshot
+from .db import now
+from .models import (
+    Audit,
+    GameTemplate,
+    MatchResult,
+    Publication,
+    ResultParticipant,
+    TeamRatingSnapshot,
+    TeamSnapshot,
+)
 from .schemas import BalanceSettings
 from .services import DomainError
 
@@ -33,13 +43,12 @@ def data(db, match, cfg):
         inputs.append(
             {
                 **effective[r.id],
-                "alias": people[canonical[r.player_id]].alias,
+                "alias": people[canonical[r.player_id]].display_alias,
                 "game_mu": skill.get("mu", 25.0),
                 "game_sigma": skill.get("sigma", 25.0 / 3),
                 "game_count": skill.get("games", 0),
             }
         )
-    fingerprint = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
     frozen = None
     by_player = {}
     placements = {}
@@ -96,7 +105,7 @@ def data(db, match, cfg):
                 dict(
                     registration_id=-r.player_id,
                     player_id=pid,
-                    alias=people[pid].alias,
+                    alias=people[pid].display_alias,
                     position=r.position,
                     attack=score["attack"],
                     defense=score["defense"],
@@ -122,7 +131,7 @@ def data(db, match, cfg):
     return dict(
         version=match.version,
         roster_version=match.roster_version,
-        fingerprint=fingerprint,
+        fingerprint=hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest(),
         players=inputs,
         assignments=assignments,
         official_players=frozen,
@@ -130,9 +139,115 @@ def data(db, match, cfg):
         auction=public_auction,
         min_field_players=cfg.min_field_players,
         require_two_keepers=cfg.require_two_keepers,
+        share_available=bool((template := db.get(GameTemplate, 1)) and template.extended_chat_id),
         editable=match.status in ("open", "finalized", "approved")
         and not db.get(MatchResult, match.id),
     )
+
+
+def share(db, actor, match, body, cfg):
+    """Queue a member's proposal without modifying registrations or official teams."""
+    if match.status not in ("open", "finalized", "approved", "completed"):
+        raise DomainError("Этим составом нельзя поделиться", 409)
+    template = db.get(GameTemplate, 1)
+    if not template or not template.extended_chat_id:
+        raise DomainError("Администратор ещё не настроил чат для составов", 409)
+    ratings.lock_ratings(db)
+    current = data(db, match, cfg)
+    if body.roster_version != match.roster_version or body.fingerprint != current["fingerprint"]:
+        raise DomainError("Список или оценки изменились. Обновите доску перед публикацией.", 409)
+    players = current["official_players"] if body.official else current["players"]
+    if players is None:
+        raise DomainError("Утверждённый состав изменился. Обновите доску.", 409)
+    if set(body.assignments) != {p["registration_id"] for p in players}:
+        raise DomainError("Список участников изменился. Обновите доску.", 409)
+    if None in body.assignments.values() or set(body.assignments.values()) != {"white", "black"}:
+        raise DomainError("Перед публикацией распределите всех игроков по двум командам")
+    signature = hashlib.sha256(
+        json.dumps(
+            {**body.model_dump(mode="json"), "chat": template.extended_chat_id}, sort_keys=True
+        ).encode()
+    ).hexdigest()
+    prefix = f"lineup:{match.id}:{actor.id}:"
+    key = prefix + signature
+    existing = db.scalar(select(Publication).where(Publication.dedupe_key == key))
+    if existing:
+        if existing.status in ("failed", "uncertain", "cancelled", "expired"):
+            raise DomainError("Не удалось подтвердить отправку. Обратитесь к администратору.", 409)
+        return dict(publication_id=existing.id, status=existing.status)
+    if db.scalar(
+        select(Audit.id).where(
+            Audit.action == "lineup.shared",
+            Audit.match_id == match.id,
+            Audit.actor_id == actor.id,
+            Audit.created_at > now() - timedelta(minutes=1),
+        )
+    ):
+        raise DomainError("Подождите минуту перед публикацией нового варианта", 429)
+    author = actor.display_alias
+    if actor.telegram_username:
+        author += f" (@{actor.telegram_username})"
+    lines = [
+        "⚽ Вариант состава",
+        f"Автор: {author}",
+        f"Игра {match.starts_at.astimezone(services.MOSCOW):%d.%m.%Y · %H:%M МСК}",
+    ]
+    for team, label in (("white", "⚪ Белые"), ("black", "⚫ Чёрные")):
+        members = [p for p in players if body.assignments[p["registration_id"]] == team]
+
+        def score(kind):
+            relevant = [p for p in members if kind == "defense" or p["position"] == "field"]
+            known = [p[kind] for p in relevant if p[kind] is not None]
+            if not known:
+                return "—"
+            value = f"{sum(known):.2f}".rstrip("0").rstrip(".").replace(".", ",")
+            return ("≥ " if len(known) < len(relevant) else "") + value
+
+        values = [p["defense"] for p in members] + [
+            p["attack"] for p in members if p["position"] == "field"
+        ]
+        known = [value for value in values if value is not None]
+        total = f"{sum(known):.2f}".rstrip("0").rstrip(".").replace(".", ",") if known else "—"
+        if known and len(known) < len(values):
+            total = "≥ " + total
+        lines.extend(
+            [
+                "",
+                f"{label} · {len(members)}",
+                f"Атака {score('attack')} · Защита {score('defense')} · Σ {total}",
+            ]
+        )
+        for p in sorted(
+            members, key=lambda p: (p["position"] != "keeper", p["alias"], p["player_id"])
+        ):
+            lines.append(("🧤 " if p["position"] == "keeper" else "") + p["alias"])
+    version = (
+        db.scalar(
+            select(func.max(Publication.version)).where(
+                Publication.match_id == match.id, Publication.kind == "lineup_share"
+            )
+        )
+        or 0
+    ) + 1
+    publication = Publication(
+        match_id=match.id,
+        kind="lineup_share",
+        version=version,
+        dedupe_key=key,
+        chat_id=template.extended_chat_id,
+        text="\n".join(lines),
+    )
+    db.add(publication)
+    db.flush()
+    services.audit(
+        db,
+        actor.id,
+        "lineup.shared",
+        match.id,
+        publication_id=publication.id,
+        assignments=body.assignments,
+    )
+    return dict(publication_id=publication.id, status=publication.status)
 
 
 def complete_keepers(players, assignments):

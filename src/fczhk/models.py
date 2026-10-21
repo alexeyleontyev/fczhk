@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, UTCDateTime, now
+from .guest_keepers import GUEST_KEEPER_ALIAS, SHARED_KEEPER_ALIASES
 
 
 class Player(Base):
@@ -30,6 +31,14 @@ class Player(Base):
     admin_access_revision: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     merged_into: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+    @property
+    def shared_keeper(self) -> bool:
+        return self.telegram_id is None and self.alias in SHARED_KEEPER_ALIASES
+
+    @property
+    def display_alias(self) -> str:
+        return GUEST_KEEPER_ALIAS if self.shared_keeper else self.alias
 
 
 class LoginSession(Base):

@@ -302,6 +302,8 @@ export function IncludeForm({
   newGuest: () => void
 }) {
   const [position, setPosition] = useState<Position>('field')
+  const [playerId, setPlayerId] = useState('')
+  const sharedKeeper = Boolean(players.find((p) => p.id === Number(playerId))?.shared_keeper)
   return (
     <form
       onSubmit={(e: FormEvent<HTMLFormElement>) => {
@@ -319,7 +321,17 @@ export function IncludeForm({
       </p>
       <label>
         Игрок
-        <select name="player" required>
+        <select
+          name="player"
+          required
+          value={playerId}
+          onChange={(e) => {
+            setPlayerId(e.target.value)
+            if (players.find((p) => p.id === Number(e.target.value))?.shared_keeper) {
+              setPosition('keeper')
+            }
+          }}
+        >
           <option value="">Выберите из каталога</option>
           {players
             .filter(
@@ -338,7 +350,11 @@ export function IncludeForm({
       </Button>
       <label>
         Амплуа
-        <select value={position} onChange={(e) => setPosition(e.target.value as Position)}>
+        <select
+          value={position}
+          disabled={sharedKeeper}
+          onChange={(e) => setPosition(e.target.value as Position)}
+        >
           <option value="field">Полевой</option>
           <option value="keeper">Вратарь</option>
         </select>

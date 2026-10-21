@@ -9,6 +9,7 @@ export type Player = TelegramProfile & {
   id: number
   alias: string
   guest: boolean
+  shared_keeper?: boolean
   is_admin?: boolean
   is_owner?: boolean
   ratings?: { field: Average; keeper: Average }
@@ -44,6 +45,7 @@ export type Match = {
   game_day: string
   season: string
   historical: boolean
+  time_known?: boolean
   location: string
   description: string
   cost: number
@@ -187,12 +189,20 @@ declare global {
 }
 
 export type History = {
-  audit: { id: number; action: string; data: unknown; at: string }[]
+  audit: { id: number; actor?: string | null; action: string; data: unknown; at: string }[]
   teams: { version: number; teams: { alias: string; team: Team }[]; at: string }[]
 }
 export type MatchSummary = Pick<
   Match,
-  'id' | 'season' | 'starts_at' | 'game_day' | 'historical' | 'location' | 'status' | 'version'
+  | 'id'
+  | 'season'
+  | 'starts_at'
+  | 'game_day'
+  | 'historical'
+  | 'time_known'
+  | 'location'
+  | 'status'
+  | 'version'
 > & {
   participant_count: number
   result: { completed: boolean; score: Record<Team, number> } | null

@@ -127,11 +127,52 @@ def apply_assignments(db, actor, match, auction):
     save_teams(db, actor, match, values, reset=True)
 
 
-def announce(db, match, auction, text, cfg):
+def current_teams(db, match, auction, state=None):
+    """Public assignments only; pending bids must never enter chat messages."""
+    state = auction.state if state is None else state
+    prices = {
+        lot.registration_id: getattr(lot, lot.winner + "_bid")
+        for lot in db.scalars(
+            select(AuctionLot).where(
+                AuctionLot.auction_id == auction.id, AuctionLot.status == "won"
+            )
+        )
+        if lot.winner
+    }
+    prices.update({rid: 0 for rid in state["automatic"]})
+    keepers = [r for r in entries(db, match.id) if r.position == "keeper"]
+    lines = []
+    for team, label in (("white", "⚪ Белые"), ("black", "⚫ Чёрные")):
+        captain = getattr(auction, team + "_captain")
+        players = [
+            p
+            for p in state["participants"]
+            if state["assignments"].get(str(p["registration_id"])) == team
+        ]
+        lines.append(f"{label} · полевые {len(players)}/{getattr(auction, team + '_limit')}")
+        for p in sorted(
+            players, key=lambda p: (p["player_id"] != captain, p["alias"], p["player_id"])
+        ):
+            price = prices.get(p["registration_id"])
+            suffix = (
+                " · капитан"
+                if p["player_id"] == captain
+                else (f" · {price} баллов" if price is not None else "")
+            )
+            lines.append(f"• {p['alias']}{suffix}")
+        for keeper in keepers:
+            if state["keepers"].get(str(keeper.id)) == team:
+                lines.append(f"🧤 {db.get(Player, keeper.player_id).display_alias}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def announce(db, match, auction, text, cfg, *, kind="auction_lot", state=None):
     # The caller holds the match lock. Replayed bids return before creating an outbox row.
-    chat = extended_chat(db, "auction_lot")
+    chat = extended_chat(db, kind)
     if not chat:
         return
+    text += "\n\nТекущие команды\n" + current_teams(db, match, auction, state)
     text += (
         f"\n\nОсталось баллов: ⚪ Белые — {auction.white_budget} · "
         f"⚫ Чёрные — {auction.black_budget}."
@@ -139,7 +180,7 @@ def announce(db, match, auction, text, cfg):
     version = (
         db.scalar(
             select(func.max(Publication.version)).where(
-                Publication.match_id == match.id, Publication.kind == "auction_lot"
+                Publication.match_id == match.id, Publication.kind == kind
             )
         )
         or 0
@@ -147,13 +188,28 @@ def announce(db, match, auction, text, cfg):
     db.add(
         Publication(
             match_id=match.id,
-            kind="auction_lot",
+            kind=kind,
             version=version,
             chat_id=chat,
             text=f"🎯 Аукцион #{auction.id} · {match.starts_at.astimezone(MOSCOW):%d.%m.%Y}\n{text}",
         )
     )
     db.flush()
+
+
+def announce_new_lot(db, match, auction, lot, cfg):
+    player = next(
+        p for p in auction.state["participants"] if p["registration_id"] == lot.registration_id
+    )
+    announce(
+        db,
+        match,
+        auction,
+        f"Новый лот {lot.number} · круг {lot.round}\n"
+        f"Игрок: {player['alias']}\nКапитаны, сделайте ставки.",
+        cfg,
+        kind="auction_open",
+    )
 
 
 def announce_lot(db, match, auction, lot, cfg):
@@ -188,7 +244,13 @@ def announce_start(db, match, auction, cfg):
         lines.append(
             f'{label}: <a href="tg://user?id={player.telegram_id}">{escape(player.alias)}</a>'
         )
-    lines.extend(["", "Капитаны, откройте игру и сделайте ставки.", f"Осталось баллов: ⚪ Белые — {auction.white_budget} · ⚫ Чёрные — {auction.black_budget}."])
+    lines.extend(
+        [
+            "",
+            "Капитаны, откройте игру и сделайте ставки.",
+            f"Осталось баллов: ⚪ Белые — {auction.white_budget} · ⚫ Чёрные — {auction.black_budget}.",
+        ]
+    )
     db.add(
         Publication(
             match_id=match.id,
@@ -225,6 +287,7 @@ def advance(db, actor, match, auction, cfg):
                     auction,
                     f"{p['alias']} → {team} · 0 баллов.\nБез торгов: команда соперника заполнена.",
                     cfg,
+                    state=state,
                 )
         state["queue"] = []
         auction.state = state
@@ -253,17 +316,17 @@ def advance(db, actor, match, auction, cfg):
         )
         or 0
     ) + 1
-    db.add(
-        AuctionLot(
-            id=str(uuid4()),
-            auction_id=auction.id,
-            registration_id=item["registration_id"],
-            number=number,
-            round=item["round"],
-        )
+    lot = AuctionLot(
+        id=str(uuid4()),
+        auction_id=auction.id,
+        registration_id=item["registration_id"],
+        number=number,
+        round=item["round"],
     )
+    db.add(lot)
     auction.state = state
     db.flush()
+    announce_new_lot(db, match, auction, lot, cfg)
 
 
 def start(db, actor, match, body, cfg):

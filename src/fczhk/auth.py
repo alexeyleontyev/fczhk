@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from .db import now
+from .guest_keepers import SHARED_KEEPER_ALIASES
 from .models import LoginSession, Player
 from .services import DomainError, audit
 
@@ -71,7 +72,9 @@ def player_for_telegram(db, telegram_id: int, name: str, username=_USERNAME_UNSE
         base = name[:60].strip() or "Игрок"
         for attempt in range(10):
             suffix = (
-                "" if attempt == 0 else f" · {telegram_id}" + (f".{attempt}" if attempt > 1 else "")
+                ""
+                if attempt == 0 and base not in SHARED_KEEPER_ALIASES
+                else f" · {telegram_id}" + (f".{attempt}" if attempt > 1 else "")
             )
             alias = base[: 60 - len(suffix)] + suffix
             try:
@@ -112,7 +115,9 @@ def has_admin_access(player: Player, cfg) -> bool:
 
 
 def public_player(player: Player, cfg, own=False):
-    data = dict(id=player.id, alias=player.alias, guest=player.telegram_id is None)
+    data = dict(id=player.id, alias=player.display_alias, guest=player.telegram_id is None)
+    if player.shared_keeper:
+        data["shared_keeper"] = True
     if own:
         data.update(telegram_profile(player))
         data["is_admin"] = has_admin_access(player, cfg)

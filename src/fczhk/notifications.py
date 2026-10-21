@@ -12,6 +12,7 @@ from .scheduling import MOSCOW, schedule_window
 SCHEDULED_KINDS = ("opening_notice", "payment_notice")
 EXTENDED_TYPES = {
     "auction_start": "extended_auction_enabled",
+    "auction_open": "extended_auction_enabled",
     "auction_lot": "extended_auction_enabled",
     "registration": "extended_registration_enabled",
     "withdrawal": "extended_cancellation_enabled",
@@ -31,15 +32,15 @@ def registration_notice(db, match, player_id, action, position, actor=None):
     player = db.get(Player, player_id)
     label = "полевым" if position == "field" else "вратарём"
     if action == "cancelled":
-        line = f"➖ {player.alias} отменил запись на игру."
+        line = f"➖ {player.display_alias} отменил запись на игру."
         if actor is not None and actor != player_id:
-            line = f"➖ Администратор отменил запись игрока {player.alias}."
+            line = f"➖ Администратор отменил запись игрока {player.display_alias}."
     elif action == "changed":
-        line = f"🔄 {player.alias} изменил амплуа: теперь записан {label}."
+        line = f"🔄 {player.display_alias} изменил амплуа: теперь записан {label}."
     elif actor is not None and actor != player_id:
-        line = f"➕ Администратор добавил игрока {player.alias} {label}."
+        line = f"➕ Администратор добавил игрока {player.display_alias} {label}."
     else:
-        line = f"➕ {player.alias} записался {label}."
+        line = f"➕ {player.display_alias} записался {label}."
     db.add(
         Publication(
             match_id=match.id,
@@ -155,6 +156,9 @@ def delivery_allowed(db, publication, at=None):
     at = at or now()
     if publication.expires_at and publication.expires_at <= at:
         return False
+    if publication.kind == "lineup_share":
+        template = db.get(GameTemplate, 1)
+        return bool(template and template.extended_chat_id == publication.chat_id)
     if publication.kind in EXTENDED_TYPES:
         return extended_chat(db, publication.kind) == publication.chat_id
     if publication.kind not in SCHEDULED_KINDS:

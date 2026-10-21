@@ -2,7 +2,8 @@
 
 from sqlalchemy import case, func, select
 
-from .models import Audit, MatchResult, Registration, ResultGoal, ResultParticipant
+from .archive import metadata_flags
+from .models import MatchResult, Registration, ResultGoal, ResultParticipant
 from .services import selection
 
 
@@ -10,13 +11,7 @@ def summaries(db, matches):
     ids = [m.id for m in matches]
     if not ids:
         return []
-    historical = set(
-        db.scalars(
-            select(Audit.match_id).where(
-                Audit.match_id.in_(ids), Audit.action == "history.imported"
-            )
-        )
-    )
+    metadata = metadata_flags(db, ids)
     results = {
         r.match_id: r for r in db.scalars(select(MatchResult).where(MatchResult.match_id.in_(ids)))
     }
@@ -53,7 +48,7 @@ def summaries(db, matches):
             game_day=m.game_day,
             season=m.season,
             location=m.location,
-            historical=m.id in historical,
+            **metadata[m.id],
             status=m.status,
             version=m.version,
             participant_count=counts[m.id]

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { GripVertical } from 'lucide-react'
+import { Eraser, GripVertical, Share2 } from 'lucide-react'
 import { api } from './api'
 import { Button } from './ui'
 import { TeamDots } from './team-board'
@@ -27,6 +27,7 @@ type Lineup = {
   assignments: Record<string, Team | null>
   placements: Record<string, Point>
   editable: boolean
+  share_available?: boolean
   min_field_players: number
   require_two_keepers: boolean
   auction: {
@@ -328,6 +329,38 @@ export function TacticsScreen({
     setDraft(null)
     setPreview(null)
   }
+  function clearBoard() {
+    setDraft({
+      version: data!.version,
+      roster_version: data!.roster_version,
+      fingerprint: data!.fingerprint,
+      assignments: Object.fromEntries(data!.players.map((p) => [p.registration_id, null])),
+      placements: {},
+      source: 'manual',
+      variant: 0,
+    })
+    setPreview(null)
+    setSelected(null)
+    setGhost(null)
+    drag.current = null
+    setError('')
+    setRosterOpen(true)
+  }
+  const canShare =
+    people.length > 0 &&
+    people.every((p) => assignments[p.registration_id]) &&
+    people.some((p) => assignments[p.registration_id] === 'white') &&
+    people.some((p) => assignments[p.registration_id] === 'black')
+  async function share() {
+    const d = base()
+    await api(`/matches/${m.id}/lineup/share`, 'POST', {
+      version: d.version,
+      roster_version: d.roster_version,
+      fingerprint: d.fingerprint,
+      assignments,
+      official: !draft && Boolean(data!.official_players),
+    })
+  }
   return (
     <div className="tactics-screen">
       <div className="section-title">
@@ -367,6 +400,31 @@ export function TacticsScreen({
           </button>
         </div>
       )}
+      <div className="inline wrap">
+        {data.editable && (
+          <Button
+            className="ghost compact"
+            disabled={disabled || !people.some((p) => assignments[p.registration_id])}
+            onClick={clearBoard}
+          >
+            <Eraser size={16} /> Очистить доску
+          </Button>
+        )}
+        <Button
+          className="ghost compact"
+          disabled={busy || working || stale || !canShare || !data.share_available}
+          title={
+            !data.share_available
+              ? 'Администратор ещё не настроил чат для составов'
+              : !canShare
+                ? 'Распределите всех игроков по двум командам'
+                : 'Отправить вариант состава в чат ФК Желтый Колобок'
+          }
+          onClick={() => void run(share, 'Состав поставлен в очередь отправки в чат')}
+        >
+          <Share2 size={16} /> Поделиться в чат
+        </Button>
+      </div>
       <div
         className="tactics-pitch"
         ref={board}
@@ -617,22 +675,6 @@ export function TacticsScreen({
         </p>
         {data.editable && (
           <div className="inline">
-            <Button
-              className="ghost compact"
-              disabled={disabled}
-              onClick={() => {
-                const d = base()
-                setDraft({
-                  ...d,
-                  source: 'manual',
-                  assignments: Object.fromEntries(people.map((p) => [p.registration_id, null])),
-                  placements: {},
-                })
-                setPreview(null)
-              }}
-            >
-              Очистить доску
-            </Button>
             <Button
               className="ghost compact"
               disabled={disabled}

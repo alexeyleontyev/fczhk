@@ -78,6 +78,101 @@ def test_parallel_lineup_confirmation_creates_one_snapshot(pg):
         assert len(list(db.scalars(select(TeamSnapshot)))) == 1
 
 
+def test_parallel_lineup_sharing_queues_one_message(pg):
+    from fczhk import lineups
+    from fczhk.models import Audit, Publication
+    from fczhk.schemas import LineupShare
+
+    factory, pid = pg
+    cfg = Settings(_env_file=None, env="test")
+    with factory() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1001247505259"
+        match = Match(
+            game_day="2026-10-02",
+            starts_at=datetime(2026, 10, 2, 20, tzinfo=MOSCOW),
+            location="Доска",
+            status="open",
+        )
+        other = Player(alias="Соперник")
+        db.add_all([match, other])
+        db.flush()
+        db.add_all(
+            Registration(match_id=match.id, player_id=p, position="field", paid=True)
+            for p in (pid, other.id)
+        )
+        db.flush()
+        current = lineups.data(db, match, cfg)
+        regs = sorted(current["players"], key=lambda p: p["registration_id"])
+        body = LineupShare(
+            version=match.version,
+            roster_version=match.roster_version,
+            fingerprint=current["fingerprint"],
+            assignments={regs[0]["registration_id"]: "white", regs[1]["registration_id"]: "black"},
+        )
+        mid = match.id
+
+    def share(_):
+        with factory() as db, db.begin():
+            match = get_match(db, mid, body.version, lock=True)
+            return lineups.share(db, db.get(Player, pid), match, body, cfg)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = list(pool.map(share, range(2)))
+    assert first == second and first["status"] == "pending"
+    with factory() as db:
+        assert len(list(db.scalars(select(Publication)))) == 1
+        assert len(list(db.scalars(select(Audit).where(Audit.action == "lineup.shared")))) == 1
+        assert db.get(Match, mid).version == body.version
+        assert all(r.team is None for r in db.scalars(select(Registration)))
+
+
+def test_parallel_archive_edits_keep_one_correction_and_original_import(pg):
+    from fczhk.archive import edit_details, metadata_flags
+    from fczhk.models import Audit, MatchResult
+    from fczhk.schemas import ArchiveDetailsEdit
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        match = Match(
+            game_day="2026-06-26",
+            starts_at=datetime(2026, 6, 26, 12, tzinfo=MOSCOW),
+            location="Не указано в историческом источнике",
+            status="completed",
+        )
+        db.add(match)
+        db.flush()
+        db.add(MatchResult(match_id=match.id, completed=True))
+        db.add(Audit(match_id=match.id, action="history.imported", data={"date_only": True}))
+        mid, version = match.id, match.version
+    body = ArchiveDetailsEdit(
+        version=version, game_day="2026-06-26", start_time="20:30", location="Манеж", season="2026"
+    )
+
+    def edit(_):
+        try:
+            with factory() as db, db.begin():
+                db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
+                match = get_match(db, mid, version, lock=True)
+                edit_details(db, actor, match, body)
+            return "ok"
+        except DomainError as exc:
+            assert exc.status == 409
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(edit, range(2))) == ["conflict", "ok"]
+    with factory() as db:
+        assert metadata_flags(db, [mid])[mid] == {"historical": True, "time_known": True}
+        edits = list(
+            db.scalars(select(Audit).where(Audit.action == "match.archive_details_edited"))
+        )
+        assert len(edits) == 1 and edits[0].data["old"]["time_known"] is False
+        assert db.scalar(select(Audit).where(Audit.action == "history.imported")).data == {
+            "date_only": True
+        }
+        assert db.get(MatchResult, mid).completed
+
+
 def test_parallel_scheduled_announcements_are_created_once(pg):
     from fczhk.models import Publication
 
@@ -167,7 +262,10 @@ def test_telegram_username_migration_preserves_identity_and_sessions(pg):
         assert player.telegram_username is None
         assert db.get(LoginSession, "a" * 64).player_id == pid
         player.telegram_username = "saved_username"
-    with pytest.raises(ValueError, match="downgrade потеряет данные"), factory.kw["bind"].begin() as connection:
+    with (
+        pytest.raises(ValueError, match="downgrade потеряет данные"),
+        factory.kw["bind"].begin() as connection,
+    ):
         config.attributes["connection"] = connection
         command.downgrade(config, "0b7c6d9e214f")
     with factory() as db, db.begin():
@@ -189,14 +287,22 @@ def test_notification_migration_preserves_games_posts_and_settings_and_guards_do
     factory, _ = pg
     with factory() as db, db.begin():
         db.execute(text("UPDATE game_template SET enabled=false, version=7, start_time='20:30'"))
-        match = Match(game_day="2032-06-04", starts_at=datetime(2032, 6, 4, 20, 30, tzinfo=MOSCOW), location="Манеж", status="open")
+        match = Match(
+            game_day="2032-06-04",
+            starts_at=datetime(2032, 6, 4, 20, 30, tzinfo=MOSCOW),
+            location="Манеж",
+            status="open",
+        )
         db.add(match)
         db.flush()
         mid = match.id
-        db.execute(text(
-            "INSERT INTO publications (match_id, kind, version, text, status, attempts, message_ids, chat_id, stale, stale_marked, next_attempt_at) "
-            "VALUES (:mid, 'collection', 1, 'Старый пост', 'sent', 1, '[]', '-1005678', false, false, now())"
-        ), {"mid": mid})
+        db.execute(
+            text(
+                "INSERT INTO publications (match_id, kind, version, text, status, attempts, message_ids, chat_id, stale, stale_marked, next_attempt_at) "
+                "VALUES (:mid, 'collection', 1, 'Старый пост', 'sent', 1, '[]', '-1005678', false, false, now())"
+            ),
+            {"mid": mid},
+        )
     config = Config("alembic.ini")
     with factory.kw["bind"].begin() as connection:
         config.attributes["connection"] = connection
@@ -206,12 +312,21 @@ def test_notification_migration_preserves_games_posts_and_settings_and_guards_do
         template = db.get(GameTemplate, 1)
         assert not template.enabled and template.version == 7 and template.start_time == "20:30"
         assert template.announcements_chat_id == template.extended_chat_id == ""
-        assert template.extended_auction_enabled and template.extended_registration_enabled and template.extended_cancellation_enabled
+        assert (
+            template.extended_auction_enabled
+            and template.extended_registration_enabled
+            and template.extended_cancellation_enabled
+        )
         old = db.scalar(select(Publication))
         assert old.text == "Старый пост" and old.match_id == mid and old.dedupe_key is None
         assert not template.announcement_enabled and not template.payment_reminder_enabled
-        db.add(Publication(kind="opening_notice", version=1, dedupe_key="opening:test", text="Анонс"))
-    with pytest.raises(ValueError, match="downgrade потеряет данные"), factory.kw["bind"].begin() as connection:
+        db.add(
+            Publication(kind="opening_notice", version=1, dedupe_key="opening:test", text="Анонс")
+        )
+    with (
+        pytest.raises(ValueError, match="downgrade потеряет данные"),
+        factory.kw["bind"].begin() as connection,
+    ):
         config.attributes["connection"] = connection
         command.downgrade(config, "f97c3e8d210a")
     with factory() as db:
@@ -672,6 +787,11 @@ def test_simultaneous_auction_bids_resolve_once_and_persist(pg):
         assert len(list(db.scalars(select(AuctionLot)))) == 1
         messages = list(db.scalars(select(Publication).where(Publication.kind == "auction_lot")))
         assert len(messages) == 2  # One winning lot and one free assignment, despite replayed bids.
+        opened = list(db.scalars(select(Publication).where(Publication.kind == "auction_open")))
+        assert len(opened) == 1 and "Новый лот 1 · круг 1" in opened[0].text
+        assert all("Текущие команды" in message.text for message in [*opened, *messages])
+        free = next(message for message in messages if "Без торгов" in message.text)
+        assert "⚪ Белые · полевые 2/2" in free.text and "⚫ Чёрные · полевые 2/2" in free.text
         assert data(db, a, actor)["prices"] == {
             str(lot.registration_id): 1 for lot in db.scalars(select(AuctionLot))
         } | {str(rid): 0 for rid in a.state["automatic"]}

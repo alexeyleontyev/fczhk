@@ -1,5 +1,35 @@
 import { expect, test } from '@playwright/test'
 
+test('one shared keeper card has no personal ratings or profile linking actions', async ({
+  page,
+  request,
+}) => {
+  const auth = await (await request.post('/api/auth/demo/admin')).json()
+  const headers = { Authorization: `Bearer ${auth.token}` }
+  const created = await request.post('/api/players/guests', {
+    headers,
+    data: { alias: 'Приглашённый вратарь' },
+  })
+  expect(created.status()).toBe(201)
+  await page.addInitScript((token) => sessionStorage.setItem('fczhk-session', token), auth.token)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Игроки', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Поиск игроков', exact: true }).fill('приглашенный')
+  const card = page.locator('.catalog-person')
+  await expect(card).toHaveCount(1)
+  await expect(card.getByRole('heading')).toContainText('Приглашённый вратарь')
+  await card.locator('summary').click()
+  await expect(card).toContainText('Для игр с неизвестным или сменным вратарём.')
+  await expect(card.getByRole('button')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Оценить игроков', exact: true }).click()
+  await expect(
+    page.getByLabel('Оцениваемый игрок').getByRole('option', {
+      name: 'Приглашённый вратарь',
+      exact: true,
+    }),
+  ).toHaveCount(0)
+})
+
 test('compact workspaces: one search, lazy ratings, circled metrics and details on demand', async ({
   page,
   request,
