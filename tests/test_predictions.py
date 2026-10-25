@@ -86,18 +86,18 @@ def result(call, mid, white, black, completed=True):
 @pytest.mark.parametrize(
     "predicted,actual,value",
     [
-        ((3, 1), (2, 0), 3),
-        ((1, 3), (0, 2), 3),
-        ((4, 1), (2, 0), 1),
-        ((1, 4), (0, 2), 1),
+        ((3, 1), (2, 0), 2),
+        ((1, 3), (0, 2), 2),
+        ((4, 1), (2, 0), 2),
+        ((1, 4), (0, 2), 2),
         ((3, 1), (0, 2), 0),
         ((1, 3), (2, 0), 0),
-        ((0, 0), (2, 2), 1),
-        ((4, 4), (0, 0), 1),
-        ((1, 1), (1, 1), 1),
-        ((1, 1), (3, 1), 0),
-        ((2, 1), (0, 0), 0),
-        ((2, 0), (2, 0), 3),
+        ((0, 0), (2, 2), 3),
+        ((4, 4), (0, 0), 3),
+        ((1, 1), (1, 1), 3),
+        ((1, 1), (3, 1), 0.5),
+        ((2, 1), (0, 0), 0.5),
+        ((2, 0), (2, 0), 2),
     ],
 )
 def test_scoring_rules(predicted, actual, value):
@@ -306,13 +306,13 @@ def test_standings_only_finalized_results_recalculate_without_accumulation(
     assert all(row["settled"] == 0 for row in call("GET", "/predictions/standings"))
     result(call, mid, 2, 0)
     scores = call("GET", "/predictions/standings")
-    assert scores[0]["player_id"] == env[4]["player"] and scores[0]["points"] == 3
-    assert scores[0]["three_points"] == 1 and scores[0]["settled"] == 1
-    assert call("GET", f"/matches/{mid}/predictions", role="player")["mine"]["points"] == 3
+    assert scores[0]["player_id"] == env[4]["player"] and scores[0]["points"] == 2
+    assert scores[0]["two_points"] == 1 and scores[0]["settled"] == 1
+    assert call("GET", f"/matches/{mid}/predictions", role="player")["mine"]["points"] == 2
     result(call, mid, 2, 2)
     scores = call("GET", "/predictions/standings")
-    assert scores[0]["player_id"] == env[4]["admin"] and scores[0]["points"] == 1
-    assert scores[1]["points"] == 0 and scores[0]["one_point"] == 1
+    assert scores[0]["player_id"] == env[4]["admin"] and scores[0]["points"] == 3
+    assert scores[1]["points"] == 0.5 and scores[0]["three_points"] == 1
     result(call, mid, 2, 2)
     assert call("GET", "/predictions/standings") == scores
     assert call("GET", f"/players/{env[4]['player']}/stats")["games"] == 0
@@ -350,11 +350,70 @@ def test_all_games_and_shared_ranks(env, call, predicted_game, monkeypatch):
     result(call, other_id, 0, 0)
     table = call("GET", "/predictions/standings")
     assert [(row["rank"], row["points"], row["settled"], row["predictions"]) for row in table] == [
-        (1, 4, 2, 2),
-        (1, 4, 2, 2),
+        (1, 5, 2, 2),
+        (1, 5, 2, 2),
     ]
 
 
 @pytest.mark.parametrize("value", [-1, 201, 1.5, True, "2"])
 def test_score_validation(call, predicted_game, value):
     forecast(call, predicted_game[0], value, 0, expected=422)
+
+
+def test_category_input_and_baseline_only_add_new_predictions(
+    env, call, predicted_game, monkeypatch
+):
+    from fczhk.models import PredictionBaseline
+
+    mid, starts = predicted_game
+    with env[1]() as db, db.begin():
+        db.add(
+            PredictionBaseline(
+                player_id=env[4]["player"], season="2026", points_half=9, source="sheet"
+            )
+        )
+        db.add(
+            Prediction(
+                match_id=mid,
+                player_id=env[4]["player"],
+                white_score=9,
+                black_score=0,
+                scoring_version=1,
+                approved_version=3,
+            )
+        )
+    baseline = call("GET", "/predictions/standings?season=2026")
+    assert baseline[0]["points"] == 4.5 and baseline[0]["predictions"] == 0
+    call(
+        "PUT",
+        f"/matches/{mid}/prediction",
+        {"category": "Б13", "revision": 1, "approved_version": 3},
+        role="player",
+    )
+    assert call("GET", f"/matches/{mid}/predictions", role="player")["mine"]["category"] == "Б13"
+    call(
+        "PUT",
+        f"/matches/{mid}/prediction",
+        {
+            "category": "Б4",
+            "white_score": 1,
+            "black_score": 0,
+            "revision": 2,
+            "approved_version": 3,
+        },
+        role="player",
+        expected=422,
+    )
+    monkeypatch.setattr("fczhk.results.now", lambda: starts)
+    result(call, mid, 4, 0)
+    row = call("GET", "/predictions/standings?season=2026")[0]
+    assert (row["baseline_points"], row["points"], row["half_points"], row["settled"]) == (
+        4.5,
+        5,
+        1,
+        1,
+    )
+    result(call, mid, 2, 0)
+    row = call("GET", "/predictions/standings?season=2026")[0]
+    assert (row["points"], row["two_points"]) == (6.5, 1)
+    assert call("GET", "/predictions/standings?season=absent") == []

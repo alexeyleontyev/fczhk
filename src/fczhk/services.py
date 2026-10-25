@@ -111,6 +111,11 @@ def match_data(db: Session, match: Match) -> dict:
         for p in db.scalars(select(Player).where(Player.id.in_([r.player_id for r in regs])))
     }
     queues = {"field": 0, "keeper": 0}
+    provisional = {r.id for r in regs if r.forced}
+    for position, limit in (("field", match.field_limit), ("keeper", match.keeper_limit)):
+        occupied = sum(r.forced and r.position == position for r in regs)
+        waiting = [r for r in regs if r.position == position and not r.forced]
+        provisional.update(r.id for r in waiting[: max(0, limit - occupied)])
     rows = []
     for r in regs:
         queues[r.position] += 1
@@ -124,8 +129,15 @@ def match_data(db: Session, match: Match) -> dict:
                 position=r.position,
                 registered_at=r.registered_at,
                 paid=r.paid,
+                payment_reported=r.payment_reported,
+                payment_status="confirmed"
+                if r.paid
+                else "reported"
+                if r.payment_reported
+                else "unpaid",
                 forced=r.forced,
                 selected=r.id in chosen,
+                in_main=r.id in (provisional if match.status in ("draft", "open") else chosen),
                 team=r.team,
                 rating={k: ratings[r.id][k] for k in ("attack", "defense", "source")},
                 queue=queues[r.position],
@@ -287,6 +299,8 @@ def register(db: Session, actor: int, match: Match, position: str):
         if not r.active:
             r.paid = False
             r.paid_at = None
+            r.payment_reported = False
+            r.payment_reported_at = None
         r.active = True
         r.position = position
     r.registered_at = now()
@@ -309,6 +323,8 @@ def cancel(db: Session, actor: int, match: Match, r: Registration, admin=False):
     r.active = False
     r.paid = False
     r.paid_at = None
+    r.payment_reported = False
+    r.payment_reported_at = None
     r.selected = False
     r.forced = False
     r.team = None
@@ -332,6 +348,21 @@ def confirm_payment(db: Session, actor: int, match: Match, r: Registration, paid
     r.paid = paid
     r.paid_at = now() if paid else None
     match.version += 1
+
+
+def report_payment(db: Session, actor: int, match: Match, r: Registration, reported: bool):
+    if r.player_id != actor:
+        raise DomainError("Можно отметить только свою оплату", 403)
+    if match.status not in ("open", "finalized", "approved") or not r.active:
+        raise DomainError("Отметка оплаты недоступна для этой заявки", 409)
+    if r.paid:
+        raise DomainError("Оплата уже подтверждена администратором", 409)
+    if r.payment_reported == reported:
+        return
+    r.payment_reported = reported
+    r.payment_reported_at = now() if reported else None
+    match.version += 1
+    audit(db, actor, "payment.reported", match.id, registration_id=r.id, reported=reported)
 
 
 def finalize(db: Session, actor: int, match: Match):

@@ -24,12 +24,14 @@ import { useNavigation } from './use-navigation'
 import { SectionTabs } from './section-tabs'
 import { TacticsScreen } from './tactics-screen'
 import { GameScreen } from './game-screen'
+import { FinalizeCollection } from './finalize-collection'
 import { isArchivedMatch } from './archived-game-screen'
 import { MatchHistory } from './match-history'
 import { AuctionScreen } from './auctions'
 import { ArchiveScreen } from './archive-screen'
 import { PlayersScreen } from './players-screen'
 import { ProfileScreen } from './profile-screen'
+import { PlayerName, PlayerProfilesProvider } from './player-name'
 import { OperationsPanel, ScheduleExceptions, ProfileClaims } from './operations'
 import { AdministratorsPanel } from './administrators'
 import { defaultSeason } from './seasons'
@@ -107,9 +109,9 @@ function App() {
   const isAdmin = Boolean(me?.is_admin)
   const archived = isArchivedMatch(m)
   const activeNavigation =
-    archived && ['game', 'lineup'].includes(tab)
+    archived && ['game', 'lineup', 'prediction'].includes(tab)
       ? 'archive'
-      : ['auction', 'lineup'].includes(tab)
+      : ['auction', 'lineup', 'prediction'].includes(tab)
         ? 'game'
         : tab
 
@@ -180,7 +182,7 @@ function App() {
       </div>
     )
 
-  return (
+  const content = (
     <div className="app-shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="ФКЖК главная">
@@ -192,7 +194,7 @@ function App() {
         <div className="user-chip">
           <span className="avatar small">{initial(me.alias)}</span>
           <div>
-            {me.alias}
+            <PlayerName playerId={me.id} alias={me.alias} />
             <small>{me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок'}</small>
           </div>
         </div>
@@ -264,9 +266,13 @@ function App() {
             </button>
           </div>
         )}
-        {m && ['game', 'lineup'].includes(tab) && (!archived || tab === 'lineup') && (
+        {m && ['game', 'lineup', 'prediction'].includes(tab) && (!archived || tab === 'lineup') && (
           <div className="match-tabs" role="tablist" aria-label="Экраны игры">
-            <button role="tab" aria-selected={tab === 'game'} onClick={() => openGame(m.id)}>
+            <button
+              role="tab"
+              aria-selected={['game', 'prediction'].includes(tab)}
+              onClick={() => openGame(m.id)}
+            >
               {archived ? 'Итог' : 'Игра'}
             </button>
             <button role="tab" aria-selected={tab === 'lineup'} onClick={() => openLineup(m.id)}>
@@ -285,8 +291,9 @@ function App() {
             onAuction={() => openAuction(m.id)}
           />
         )}
-        {tab === 'game' && (
+        {['game', 'prediction'].includes(tab) && (
           <GameScreen
+            focusPrediction={tab === 'prediction'}
             key={m?.id ?? 'empty'}
             m={m}
             isAdmin={isAdmin}
@@ -430,9 +437,10 @@ function App() {
         </div>
       )}
       {modal === 'stats' && statsTarget && (
-        <Modal title="Статистика игрока" close={() => setModal(null)}>
+        <Modal title="Профиль игрока" close={() => setModal(null)}>
           <PlayerStats
             playerId={statsTarget}
+            player={players.find((p) => p.id === statsTarget)}
             onMatch={openGame}
             onPlayer={openStats}
             {...seasonFilter}
@@ -500,24 +508,7 @@ function App() {
         </Modal>
       )}
       {modal === 'finalize' && m && (
-        <Modal title="Зафиксировать составы на игру?" close={() => setModal(null)}>
-          <p>
-            Пройдут первые {m.field_limit} оплативших полевых и {m.keeper_limit} вратаря по времени
-            записи, с учетом закрепленных мест. При недоборе состав будет меньше. Самостоятельная
-            запись закроется.
-          </p>
-          <Button
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                await api(`/matches/${m.id}/actions/finalize`, 'POST', { version: m.version })
-                setModal(null)
-              }, 'Составы на игру зафиксированы. Распределите команды.')
-            }
-          >
-            Зафиксировать составы на игру
-          </Button>
-        </Modal>
+        <FinalizeCollection match={m} busy={busy} run={run} close={() => setModal(null)} />
       )}
       {modal === 'leave' && m && (
         <Modal title="Отменить запись?" close={() => setModal(null)}>
@@ -578,8 +569,13 @@ function App() {
         <Modal title="Связать гостя с аккаунтом" close={() => setModal(null)}>
           <p>
             Карточка:{' '}
-            <strong>{players.find((p) => p.id === Number(modal?.split(':')[1]))?.alias}</strong>.
-            Убедитесь, что обе карточки принадлежат одному человеку. Аккаунт получит alias
+            <strong>
+              <PlayerName
+                playerId={Number(modal.split(':')[1])}
+                alias={players.find((p) => p.id === Number(modal.split(':')[1]))?.alias ?? 'Гость'}
+              />
+            </strong>
+            . Убедитесь, что обе карточки принадлежат одному человеку. Аккаунт получит alias
             исторической карточки, история гостя сохранится. При заявках обеих карточек на одну игру
             автоматическое слияние недоступно.
           </p>
@@ -618,6 +614,11 @@ function App() {
         </Modal>
       )}
     </div>
+  )
+  return (
+    <PlayerProfilesProvider players={players} onPlayer={openStats}>
+      {content}
+    </PlayerProfilesProvider>
   )
 }
 

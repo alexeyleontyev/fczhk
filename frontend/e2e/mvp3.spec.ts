@@ -61,10 +61,7 @@ test('mobile result: unknown goals, actual rosters, corrections and player stati
   )
   await page.getByRole('button', { name: 'Исправить результат', exact: true }).click()
   await result.getByRole('button', { name: 'Гол: ⚫ Чёрные', exact: true }).click()
-  await result
-    .getByRole('combobox', { name: 'Тип гола', exact: true })
-    .last()
-    .selectOption('own_goal')
+  await result.getByRole('checkbox', { name: 'Автогол', exact: true }).last().check()
   await expect(
     result.getByRole('combobox', { name: 'Автор гола', exact: true }).last(),
   ).toHaveValue('')

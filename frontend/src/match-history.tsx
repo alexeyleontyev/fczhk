@@ -1,5 +1,7 @@
 import { date, time } from './format'
 import type { History } from './types'
+import type { ReactNode } from 'react'
+import { PlayerName } from './player-name'
 
 const titles: Record<string, string> = {
   'history.imported': 'Импортирована игра',
@@ -101,7 +103,7 @@ function changes(row: History['audit'][number]): string[] {
   return []
 }
 
-function resultChanges(row: History['audit'][number]): string[] {
+function resultChanges(row: History['audit'][number]): ReactNode[] {
   if (!row.action.startsWith('result.')) return []
   const data = object(row.data),
     old = object(data.old),
@@ -112,33 +114,79 @@ function resultChanges(row: History['audit'][number]): string[] {
   const allPeople = [...oldPeople, ...nextPeople]
   const name = (id: unknown) =>
     String(allPeople.find((p) => p.player_id === id)?.alias || 'Автор неизвестен')
+  const personName = (person: Record<string, unknown>) => (
+    <PlayerName
+      playerId={typeof person.player_id === 'number' ? person.player_id : undefined}
+      alias={String(person.alias || 'Автор неизвестен')}
+    />
+  )
+  const linkedName = (id: unknown) => (
+    <PlayerName playerId={typeof id === 'number' ? id : undefined} alias={name(id)} />
+  )
   const side = (value: unknown) => (value === 'white' ? 'Белые' : 'Чёрные')
   const position = (person: Record<string, unknown>) =>
     `${side(person.team)}, ${person.position === 'keeper' ? 'вратарь' : 'полевой'}`
   const goal = (value: Record<string, unknown>) =>
     `${side(value.team)} · ${value.kind === 'own_goal' ? 'автогол' + (value.author_id ? ` (${name(value.author_id)})` : '') : name(value.author_id)}${value.assist_id ? `, пас: ${name(value.assist_id)}` : ''}`
-  const lines: string[] = []
+  const linkedGoal = (value: Record<string, unknown>) => (
+    <>
+      {side(value.team)} ·{' '}
+      {value.kind === 'own_goal' ? (
+        <>автогол{Boolean(value.author_id) && <> ({linkedName(value.author_id)})</>}</>
+      ) : (
+        linkedName(value.author_id)
+      )}
+      {Boolean(value.assist_id) && <>, пас: {linkedName(value.assist_id)}</>}
+    </>
+  )
+  const lines: ReactNode[] = []
   for (const person of nextPeople) {
     const before = oldPeople.find((p) => p.player_id === person.player_id)
-    if (!before) lines.push(`Добавлен участник: ${String(person.alias)} · ${position(person)}`)
+    if (!before)
+      lines.push(
+        <>
+          Добавлен участник: {personName(person)} · {position(person)}
+        </>,
+      )
     else if (before.team !== person.team || before.position !== person.position)
-      lines.push(`${String(person.alias)}: ${position(before)} → ${position(person)}`)
+      lines.push(
+        <>
+          {personName(person)}: {position(before)} → {position(person)}
+        </>,
+      )
   }
   for (const person of oldPeople) {
     if (!nextPeople.some((p) => p.player_id === person.player_id))
-      lines.push(`Убран участник: ${String(person.alias)} · ${position(person)}`)
+      lines.push(
+        <>
+          Убран участник: {personName(person)} · {position(person)}
+        </>,
+      )
   }
   const oldGoals = records(old.goals),
     nextGoals = records(next.goals)
   nextGoals.forEach((event, index) => {
     const before = oldGoals.find((g) => g.id === event.id)
-    if (!before) lines.push(`Добавлен гол ${index + 1}: ${goal(event)}`)
+    if (!before)
+      lines.push(
+        <>
+          Добавлен гол {index + 1}: {linkedGoal(event)}
+        </>,
+      )
     else if (goal(before) !== goal(event))
-      lines.push(`Гол ${index + 1}: ${goal(before)} → ${goal(event)}`)
+      lines.push(
+        <>
+          Гол {index + 1}: {linkedGoal(before)} → {linkedGoal(event)}
+        </>,
+      )
   })
   oldGoals.forEach((event, index) => {
     if (!nextGoals.some((g) => g.id === event.id))
-      lines.push(`Удалён гол ${index + 1}: ${goal(event)}`)
+      lines.push(
+        <>
+          Удалён гол {index + 1}: {linkedGoal(event)}
+        </>,
+      )
   })
   return lines
 }
@@ -166,7 +214,8 @@ export function MatchHistory({ history }: { history: History }) {
             </details>
           )}
           <small>
-            {fullDate(row.at)}, {time(row.at)} · {row.actor || 'Система'}
+            {fullDate(row.at)}, {time(row.at)} ·{' '}
+            <PlayerName playerId={row.actor_id} alias={row.actor || 'Система'} />
           </small>
         </div>
       ))}
@@ -177,7 +226,8 @@ export function MatchHistory({ history }: { history: History }) {
           </summary>
           {team.teams.map((person, index) => (
             <p key={index}>
-              {person.team === 'white' ? '⚪' : '⚫'} {person.alias}
+              {person.team === 'white' ? '⚪' : '⚫'}{' '}
+              <PlayerName playerId={person.player_id} alias={person.alias} />
             </p>
           ))}
         </details>

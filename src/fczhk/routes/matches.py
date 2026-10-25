@@ -199,6 +199,26 @@ def router(ctx):
         db.flush()
         return svc.match_data(db, m)
 
+    @app.put("/api/matches/{match_id}/payment-report")
+    def payment_report(
+        match_id: int,
+        body: S.PaymentReport,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = svc.get_match(db, match_id, lock=True)
+        r = db.scalar(
+            select(Registration).where(
+                Registration.match_id == m.id,
+                Registration.player_id == p.id,
+            )
+        )
+        if r is None:
+            raise svc.DomainError("Сначала запишитесь на игру", 409)
+        svc.report_payment(db, p.id, m, r, body.reported)
+        db.flush()
+        return svc.match_data(db, m)
+
     @app.put("/api/matches/{match_id}/registrations/{reg_id}/payment")
     def payment(
         match_id: int,
@@ -208,7 +228,15 @@ def router(ctx):
         db: Session = Depends(db_dep, scope="function"),
     ):
         m = svc.get_match(db, match_id, body.version, lock=True)
-        svc.confirm_payment(db, p.id, m, svc.registration(db, match_id, reg_id), body.paid)
+        r = svc.registration(db, match_id, reg_id)
+        svc.confirm_payment(db, p.id, m, r, body.paid)
+        if body.reported is not None and r.payment_reported != body.reported:
+            r.payment_reported = body.reported
+            r.payment_reported_at = now() if body.reported else None
+            m.version += 1
+            svc.audit(
+                db, p.id, "payment.reported", m.id, registration_id=r.id, reported=body.reported
+            )
         db.flush()
         return svc.match_data(db, m)
 

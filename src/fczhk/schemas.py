@@ -85,6 +85,11 @@ class Join(Payload):
 
 class Payment(Version):
     paid: bool
+    reported: bool | None = None
+
+
+class PaymentReport(Payload):
+    reported: bool
 
 
 class Include(Version):
@@ -148,16 +153,21 @@ class TemplateEdit(Version):
     def opening_before_game(self):
         if self.opening_weekday == self.game_weekday and self.opening_time >= self.start_time:
             raise ValueError("В день игры сбор должен открываться раньше начала игры")
-        if (self.announcement_enabled or self.payment_reminder_enabled) and not self.announcements_chat_id:
+        if (
+            self.announcement_enabled or self.payment_reminder_enabled
+        ) and not self.announcements_chat_id:
             raise ValueError("Укажите чат анонсов до включения уведомлений")
         if self.payment_reminder_enabled:
+
             def minute(day, clock):
                 hour, minute = map(int, clock.split(":"))
                 return day * 1440 + hour * 60 + minute
 
             opening = minute(self.opening_weekday, self.opening_time)
             game = (minute(self.game_weekday, self.start_time) - opening) % 10080
-            reminder = (minute(self.payment_reminder_weekday, self.payment_reminder_time) - opening) % 10080
+            reminder = (
+                minute(self.payment_reminder_weekday, self.payment_reminder_time) - opening
+            ) % 10080
             if not 0 < reminder < game:
                 raise ValueError("Напоминание об оплате должно быть после открытия сбора и до игры")
         return self
@@ -292,7 +302,29 @@ class AuctionControl(Payload):
 
 
 class PredictionEdit(Payload):
-    white_score: int = Field(ge=0, le=200, strict=True)
-    black_score: int = Field(ge=0, le=200, strict=True)
+    white_score: int | None = Field(default=None, ge=0, le=200, strict=True)
+    black_score: int | None = Field(default=None, ge=0, le=200, strict=True)
+    category: Literal["Б4", "Б13", "Н", "Ч13", "Ч4"] | None = None
     revision: int = Field(ge=0)
     approved_version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def score_or_category(self):
+        from .predictions import category
+
+        if self.white_score is None and self.black_score is None and self.category is not None:
+            self.white_score, self.black_score = {
+                "Б4": (4, 0),
+                "Б13": (1, 0),
+                "Н": (0, 0),
+                "Ч13": (0, 1),
+                "Ч4": (0, 4),
+            }[self.category]
+        elif self.white_score is None or self.black_score is None:
+            raise ValueError("Укажите категорию прогноза или счёт обеих команд")
+        elif (
+            self.category is not None
+            and category(self.white_score, self.black_score) != self.category
+        ):
+            raise ValueError("Категория прогноза не соответствует счёту")
+        return self

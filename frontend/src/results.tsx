@@ -4,6 +4,9 @@ import { api } from './api'
 import { SeasonSelect, seasonQuery, type SeasonFilter } from './seasons'
 import { percentTone } from './percent'
 import { TelegramIdentity } from './telegram-identity'
+import { PlayerName } from './player-name'
+import { RatingAverages } from './ratings'
+import { PlayerReviews } from './player-reviews'
 import type { Match, Player, Position, Run, Team, TelegramProfile } from './types'
 
 export type Participant = { player_id: number; alias: string; team: Team; position: Position }
@@ -80,8 +83,46 @@ export function MatchResult({
       (d) => d && { ...d, goals: d.goals.map((g) => (g.id === id ? { ...g, ...change } : g)) },
     )
   const score = (team: Team) => data?.goals.filter((g) => g.team === team).length || 0
-  const name = (id: number | null) =>
-    data?.participants.find((p) => p.player_id === id)?.alias || 'Автор неизвестен'
+  const name = (id: number | null) => (
+    <PlayerName
+      playerId={id}
+      alias={data?.participants.find((p) => p.player_id === id)?.alias || 'Автор неизвестен'}
+    />
+  )
+  function applyScore(white: number, black: number) {
+    if (!data) return
+    if (white + black > 200) {
+      setError('Всего допускается не более 200 голов.')
+      return
+    }
+    const goals: Goal[] = []
+    for (const team of teams) {
+      const target = team === 'white' ? white : black
+      const current = data.goals.filter((goal) => goal.team === team)
+      const filled = current.filter(
+        (goal) => goal.kind === 'own_goal' || goal.author_id !== null || goal.assist_id !== null,
+      )
+      if (target < filled.length) {
+        setError(
+          `У команды «${team === 'white' ? 'Белые' : 'Чёрные'}» уже заполнены ${filled.length} голов. Сначала исправьте или удалите лишние события.`,
+        )
+        return
+      }
+      const keep = new Set(filled.map((goal) => goal.id))
+      for (const goal of current) if (keep.size < target) keep.add(goal.id)
+      goals.push(...current.filter((goal) => keep.has(goal.id)))
+      for (let i = current.length; i < target; i++)
+        goals.push({
+          id: crypto.randomUUID(),
+          team,
+          kind: 'goal',
+          author_id: null,
+          assist_id: null,
+        })
+    }
+    setData({ ...data, goals })
+    setError('')
+  }
   const save = async (completed: boolean) => {
     let success = false
     await run(
@@ -144,7 +185,7 @@ export function MatchResult({
                         .map((p) => (
                           <p key={p.player_id}>
                             {p.position === 'keeper' ? '🧤 ' : ''}
-                            {p.alias}
+                            <PlayerName playerId={p.player_id} alias={p.alias} />
                           </p>
                         ))}
                     </div>
@@ -157,7 +198,7 @@ export function MatchResult({
                 <p key={g.id}>
                   {label(g.team)} · {name(g.author_id)}
                   {g.kind === 'own_goal' ? ' — автогол' : ''}
-                  {g.assist_id ? ` · передача: ${name(g.assist_id)}` : ''}
+                  {g.assist_id && <> · передача: {name(g.assist_id)}</>}
                   {data.assist_team_switches?.some(
                     (s) => s.goal_id === g.id && s.player_id === g.assist_id,
                   )
@@ -186,7 +227,9 @@ export function MatchResult({
                 </p>
                 {data.participants.map((p) => (
                   <div className="actual-row" key={p.player_id}>
-                    <strong>{p.alias}</strong>
+                    <strong>
+                      <PlayerName playerId={p.player_id} alias={p.alias} />
+                    </strong>
                     <label>
                       Команда
                       <select
@@ -268,6 +311,52 @@ export function MatchResult({
                 </label>
               </details>
               <h3>События матча</h3>
+              <form
+                className="quick-score"
+                aria-label="Быстрый ввод счёта"
+                key={`${score('white')}:${score('black')}`}
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  const values = new FormData(event.currentTarget)
+                  applyScore(Number(values.get('white')), Number(values.get('black')))
+                }}
+              >
+                <h4>Быстрый ввод счёта</h4>
+                <div className="prediction-inputs">
+                  <label>
+                    Счёт белых
+                    <input
+                      name="white"
+                      type="number"
+                      min={0}
+                      max={200}
+                      step={1}
+                      required
+                      defaultValue={score('white')}
+                    />
+                  </label>
+                  <span>:</span>
+                  <label>
+                    Счёт чёрных
+                    <input
+                      name="black"
+                      type="number"
+                      min={0}
+                      max={200}
+                      step={1}
+                      required
+                      defaultValue={score('black')}
+                    />
+                  </label>
+                </div>
+                <button className="button secondary compact" type="submit">
+                  Создать записи голов
+                </button>
+                <p className="muted caption">
+                  Для каждого гола появится строка. Автора и передачу можно заполнить позже; уже
+                  заполненные события сохраняются.
+                </p>
+              </form>
               <p className="muted caption">
                 Каждая строка добавляет один гол. Для неизвестного автора оставьте соответствующий
                 пункт. Счёт вычисляется автоматически.
@@ -294,22 +383,23 @@ export function MatchResult({
                       ))}
                     </select>
                   </label>
-                  <label>
-                    Тип гола
-                    <select
-                      value={g.kind}
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={g.kind === 'own_goal'}
                       onChange={(e) =>
                         updateGoal(g.id, {
-                          kind: e.target.value as Goal['kind'],
+                          kind: e.target.checked ? 'own_goal' : 'goal',
                           author_id: null,
                           assist_id: null,
                         })
                       }
-                    >
-                      <option value="goal">Обычный гол</option>
-                      <option value="own_goal">Автогол</option>
-                    </select>
+                    />
+                    Автогол
                   </label>
+                  {g.kind === 'own_goal' && (
+                    <p className="muted caption">Автор автогола — игрок противоположной команды.</p>
+                  )}
                   <label>
                     Автор гола
                     <select
@@ -460,12 +550,14 @@ type Stats = TelegramProfile & {
 }
 export function PlayerStats({
   playerId,
+  player,
   showIdentity = true,
   onMatch,
   onPlayer,
   ...seasonFilter
 }: SeasonFilter & {
   playerId: number
+  player?: Player
   showIdentity?: boolean
   onMatch: (id: number) => void
   onPlayer: (id: number) => void
@@ -578,6 +670,45 @@ export function PlayerStats({
                   <span>Винрейт</span>
                 </div>
               </div>
+              <div className="recent-form" aria-label="Результаты последних пяти игр">
+                <span className="muted caption">Последние игры</span>
+                <div className="form-dots">
+                  {Array.from({ length: 5 }, (_, index) => {
+                    const match = data.matches[index]
+                    const other = match?.team === 'white' ? 'black' : 'white'
+                    const outcome = !match
+                      ? 'empty'
+                      : match.score[match.team] > match.score[other]
+                        ? 'win'
+                        : match.score[match.team] === match.score[other]
+                          ? 'draw'
+                          : 'loss'
+                    const title = !match
+                      ? 'Нет игры'
+                      : `${new Date(match.starts_at).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })}: ${outcome === 'win' ? 'Победа' : outcome === 'draw' ? 'Ничья' : 'Поражение'} · ${match.score.white} : ${match.score.black}`
+                    return match ? (
+                      <button
+                        type="button"
+                        key={index}
+                        className={`form-dot ${outcome}`}
+                        aria-label={title}
+                        title={title}
+                        onClick={() => onMatch(match.match_id)}
+                      />
+                    ) : (
+                      <span key={index} className="form-dot empty" aria-label={title} />
+                    )
+                  })}
+                </div>
+                <small className="muted">От новой к старой</small>
+              </div>
+              {player && !player.shared_keeper && (
+                <div className="profile-ratings">
+                  <h3>Оценки игрока</h3>
+                  <RatingAverages player={player} />
+                  <PlayerReviews key={playerId} playerId={playerId} />
+                </div>
+              )}
             </div>
             <div hidden={section !== 'matches'}>
               <h3>История игр</h3>

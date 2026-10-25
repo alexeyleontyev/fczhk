@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { SectionTabs } from './section-tabs'
-import { ArrowUpRight, Check, Flag, MapPin, Plus, RefreshCw, Shield } from 'lucide-react'
+import { ArrowUpRight, Check, MapPin, Plus, RefreshCw } from 'lucide-react'
 import { api } from './api'
 import { Button, Empty } from './ui'
-import { date, time, money, status, publicationKind } from './format'
+import { date, time, money, status } from './format'
 import { TemporaryRatings, score } from './ratings'
 import { Roster } from './roster'
 import { LineupEntry } from './team-board'
@@ -11,6 +11,8 @@ import { MatchResult } from './results'
 import { AuctionEntry } from './auctions'
 import { PredictionPanel } from './predictions'
 import { CollectionCountdown } from './collection-countdown'
+import { PaymentStatus } from './payment-status'
+import { GameControls } from './game-controls'
 import { ArchivedGameScreen, isArchivedMatch } from './archived-game-screen'
 import type { Match, Player, Position, Run, History } from './types'
 
@@ -29,6 +31,7 @@ export function GameScreen({
   openAuction,
   openLineup,
   revision,
+  focusPrediction = false,
 }: {
   m: Match | null
   isAdmin: boolean
@@ -44,15 +47,31 @@ export function GameScreen({
   openAuction: (matchId: number) => void
   openLineup: (matchId: number) => void
   revision: number
+  focusPrediction?: boolean
 }) {
+  useEffect(() => {
+    if (focusPrediction && ['finalized', 'approved'].includes(m?.status || '')) {
+      const frame = requestAnimationFrame(() =>
+        document.getElementById('prediction')?.scrollIntoView({ block: 'start' }),
+      )
+      return () => cancelAnimationFrame(frame)
+    }
+  }, [focusPrediction, m?.id, m?.status])
   const [section, setSection] = useState('overview')
   const activeSection =
-    (section === 'manage' && !isAdmin) ||
-    (section === 'result' && !['approved', 'completed'].includes(m?.status || ''))
+    section === 'result' && !['approved', 'completed'].includes(m?.status || '')
       ? 'overview'
       : section
-  const auctionRunning = ['active', 'paused'].includes(m?.auction_status || '')
   const mine = m?.registrations.find((r) => r.player_id === me.id)
+  const prediction = m && !['draft', 'cancelled'].includes(m.status) && (
+    <PredictionPanel
+      key={`predictions-${m.id}`}
+      match={m}
+      busy={busy}
+      run={run}
+      onStandings={() => setTab('predictions')}
+    />
+  )
   if (m && isArchivedMatch(m))
     return (
       <ArchivedGameScreen
@@ -83,7 +102,7 @@ export function GameScreen({
           >
             <RefreshCw size={18} />
           </button>
-          {isAdmin && (
+          {isAdmin && !m && (
             <Button className="secondary compact" onClick={() => setModal('create')}>
               <Plus size={17} /> Новая игра
             </Button>
@@ -150,42 +169,44 @@ export function GameScreen({
               сохранена. Возврат или перенос оплаты согласуйте с организатором.
             </p>
           )}
-          {isAdmin &&
-            activeSection !== 'manage' &&
-            m.publications.some((p) => ['failed', 'uncertain'].includes(p.status) && !p.stale) && (
-              <div className="alert error" role="alert">
-                <span>Есть сообщения, требующие проверки.</span>
-                <button onClick={() => setSection('manage')}>Проверить публикации</button>
-              </div>
-            )}
           <SectionTabs
             label="Разделы игры"
             value={activeSection}
             onChange={setSection}
             options={[
               { value: 'overview', label: 'Обзор' },
-              { value: 'roster', label: 'Участники' },
               ...(['approved', 'completed'].includes(m.status)
                 ? [{ value: 'result', label: 'Итог' }]
                 : []),
-              ...(isAdmin ? [{ value: 'manage', label: 'Управление' }] : []),
             ]}
           >
+            <div hidden={activeSection !== 'overview'}>
+              {isAdmin && (
+                <GameControls
+                  match={m}
+                  busy={busy}
+                  run={run}
+                  action={action}
+                  setModal={setModal}
+                  setHistory={setHistory}
+                  openLineup={openLineup}
+                />
+              )}
+              {['finalized', 'approved'].includes(m.status) && (
+                <div className="game-prediction-top" id="prediction">
+                  {prediction}
+                </div>
+              )}
+            </div>
             <div className="content-grid compact-game">
               <div className="primary-column">
-                {!['draft', 'cancelled'].includes(m.status) && (
+                {!['finalized', 'approved'].includes(m.status) && prediction && (
                   <details
                     className="compact-explanation panel"
                     hidden={activeSection !== 'overview'}
                   >
                     <summary>Прогноз на игру</summary>
-                    <PredictionPanel
-                      key={`predictions-${m.id}`}
-                      match={m}
-                      busy={busy}
-                      run={run}
-                      onStandings={() => setTab('predictions')}
-                    />
+                    {prediction}
                   </details>
                 )}
                 {(m.auction_status ||
@@ -235,29 +256,10 @@ export function GameScreen({
                         </p>
                       </div>
                     )}
-                  {isAdmin && (
-                    <div className="inline wrap game-next-action">
-                      {m.status === 'draft' && (
-                        <Button disabled={busy} onClick={() => void action('open')}>
-                          Открыть сбор
-                        </Button>
-                      )}
-                      {m.status === 'open' && (
-                        <Button disabled={busy} onClick={() => setModal('finalize')}>
-                          Зафиксировать составы на игру <Flag size={16} />
-                        </Button>
-                      )}
-                      {m.status === 'approved' && (
-                        <Button disabled={busy} onClick={() => void action('publish')}>
-                          Опубликовать составы <ArrowUpRight size={16} />
-                        </Button>
-                      )}
-                    </div>
-                  )}
                   <div className="counts">
                     {(['field', 'keeper'] as Position[]).map((pos) => {
                       const amount = m.registrations.filter(
-                        (r) => r.selected && r.position === pos,
+                        (r) => (r.in_main ?? r.selected) && r.position === pos,
                       ).length
                       const limit = pos === 'field' ? m.field_limit : m.keeper_limit
                       return (
@@ -278,7 +280,7 @@ export function GameScreen({
                   </div>
                   <p className="muted caption">
                     {m.status === 'open'
-                      ? 'Место определяется временем записи среди оплативших. До финализации список предварительный.'
+                      ? 'В основном списке — первые записавшиеся полевые и вратари. При утверждении пройдут игроки с оплатой, подтверждённой администратором, по времени записи.'
                       : 'Самостоятельная запись закрыта. Изменения вносит администратор.'}
                   </p>
                   {m.status === 'open' && (
@@ -291,12 +293,31 @@ export function GameScreen({
                               Вы записаны {mine.position === 'field' ? 'полевым' : 'вратарем'}
                             </strong>
                           </div>
-                          <p>
-                            {mine.paid
-                              ? 'Оплата подтверждена'
-                              : 'Оплату подтвердит администратор после перевода'}
-                          </p>
+                          <PaymentStatus
+                            reported={Boolean(mine.payment_reported)}
+                            confirmed={mine.paid}
+                            alias={me.alias}
+                          />
                           <div className="inline wrap">
+                            {!mine.paid && (
+                              <Button
+                                disabled={busy}
+                                className="secondary compact"
+                                onClick={() =>
+                                  void run(
+                                    () =>
+                                      api(`/matches/${m.id}/payment-report`, 'PUT', {
+                                        reported: !mine.payment_reported,
+                                      }),
+                                    mine.payment_reported
+                                      ? 'Отметка об оплате отменена'
+                                      : 'Об оплате сообщили. Ожидаем подтверждения администратора.',
+                                  )
+                                }
+                              >
+                                {mine.payment_reported ? 'Отменить отметку оплаты' : 'Я оплатил'}
+                              </Button>
+                            )}
                             <Button
                               disabled={busy}
                               className="secondary compact"
@@ -357,12 +378,40 @@ export function GameScreen({
                     </div>
                   )}
                 </section>
-                <section className="panel" hidden={activeSection !== 'roster'}>
+                {mine &&
+                  m.status !== 'open' &&
+                  !mine.paid &&
+                  ['finalized', 'approved'].includes(m.status) && (
+                    <section className="panel own-payment" hidden={activeSection !== 'overview'}>
+                      <PaymentStatus
+                        reported={Boolean(mine.payment_reported)}
+                        confirmed={mine.paid}
+                        alias={me.alias}
+                      />
+                      <Button
+                        disabled={busy}
+                        onClick={() =>
+                          void run(() =>
+                            api(`/matches/${m.id}/payment-report`, 'PUT', {
+                              reported: !mine.payment_reported,
+                            }),
+                          )
+                        }
+                      >
+                        {mine.payment_reported ? 'Отменить отметку оплаты' : 'Я оплатил'}
+                      </Button>
+                    </section>
+                  )}
+                <section className="panel" hidden={activeSection !== 'overview'}>
                   <div className="section-title">
                     <h2>Участники</h2>
                     {isAdmin && !m.result && m.status !== 'cancelled' && (
-                      <Button className="ghost compact" onClick={() => setModal('include')}>
-                        <Plus size={16} /> Добавить
+                      <Button
+                        disabled={busy}
+                        className="secondary compact"
+                        onClick={() => setModal('include')}
+                      >
+                        <Plus size={16} /> Добавить игрока
                       </Button>
                     )}
                   </div>
@@ -400,111 +449,6 @@ export function GameScreen({
                     Отметка оплаты появляется после подтверждения администратором.
                   </span>
                 </details>
-                {isAdmin && (
-                  <section className="panel admin-panel" hidden={activeSection !== 'manage'}>
-                    <div className="eyebrow">
-                      <Shield size={13} /> АДМИНИСТРАТОР
-                    </div>
-                    <h2>Управление игрой</h2>
-                    {!m.result &&
-                      m.status !== 'cancelled' &&
-                      Date.now() < new Date(m.starts_at).getTime() && (
-                        <Button
-                          className="ghost danger"
-                          disabled={busy}
-                          onClick={() => setModal('cancel')}
-                        >
-                          Отменить игру
-                        </Button>
-                      )}
-                    <Button
-                      disabled={busy || m.status === 'cancelled'}
-                      className="secondary"
-                      onClick={() => setModal('edit')}
-                    >
-                      Изменить параметры
-                    </Button>
-                    {m.status === 'draft' && (
-                      <Button disabled={busy} onClick={() => void action('open')}>
-                        Открыть сбор
-                      </Button>
-                    )}
-                    {m.status === 'open' && (
-                      <Button disabled={busy} onClick={() => setModal('finalize')}>
-                        Зафиксировать составы на игру <Flag size={16} />
-                      </Button>
-                    )}
-                    {m.status === 'finalized' && !auctionRunning && (
-                      <Button disabled={busy} onClick={() => openLineup(m.id)}>
-                        Подобрать составы
-                      </Button>
-                    )}
-                    {m.status === 'approved' && (
-                      <Button disabled={busy} onClick={() => void action('publish')}>
-                        Опубликовать составы <ArrowUpRight size={16} />
-                      </Button>
-                    )}
-                    <Button
-                      disabled={busy}
-                      className="ghost"
-                      onClick={() =>
-                        void run(async () => {
-                          setHistory(await api(`/matches/${m.id}/history`))
-                          setModal('history')
-                        })
-                      }
-                    >
-                      История изменений
-                    </Button>
-                  </section>
-                )}
-                {isAdmin && m.publications.length > 0 && (
-                  <section className="panel" hidden={activeSection !== 'manage'}>
-                    <h3>Публикации</h3>
-                    {m.publications.map((p) => (
-                      <div className="publication" key={p.id}>
-                        <strong>{publicationKind[p.kind] || p.kind}</strong>
-                        <span>
-                          {
-                            (
-                              {
-                                pending: 'В очереди',
-                                sending: 'Отправляется',
-                                sent: 'Опубликовано',
-                                demo: 'Демо: отправка имитирована',
-                                failed: 'Ошибка',
-                                uncertain: 'Проверьте чат',
-                                cancelled: 'Отменено',
-                              } as Record<string, string>
-                            )[p.status]
-                          }
-                          {p.stale ? ' · неактуально' : ''}
-                        </span>
-                        {p.error && <p className="error-text">{p.error}</p>}
-                        {['failed', 'uncertain'].includes(p.status) && !p.stale && (
-                          <Button
-                            className="secondary compact"
-                            disabled={busy}
-                            onClick={() => {
-                              if (
-                                p.status !== 'uncertain' ||
-                                window.confirm(
-                                  'Проверьте чат: сообщение могло быть доставлено. Повторить отправку?',
-                                )
-                              )
-                                void run(
-                                  () => api(`/publications/${p.id}/retry`, 'POST'),
-                                  'Повторная отправка запрошена',
-                                )
-                            }}
-                          >
-                            Повторить
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </section>
-                )}
               </aside>
             </div>
           </SectionTabs>

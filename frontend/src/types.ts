@@ -22,6 +22,9 @@ export type Entry = {
   position: Position
   registered_at: string
   paid: boolean
+  payment_reported?: boolean
+  payment_status?: 'unpaid' | 'reported' | 'confirmed'
+  in_main?: boolean
   forced: boolean
   selected: boolean
   team: Team | null
@@ -189,8 +192,19 @@ declare global {
 }
 
 export type History = {
-  audit: { id: number; actor?: string | null; action: string; data: unknown; at: string }[]
-  teams: { version: number; teams: { alias: string; team: Team }[]; at: string }[]
+  audit: {
+    id: number
+    actor_id?: number | null
+    actor?: string | null
+    action: string
+    data: unknown
+    at: string
+  }[]
+  teams: {
+    version: number
+    teams: { player_id?: number; alias: string; team: Team }[]
+    at: string
+  }[]
 }
 export type MatchSummary = Pick<
   Match,

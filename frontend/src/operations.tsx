@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PlayerName } from './player-name'
 import { api } from './api'
 import { Button } from './ui'
 import { date, publicationKind } from './format'
@@ -251,7 +252,8 @@ export function ProfileClaims({ onResolved }: { onResolved: () => Promise<void> 
       {claims.map((claim) => (
         <div className="publication" key={claim.player_id}>
           <p>
-            {claim.player} → {claim.guest}
+            <PlayerName playerId={claim.player_id} alias={claim.player} /> →{' '}
+            <PlayerName playerId={claim.guest_id} alias={claim.guest} />
           </p>
           <div className="inline">
             <Button disabled={busy} onClick={() => void resolve(claim, true)}>

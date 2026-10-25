@@ -1,16 +1,17 @@
 import asyncio
 
 from aiogram import Bot, Dispatcher, F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from sqlalchemy import select
 
 from .auth import check_member, player_for_telegram
 from .db import database, now
-from .models import BotCallbackReceipt, GameTemplate, Match, Registration
-from .results import player_stats
+from .models import BotCallbackReceipt, GameTemplate, Match, MatchResult, Registration
+from .results import player_stats, result_data, result_text
 from .scheduling import schedule_description
-from .services import MOSCOW, DomainError, cancel, get_match, match_data, register
+from .services import MOSCOW, DomainError, cancel, get_match, match_data, register, report_payment
 from .worker import app_link, chunks
 
 
@@ -18,9 +19,9 @@ def dispatcher(cfg, factory):
     dp = Dispatcher()
     router = Router()
 
-    def menu(match_id=None):
+    def menu(match_id=None, *, registration_open=False, payment=None):
         rows = [[InlineKeyboardButton(text="⚽ Открыть приложение", url=app_link(cfg, match_id))]]
-        if match_id:
+        if registration_open:
             rows.extend(
                 [
                     [
@@ -40,7 +41,43 @@ def dispatcher(cfg, factory):
                     ],
                 ]
             )
+        if payment:
+            rows.append([payment])
         return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    def registration_stamp(registration):
+        # The row is reused on rejoining; bind the button to this enrollment too.
+        return registration.registered_at.strftime("%Y%m%d%H%M%S%f")
+
+    def game_menu(db, match, pid):
+        registration = db.scalar(
+            select(Registration).where(
+                Registration.match_id == match.id,
+                Registration.player_id == pid,
+                Registration.active.is_(True),
+            )
+        )
+        payment = None
+        if (
+            match.status in ("open", "finalized", "approved")
+            and registration
+            and not registration.paid
+        ):
+            payment = InlineKeyboardButton(
+                text="Оплачен" if registration.payment_reported else "Я оплатил",
+                callback_data=(
+                    f"paid:{match.id}:{registration.id}:{registration_stamp(registration)}"
+                ),
+            )
+        return menu(match.id, registration_open=match.status == "open", payment=payment)
+
+    async def update_menu(query, markup):
+        if isinstance(query.message, Message):
+            try:
+                await query.message.edit_reply_markup(reply_markup=markup)
+            except (TelegramBadRequest, TelegramForbiddenError):
+                # A removed/unchanged message must not undo a successful registration or mark.
+                pass
 
     async def identify(user):
         await check_member(cfg, user.id)
@@ -51,7 +88,7 @@ def dispatcher(cfg, factory):
 
         return await asyncio.to_thread(save)
 
-    @router.message(Command("start", "help", "admin"))
+    @router.message(Command("start", "admin"))
     async def start(message: Message):
         if not message.from_user:
             return
@@ -67,8 +104,28 @@ def dispatcher(cfg, factory):
                 "ФКЖК · футбольное сообщество\n\n"
                 f"{description}\nПриоритет — время записи среди оплативших.\n"
                 "В приложении: alias, текущая игра, оценки игроков и подбор составов.\n\n"
-                "/game — текущая игра\n/profile — моя статистика",
+                "/game — текущая игра\n/lastgame — результат последней игры\n"
+                "/profile — моя статистика\n/help — команды бота",
                 reply_markup=menu(),
+            )
+        except DomainError as exc:
+            await message.answer(exc.message)
+
+    @router.message(Command("help"))
+    async def help_command(message: Message):
+        if not message.from_user:
+            return
+        try:
+            await identify(message.from_user)
+            await message.answer(
+                "/start — открыть клуб\n"
+                "/game — ближайшая игра и запись\n"
+                "/lastgame — последний результат, голы, ассисты и составы\n"
+                "/profile — моя статистика\n"
+                "/help — команды бота\n\n"
+                "После перевода нажмите «Я оплатил» в /game. Оплату подтверждает администратор.",
+                reply_markup=menu(),
+                parse_mode=None,
             )
         except DomainError as exc:
             await message.answer(exc.message)
@@ -78,14 +135,17 @@ def dispatcher(cfg, factory):
         if not message.from_user:
             return
         try:
-            await identify(message.from_user)
+            pid = await identify(message.from_user)
 
             def read_game():
                 with factory() as db:
                     m = db.scalar(
                         select(Match)
-                        .where(Match.status.not_in(["draft", "cancelled"]), Match.starts_at > now())
-                        .order_by(Match.starts_at)
+                        .where(
+                            Match.status.in_(["open", "finalized", "approved"]),
+                            Match.starts_at > now(),
+                        )
+                        .order_by(Match.starts_at, Match.id)
                         .limit(1)
                     )
                     if not m:
@@ -104,24 +164,65 @@ def dispatcher(cfg, factory):
                                     r["registered_at"].astimezone(MOSCOW).strftime("%d.%m %H:%M:%S")
                                 )
                                 lines.append(
-                                    f"{r['queue']}. {r['alias']} · {'оплачен' if r['paid'] else 'без оплаты'} · {date}"
-                                    + (" · в составе" if r["selected"] else "")
+                                    f"{r['queue']}. {r['alias']} · "
+                                    + ("🟢 Оплачен" if r["payment_reported"] else "🔴 Не оплачен")
+                                    + " · "
+                                    + ("🟢 Подтверждено" if r["paid"] else "🔴 Не подтверждено")
+                                    + f" · {date} · "
+                                    + ("основной список" if r["in_main"] else "резерв")
                                 )
-                    match_id, is_open = m.id, m.status == "open"
-                return lines, match_id, is_open
+                    return lines, game_menu(db, m, pid)
 
             result = await asyncio.to_thread(read_game)
             if result is None:
                 await message.answer("Ближайшая игра еще не опубликована.", reply_markup=menu())
                 return
-            lines, match_id, is_open = result
-            parts = chunks("\n".join(lines))
+            lines, markup = result
+            parts = chunks("\n".join(lines), utf16=True)
             for i, part in enumerate(parts):
                 await message.answer(
                     part,
-                    reply_markup=menu(match_id if is_open else None)
-                    if i == len(parts) - 1
-                    else None,
+                    reply_markup=markup if i == len(parts) - 1 else None,
+                    parse_mode=None,
+                )
+        except DomainError as exc:
+            await message.answer(exc.message)
+
+    @router.message(Command("lastgame"))
+    async def last_game(message: Message):
+        if not message.from_user:
+            return
+        try:
+            await identify(message.from_user)
+
+            def read_result():
+                with factory() as db:
+                    m = db.scalar(
+                        select(Match)
+                        .join(MatchResult, MatchResult.match_id == Match.id)
+                        .where(
+                            Match.status == "completed",
+                            MatchResult.completed.is_(True),
+                            Match.starts_at <= now(),
+                        )
+                        .order_by(Match.starts_at.desc(), Match.id.desc())
+                        .limit(1)
+                    )
+                    if not m:
+                        return None
+                    return m.id, result_text(m, result_data(db, m))
+
+            result = await asyncio.to_thread(read_result)
+            if result is None:
+                await message.answer("Пока нет завершённых игр с результатом.", reply_markup=menu())
+                return
+            match_id, text = result
+            parts = chunks(text, utf16=True)
+            for i, part in enumerate(parts):
+                await message.answer(
+                    part,
+                    reply_markup=menu(match_id) if i == len(parts) - 1 else None,
+                    parse_mode=None,
                 )
         except DomainError as exc:
             await message.answer(exc.message)
@@ -174,9 +275,54 @@ def dispatcher(cfg, factory):
                     if not db.get(BotCallbackReceipt, query.id):
                         register(db, pid, match, position)
                         db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=match.id))
+                    return game_menu(db, match, pid)
 
-            await asyncio.to_thread(save_join)
+            markup = await asyncio.to_thread(save_join)
             await query.answer("Вы записаны. Оплату подтверждает администратор.", show_alert=True)
+            await update_menu(query, markup)
+        except (DomainError, ValueError) as exc:
+            await query.answer(
+                exc.message if isinstance(exc, DomainError) else "Неизвестная игра", show_alert=True
+            )
+
+    @router.callback_query(F.data.startswith("paid:"))
+    async def paid(query: CallbackQuery):
+        try:
+            _, mid, rid, stamp = query.data.split(":")
+            mid, rid = int(mid), int(rid)
+            pid = await identify(query.from_user)
+
+            def save_paid():
+                with factory() as db, db.begin():
+                    match = get_match(db, mid, lock=True)
+                    if db.get(BotCallbackReceipt, query.id):
+                        return "Уже обработано. Откройте /game для обновления.", game_menu(
+                            db, match, pid
+                        )
+                    registration = db.get(Registration, rid)
+                    if (
+                        not registration
+                        or registration.match_id != mid
+                        or registration.player_id != pid
+                        or not registration.active
+                        or registration_stamp(registration) != stamp
+                    ):
+                        raise DomainError(
+                            "Кнопка устарела или принадлежит другому игроку. Откройте /game заново."
+                        )
+                    if match.status not in ("open", "finalized", "approved"):
+                        raise DomainError("Отметка оплаты недоступна для этой игры.")
+                    if registration.paid:
+                        text = "Оплата уже подтверждена администратором."
+                    else:
+                        report_payment(db, pid, match, registration, True)
+                        text = "Вы сообщили об оплате. Администратор проверит и подтвердит перевод."
+                    db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=mid))
+                    return text, game_menu(db, match, pid)
+
+            text, markup = await asyncio.to_thread(save_paid)
+            await query.answer(text, show_alert=True)
+            await update_menu(query, markup)
         except (DomainError, ValueError) as exc:
             await query.answer(
                 exc.message if isinstance(exc, DomainError) else "Неизвестная игра", show_alert=True
@@ -236,6 +382,7 @@ async def configure_bot(cfg):
             [
                 BotCommand(command="start", description="Вход в клуб"),
                 BotCommand(command="game", description="Текущая игра и участники"),
+                BotCommand(command="lastgame", description="Последний результат, голы и составы"),
                 BotCommand(command="profile", description="Профиль и статистика"),
                 BotCommand(command="help", description="Помощь"),
             ]

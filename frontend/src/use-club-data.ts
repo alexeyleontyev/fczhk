@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, DATA_CHANGED, hasToken, SESSION_EXPIRED, setToken } from './api'
 import type { Match, Player } from './types'
+import { requestedGame } from './game-link'
 
 export function useClubData() {
   const [me, setMe] = useState<Player | null>(null)
@@ -117,11 +118,8 @@ export function useClubData() {
         const tg = window.Telegram?.WebApp
         tg?.ready()
         tg?.expand()
-        const param = tg?.initDataUnsafe?.start_param
-        const id = param?.startsWith('game_')
-          ? Number(param.slice(5))
-          : Number(new URLSearchParams(location.search).get('game'))
-        if (Number.isInteger(id) && id > 0) setSelectedId(id)
+        const { id } = requestedGame()
+        if (id) setSelectedId(id)
         if (hasToken()) {
           try {
             await api('/me')

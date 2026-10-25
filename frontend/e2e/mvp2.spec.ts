@@ -182,12 +182,9 @@ test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing 
     revision: 0,
   })
   await page.goto(`/?game=${m.id}`)
-  await page.getByRole('button', { name: 'Зафиксировать составы на игру', exact: true }).click()
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Зафиксировать составы на игру', exact: true })
-    .click()
-  await page.getByRole('tab', { name: 'Участники', exact: true }).click()
+  await page.getByRole('button', { name: 'Утвердить составы', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Да', exact: true }).click()
+  await page.getByRole('tab', { name: 'Обзор', exact: true }).click()
   await page.getByText(/Рейтинги на эту игру ·/).click()
   await page.getByRole('button', { name: 'Рейтинг на игру: Баланс 16', exact: true }).click()
   const form = page.getByRole('form', { name: 'Временный рейтинг: Баланс 16' })

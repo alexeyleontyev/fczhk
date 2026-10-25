@@ -83,6 +83,7 @@ test('completed lineup shows missing ratings as dashes and keeps genuine zero sc
   ])
   await expect(scores).not.toContainText('≥')
   await expect(page.getByRole('button', { name: 'Утвердить состав' })).toHaveCount(0)
+  await expect(page.locator('.tactics-roster')).toHaveCount(0)
   await page.screenshot({ path: 'test-results/historical-lineup-mobile.png', fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 
@@ -194,7 +195,9 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   await expect(page.locator('.tactics-token')).toHaveCount(18)
   await expect(page.getByRole('button', { name: 'Утвердить состав', exact: true })).toHaveCount(0)
   const token = (name: string) =>
-    page.getByRole('button', { name: `На поле: ${name}`, exact: true })
+    page.locator('.tactics-token').filter({
+      has: page.getByRole('button', { name: `На поле: ${name}`, exact: true }),
+    })
   const y = async (name: string) =>
     token(name).evaluate((el) => parseFloat((el as HTMLElement).style.top))
   for (const color of ['white', 'black']) {
@@ -242,7 +245,9 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   expect(await y(player)).toBeCloseTo(72, 0)
   // Moving a token within its half preserves the team's score.
   const scores = await page.locator('.tactics-scores').innerText()
-  await token(player).focus()
+  await token(player)
+    .getByRole('button', { name: `На поле: ${player}`, exact: true })
+    .focus()
   await page.keyboard.press('ArrowLeft')
   expect(await page.locator('.tactics-scores').innerText()).toBe(scores)
   expect((await send(`/matches/${m.id}`)).registrations).toEqual(m.registrations)
@@ -252,7 +257,9 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
     await admin.goto(`/?game=${m.id}&screen=lineup`)
     await admin.getByRole('button', { name: 'Войти администратором' }).click()
     await expect(
-      admin.getByRole('button', { name: `На поле: ${player}`, exact: true }),
+      admin.locator('.tactics-token').filter({
+        has: admin.getByRole('button', { name: `На поле: ${player}`, exact: true }),
+      }),
     ).toHaveClass(/black/)
     await admin.getByRole('button', { name: 'Утвердить состав', exact: true }).click()
     await expect(admin.getByRole('status').filter({ hasText: 'Состав утверждён' })).toBeVisible()
@@ -268,7 +275,7 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   await expect(token(player)).toHaveClass(/black/)
   await page.setViewportSize({ width: 390, height: 844 })
   // Tap-to-place is available without a drag gesture on a narrow screen.
-  await page.getByRole('button', { name: player, exact: true }).click()
+  await page.getByRole('button', { name: `Перетащить: ${player}`, exact: true }).click()
   await expect(
     page.getByRole('status').filter({ hasText: `Куда поставить ${player}?` }),
   ).toBeVisible()

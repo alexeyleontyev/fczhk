@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { date, time } from './format'
 import type { Match, Run, Team } from './types'
+import { PlayerName } from './player-name'
 
 type AuctionPlayer = { registration_id: number; player_id: number; alias: string }
 type Lot = {
@@ -53,7 +54,8 @@ function AuctionHistory({ auction }: { auction: Auction }) {
       {[...auction.lots].reverse().map((lot) => (
         <div className="history-row" key={lot.id}>
           <strong>
-            #{lot.number} · {lot.player.alias} · круг {lot.round}
+            #{lot.number} · <PlayerName playerId={lot.player.player_id} alias={lot.player.alias} />{' '}
+            · круг {lot.round}
           </strong>
           <p>
             Белые: {lot.white_bid} · Чёрные: {lot.black_bid}
@@ -68,9 +70,15 @@ function AuctionHistory({ auction }: { auction: Auction }) {
       {auction.automatic.length > 0 && (
         <p>
           Бесплатно после заполнения соперника:{' '}
-          {auction.automatic
-            .map((id) => auction.participants.find((p) => p.registration_id === id)?.alias)
-            .join(', ')}
+          {auction.automatic.map((id, index) => {
+            const player = auction.participants.find((p) => p.registration_id === id)
+            return player ? (
+              <span key={id}>
+                {index > 0 && ', '}
+                <PlayerName playerId={player.player_id} alias={player.alias} />
+              </span>
+            ) : null
+          })}
           .
         </p>
       )}
@@ -221,7 +229,13 @@ export function AuctionScreen({
                   <h3>{teamName(t)}</h3>
                   <p>
                     Капитан:{' '}
-                    {auction.participants.find((p) => p.player_id === auction.captains[t])?.alias}
+                    <PlayerName
+                      playerId={auction.captains[t]}
+                      alias={
+                        auction.participants.find((p) => p.player_id === auction.captains[t])
+                          ?.alias ?? 'Капитан'
+                      }
+                    />
                   </p>
                   <p>
                     <strong>{auction.budgets[t]}</strong> баллов ·{' '}
@@ -236,7 +250,12 @@ export function AuctionScreen({
                 <div className="eyebrow">
                   ЛОТ {auction.current.number} · КРУГ {auction.current.round}
                 </div>
-                <h3>{auction.current.player.alias}</h3>
+                <h3>
+                  <PlayerName
+                    playerId={auction.current.player.player_id}
+                    alias={auction.current.player.alias}
+                  />
+                </h3>
                 <p className="muted">
                   Белые: {auction.current.submitted.white ? 'ставка принята' : 'ожидаем ставку'} ·
                   Чёрные: {auction.current.submitted.black ? 'ставка принята' : 'ожидаем ставку'}
@@ -329,7 +348,7 @@ export function AuctionScreen({
                       .filter((p) => auction.assignments[p.registration_id] === team)
                       .map((p) => (
                         <p className="auction-player" key={p.registration_id}>
-                          <span>{p.alias}</span>
+                          <PlayerName playerId={p.player_id} alias={p.alias} />
                           <small>
                             {p.player_id === auction.captains[team]
                               ? 'Капитан'

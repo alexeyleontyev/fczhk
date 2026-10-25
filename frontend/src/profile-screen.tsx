@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { SectionTabs } from './section-tabs'
 import { api } from './api'
 import type { SeasonFilter } from './seasons'
-import { RatingAverages } from './ratings'
 import { PlayerStats } from './results'
 import { initial } from './format'
 import { Button } from './ui'
@@ -49,14 +48,13 @@ export function ProfileScreen({
           onChange={setSection}
           options={[
             { value: 'stats', label: 'Статистика' },
-            { value: 'ratings', label: 'Оценки' },
             { value: 'settings', label: 'Настройки' },
           ]}
         >
-          {section === 'ratings' && <RatingAverages player={me} />}
           <div hidden={section !== 'stats'}>
             <PlayerStats
               playerId={me.id}
+              player={me}
               showIdentity={false}
               onMatch={openGame}
               onPlayer={openStats}

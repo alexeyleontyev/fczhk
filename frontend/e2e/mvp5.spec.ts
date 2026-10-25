@@ -28,7 +28,7 @@ test('player outside roster: predict, revise, lock at kickoff and update overall
     m = await send(`/matches/${m.id}/actions/${action}`, 'POST', { version: m.version })
   await page.goto(`/?game=${m.id}`)
   await page.getByRole('button', { name: 'Войти игроком', exact: true }).click()
-  await page.getByText('Прогноз на игру', { exact: true }).click()
+  await expect(page.locator('.game-prediction-top')).toBeVisible()
   const panel = page.locator('.prediction-panel')
   await expect(
     panel.getByText('Прогнозы откроются после утверждения составов', { exact: true }),
@@ -45,7 +45,7 @@ test('player outside roster: predict, revise, lock at kickoff and update overall
   })
   m = await send(`/matches/${m.id}/actions/approve`, 'POST', { version: m.version })
   await page.reload()
-  await page.getByText('Прогноз на игру', { exact: true }).click()
+  await expect(page.locator('.game-prediction-top')).toBeVisible()
   await panel.getByLabel('Голы белых', { exact: true }).fill('3')
   await panel.getByLabel('Голы чёрных', { exact: true }).fill('1')
   await panel.getByRole('button', { name: 'Сделать прогноз', exact: true }).click()
@@ -94,7 +94,7 @@ test('player outside roster: predict, revise, lock at kickoff and update overall
   })
   await panel.getByRole('button', { name: 'Общий зачёт прогнозов', exact: true }).click()
   const row = page.locator('.standings-table tbody tr').filter({ hasText: 'Михаил' })
-  await expect(row.locator('td').last()).toHaveText('3')
+  await expect(row.locator('td').last()).toHaveText('2')
   await page.screenshot({ path: 'test-results/mvp5-standings-mobile.png', fullPage: true })
   await page.setViewportSize({ width: 320, height: 740 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -111,7 +111,7 @@ test('player outside roster: predict, revise, lock at kickoff and update overall
     goals: [...saved.goals, ...[0, 1].map(() => ({ id: randomUUID(), team: 'black' }))],
   })
   await page.getByRole('button', { name: 'Обновить зачёт', exact: true }).click()
-  await expect(row.locator('td').last()).toHaveText('0')
+  await expect(row.locator('td').last()).toHaveText('0,5')
   const winner = page.locator('.standings-table tbody tr').filter({ hasText: 'Алексей' })
-  await expect(winner.locator('td').last()).toHaveText('1')
+  await expect(winner.locator('td').last()).toHaveText('3')
 })

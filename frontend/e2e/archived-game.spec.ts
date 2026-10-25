@@ -135,6 +135,7 @@ test('archived report shows frozen ratings, goals and metadata with private admi
   await expect(history).toContainText(new RegExp(`Добавлен гол \\d+: Белые · ${white.alias}`))
   await report.getByRole('button', { name: 'На поле', exact: true }).click()
   await expect(page.locator('.tactics-token')).toHaveCount(4)
+  await expect(page.locator('.tactics-roster')).toHaveCount(0)
   await page.getByRole('tab', { name: 'Итог', exact: true }).click()
   await expect(report.getByLabel('Счёт матча', { exact: true })).toContainText('2 : 1')
   const imported = await send(`/matches/${m.id}`)

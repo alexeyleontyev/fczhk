@@ -93,6 +93,10 @@ class Registration(Base):
     registered_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    payment_reported: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    payment_reported_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     selected: Mapped[bool] = mapped_column(Boolean, default=False)
     forced: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -122,14 +126,24 @@ class GameTemplate(Base):
     payment_details: Mapped[str] = mapped_column(Text, default="")
     announcements_chat_id: Mapped[str] = mapped_column(String(100), default="", server_default="")
     extended_chat_id: Mapped[str] = mapped_column(String(100), default="", server_default="")
-    extended_auction_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
-    extended_registration_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
-    extended_cancellation_enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    extended_auction_enabled: Mapped[bool] = mapped_column(
+        default=True, server_default=text("true")
+    )
+    extended_registration_enabled: Mapped[bool] = mapped_column(
+        default=True, server_default=text("true")
+    )
+    extended_cancellation_enabled: Mapped[bool] = mapped_column(
+        default=True, server_default=text("true")
+    )
     announcement_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     announcement_minutes: Mapped[int] = mapped_column(default=30, server_default=text("30"))
-    payment_reminder_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    payment_reminder_enabled: Mapped[bool] = mapped_column(
+        default=False, server_default=text("false")
+    )
     payment_reminder_weekday: Mapped[int] = mapped_column(default=3, server_default=text("3"))
-    payment_reminder_time: Mapped[str] = mapped_column(String(5), default="18:00", server_default="18:00")
+    payment_reminder_time: Mapped[str] = mapped_column(
+        String(5), default="18:00", server_default="18:00"
+    )
 
 
 class Audit(Base):
@@ -370,6 +384,16 @@ class Prediction(Base):
     revision: Mapped[int] = mapped_column(default=1)
     approved_version: Mapped[int] = mapped_column()
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+    scoring_version: Mapped[int] = mapped_column(default=2, server_default=text("2"))
+
+
+class PredictionBaseline(Base):
+    __tablename__ = "prediction_baselines"
+    __table_args__ = (CheckConstraint("points_half >= 0"),)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), primary_key=True)
+    season: Mapped[str] = mapped_column(String(40), primary_key=True)
+    points_half: Mapped[int] = mapped_column()
+    source: Mapped[str] = mapped_column(String(250))
 
 
 class ServiceHeartbeat(Base):

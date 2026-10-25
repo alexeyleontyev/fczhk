@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PlayerName } from './player-name'
 import { api } from './api'
 import { SeasonSelect, seasonQuery, type SeasonFilter } from './seasons'
 import type { Match, Run } from './types'
@@ -12,6 +13,8 @@ type Forecast = {
   approved_version: number
   points: number | null
   teams_changed: boolean
+  category?: string
+  in_contest?: boolean
 }
 type PredictionData = {
   server_time: string
@@ -24,8 +27,50 @@ type PredictionData = {
   forecasts: Forecast[]
   actual: { white: number; black: number } | null
 }
+const categories = ['Б4', 'Б13', 'Н', 'Ч13', 'Ч4'] as const
+const matrix = [
+  [3, 1, 0, 0, 0],
+  [0.5, 2, 0.5, 0, 0],
+  [0, 0.5, 3, 0.5, 0],
+  [0, 0, 0.5, 2, 0.5],
+  [0, 0, 0, 1, 3],
+]
+const number = (value: number) => value.toLocaleString('ru-RU')
 const rules =
-  '3 очка — победитель и разница мячей; 1 очко — только победитель или ничья. Иначе — 0. Очки не складываются.'
+  'Б4 / Ч4 — победа с разницей от 4 мячей. Б13 / Ч13 — победа с разницей от 1 до 3 мячей. Н — ничья. Белые и чёрные указаны в составах.'
+
+function PredictionRules() {
+  return (
+    <>
+      <p className="muted caption">{rules}</p>
+      <div className="prediction-matrix-scroll">
+        <table className="prediction-matrix">
+          <caption>Очки: строка — прогноз, столбец — результат</caption>
+          <thead>
+            <tr>
+              <th scope="col">Прогноз</th>
+              {categories.map((c) => (
+                <th scope="col" key={c}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.map((row, i) => (
+              <tr key={categories[i]}>
+                <th scope="row">{categories[i]}</th>
+                {row.map((value, j) => (
+                  <td key={j}>{number(value)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )
+}
 
 export function PredictionPanel({
   match: m,
@@ -42,6 +87,7 @@ export function PredictionPanel({
   const [error, setError] = useState('')
   const [time, setTime] = useState({ server: 0, received: 0 })
   const [tick, setTick] = useState(performance.now())
+  const [predictionCategory, setPredictionCategory] = useState('score')
   const accept = (value: PredictionData) => {
     setData(value)
     setTime({ server: new Date(value.server_time).getTime(), received: performance.now() })
@@ -92,7 +138,10 @@ export function PredictionPanel({
         <h2>Прогноз на матч</h2>
         {data && <span className="tag">{data.count} прогнозов</span>}
       </div>
-      <p className="muted caption">{rules}</p>
+      <details className="compact-explanation">
+        <summary>Как начисляются очки</summary>
+        <PredictionRules />
+      </details>
       {error && (
         <p className="alert error" role="alert">
           {error}
@@ -122,10 +171,11 @@ export function PredictionPanel({
               <strong>
                 Ваш прогноз: {data.mine.white_score} : {data.mine.black_score}
               </strong>
+              {data.mine.category && <span>Категория: {data.mine.category}</span>}
               <span>
                 {data.mine.points === null
                   ? 'Ожидаем подтверждения результата'
-                  : `Очки за матч: ${data.mine.points}`}
+                  : `Очки за матч: ${number(data.mine.points)}`}
               </span>
             </div>
           )}
@@ -135,6 +185,12 @@ export function PredictionPanel({
               {editable
                 ? 'Проверьте команды и при необходимости обновите прогноз.'
                 : 'Прогноз сохранён за белыми и чёрными.'}
+            </p>
+          )}
+          {editable && data.mine?.in_contest === false && (
+            <p className="alert">
+              Прогноз сделан до обновления конкурса. Отправьте его ещё раз до начала игры, чтобы он
+              участвовал в новом зачёте.
             </p>
           )}
           {editable && (
@@ -147,8 +203,12 @@ export function PredictionPanel({
                   try {
                     accept(
                       await api<PredictionData>(`/matches/${m.id}/prediction`, 'PUT', {
-                        white_score: Number(f.get('white')),
-                        black_score: Number(f.get('black')),
+                        ...(predictionCategory === 'score'
+                          ? {
+                              white_score: Number(f.get('white')),
+                              black_score: Number(f.get('black')),
+                            }
+                          : { category: predictionCategory }),
                         revision: data.mine?.revision || 0,
                         approved_version: data.approved_version,
                       }),
@@ -160,7 +220,21 @@ export function PredictionPanel({
                 }, 'Прогноз сохранён')
               }}
             >
-              <div className="prediction-inputs">
+              <label>
+                Исход прогноза
+                <select
+                  value={predictionCategory}
+                  onChange={(event) => setPredictionCategory(event.target.value)}
+                >
+                  <option value="score">Указать счёт матча</option>
+                  <option value="Б4">Б4 — белые, разница 4 и более</option>
+                  <option value="Б13">Б13 — белые, разница 1–3</option>
+                  <option value="Н">Н — ничья</option>
+                  <option value="Ч13">Ч13 — чёрные, разница 1–3</option>
+                  <option value="Ч4">Ч4 — чёрные, разница 4 и более</option>
+                </select>
+              </label>
+              <div className="prediction-inputs" hidden={predictionCategory !== 'score'}>
                 <label>
                   Голы белых
                   <input
@@ -207,11 +281,11 @@ export function PredictionPanel({
               {!data.forecasts.length && <p className="muted">На эту игру прогнозов нет.</p>}
               {data.forecasts.map((p) => (
                 <div className="forecast-row" key={p.player_id}>
-                  <span>{p.alias}</span>
+                  <PlayerName playerId={p.player_id} alias={p.alias} />
                   <strong>
                     {p.white_score} : {p.black_score}
                   </strong>
-                  <span>{p.points === null ? '—' : `${p.points} очк.`}</span>
+                  <span>{p.points === null ? '—' : `${number(p.points)} очк.`}</span>
                 </div>
               ))}
             </>
@@ -236,7 +310,10 @@ type Standing = {
   alias: string
   points: number
   three_points: number
+  two_points?: number
   one_point: number
+  half_points?: number
+  baseline_points?: number
   settled: number
   predictions: number
 }
@@ -290,7 +367,7 @@ export function PredictionStandings({
       <section className="panel standings-panel">
         <details className="compact-explanation">
           <summary>Правила конкурса</summary>
-          <p className="muted">{rules}</p>
+          <PredictionRules />
           <p className="muted caption">
             Учитываются только завершённые матчи. Исправления результата пересчитывают очки. При
             равенстве очков место общее.
@@ -329,12 +406,14 @@ export function PredictionStandings({
                         Учтено {row.settled} из {row.predictions}
                       </summary>
                       <small>
-                        Точный счёт: {row.three_points} · Исход: {row.one_point}
+                        Стартовые очки: {number(row.baseline_points ?? 0)}. За новые прогнозы: 3
+                        очка — {row.three_points}, 2 — {row.two_points ?? 0}, 1 — {row.one_point},
+                        0,5 — {row.half_points ?? 0}.
                       </small>
                     </details>
                   </td>
                   <td>
-                    <strong>{row.points}</strong>
+                    <strong>{number(row.points)}</strong>
                   </td>
                 </tr>
               ))}

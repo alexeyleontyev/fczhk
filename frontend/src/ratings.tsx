@@ -1,6 +1,7 @@
 import { RatingMark, RatingPair } from './rating-mark'
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { PlayerName } from './player-name'
 import { DEFAULT_MIN_GAMES, filterPlayers } from './player-list-filters'
 import type {
   Average,
@@ -304,8 +305,8 @@ export function RatingFlow({
   return (
     <div className="rating-flow">
       <p className="muted caption">
-        От 0 до 5 с шагом 0,1. Пустое значение — не ноль. Видны только средние и ваши оценки;
-        администратор видит все.
+        От 0 до 5 с шагом 0,1. Пустое значение — не ноль. Свои оценки можно изменить; оценки других
+        игроков с именами авторов доступны в профиле.
       </p>
       <label>
         Оцениваемый игрок
@@ -351,7 +352,9 @@ export function RatingFlow({
               <span className="eyebrow">
                 {target ? 'КАРТОЧКА ИГРОКА' : `${Math.max(0, index) + 1} / ${eligible.length}`}
               </span>
-              <h3>{person.alias}</h3>
+              <h3>
+                <PlayerName playerId={person.id} alias={person.alias} />
+              </h3>
             </div>
             <span className="tag">
               Средние:{' '}
@@ -440,7 +443,7 @@ export function RatingFlow({
               {data.reviews.map((review) => (
                 <div className="rating-review" key={review.author_id}>
                   <strong>
-                    {review.author}
+                    <PlayerName playerId={review.author_id} alias={review.author} />
                     {review.source === 'sheet' ? ' · из таблицы' : ''}
                   </strong>
                   <span>
@@ -504,7 +507,7 @@ export function TemporaryRatings({
       {eligible.map((entry) => (
         <div className="temporary-rating-row" key={entry.id}>
           <span>
-            {entry.alias}
+            <PlayerName playerId={entry.player_id} alias={entry.alias} />
             <small>
               <RatingPair
                 attack={entry.rating.attack}
@@ -572,7 +575,9 @@ function TemporaryForm({
         void save(attack, defense)
       }}
     >
-      <h3>{entry.alias} · только эта игра</h3>
+      <h3>
+        <PlayerName playerId={entry.player_id} alias={entry.alias} /> · только эта игра
+      </h3>
       <ScoreInputs
         position={entry.position}
         attack={attack}
@@ -688,7 +693,14 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
       )}
       {settings?.method !== 'game' && missing.length > 0 && (
         <p className="alert" role="status">
-          Сначала задайте рейтинги на игру: {missing.map((r) => r.alias).join(', ')}.
+          Сначала задайте рейтинги на игру:{' '}
+          {missing.map((r, index) => (
+            <span key={r.id}>
+              {index > 0 && ', '}
+              <PlayerName playerId={r.player_id} alias={r.alias} />
+            </span>
+          ))}
+          .
         </p>
       )}
       {settings && browsing && (
@@ -868,7 +880,12 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
                         const rating = temporary ?? community
                         return (
                           <div className="variant-player" key={r.registration_id}>
-                            <span>{r.alias}</span>
+                            <PlayerName
+                              playerId={
+                                m.registrations.find((p) => p.id === r.registration_id)?.player_id
+                              }
+                              alias={r.alias}
+                            />
                             {rating && (
                               <small title={temporary ? 'Оценка на эту игру' : 'Оценка сообщества'}>
                                 <RatingPair attack={rating.attack} defense={rating.defense} />
@@ -930,7 +947,11 @@ export function AutomaticTeams({ match: m, run, busy }: { match: Match; run: Run
               <summary>Рейтинги, использованные в расчете</summary>
               {latest.inputs.map((r) => (
                 <p className="caption" key={r.registration_id}>
-                  {r.alias}:{' '}
+                  <PlayerName
+                    playerId={m.registrations.find((p) => p.id === r.registration_id)?.player_id}
+                    alias={r.alias}
+                  />
+                  :{' '}
                   {latest.settings.method === 'game' ? (
                     `μ ${score(r.game_mu)} · σ ${score(r.game_sigma)} · ${r.game_count} игр`
                   ) : (

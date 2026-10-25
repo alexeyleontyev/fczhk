@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { Button } from './ui'
+import { PlayerName } from './player-name'
 
 type Member = {
   id: number
@@ -97,7 +98,9 @@ export function AdministratorsPanel({ onChanged }: { onChanged: () => Promise<vo
             .filter((member) => member.role !== 'player')
             .map((member) => (
               <div className="publication" key={member.id}>
-                <strong>{member.alias}</strong>
+                <strong>
+                  <PlayerName playerId={member.id} alias={member.alias} />
+                </strong>
                 <span>
                   {member.role === 'owner' ? 'Владелец' : 'Администратор'} · Telegram ID{' '}
                   {member.telegram_id}

@@ -6,6 +6,7 @@ import { RatingMark, ratingNumber } from './rating-mark'
 import { MatchHistory } from './match-history'
 import { MatchResult, type Participant } from './results'
 import { Button } from './ui'
+import { PlayerName } from './player-name'
 import type { Average, History, Match, Player, Position, Run, Team } from './types'
 
 export const isArchivedMatch = (match: Match | null) =>
@@ -131,8 +132,12 @@ export function ArchivedGameScreen({
     defense: ratings.get(`${person.player_id}:${person.position}`)?.defense ?? null,
   })
   const participants = result?.participants ?? []
-  const name = (id: number | null) =>
-    participants.find((p) => p.player_id === id)?.alias || 'Автор неизвестен'
+  const name = (id: number | null) => (
+    <PlayerName
+      playerId={id}
+      alias={participants.find((p) => p.player_id === id)?.alias || 'Автор неизвестен'}
+    />
+  )
   const knownTime = m.time_known ?? !m.historical
   const gameDate = new Date(m.starts_at)
     .toLocaleDateString('ru-RU', {
@@ -345,7 +350,7 @@ export function ArchivedGameScreen({
                                   {person.position === 'keeper' && (
                                     <Hand size={13} aria-label="Вратарь" />
                                   )}
-                                  {person.alias}
+                                  <PlayerName playerId={person.player_id} alias={person.alias} />
                                 </td>
                                 <td>
                                   {person.position === 'keeper' ? '—' : ratingNumber(rating.attack)}
@@ -364,11 +369,15 @@ export function ArchivedGameScreen({
                             <div className="archive-goal" key={goal.id}>
                               <CircleDot size={14} aria-hidden="true" />
                               <div>
-                                {goal.kind === 'own_goal'
-                                  ? goal.author_id
-                                    ? `${name(goal.author_id)} · автогол`
-                                    : 'Автогол'
-                                  : name(goal.author_id)}
+                                {goal.kind === 'own_goal' ? (
+                                  goal.author_id ? (
+                                    <>{name(goal.author_id)} · автогол</>
+                                  ) : (
+                                    'Автогол'
+                                  )
+                                ) : (
+                                  name(goal.author_id)
+                                )}
                                 {goal.assist_id && <small>Пас: {name(goal.assist_id)}</small>}
                               </div>
                             </div>

@@ -4,6 +4,7 @@ import { Eraser, GripVertical, Share2 } from 'lucide-react'
 import { api } from './api'
 import { Button } from './ui'
 import { TeamDots } from './team-board'
+import { PlayerName } from './player-name'
 import { RatingMark, RatingPair, ratingNumber as fmt } from './rating-mark'
 import { tacticalLayout, type Point } from './tactical-layout'
 import type { Match, Player, Position, Team, Run, BalanceRun } from './types'
@@ -445,36 +446,40 @@ export function TacticsScreen({
           .map((p) => {
             const point = positions[p.registration_id]
             return (
-              <button
-                type="button"
+              <div
                 key={p.registration_id}
                 className={`tactics-token ${assignments[p.registration_id]} ${selected === p.registration_id ? 'selected' : ''}`}
                 style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
-                aria-label={`На поле: ${p.alias}`}
-                aria-pressed={selected === p.registration_id}
-                {...pointerHandlers(p.registration_id)}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  select(p.registration_id)
-                }}
-                onKeyDown={(e) => {
-                  const directions: Record<string, Point> = {
-                    ArrowLeft: { x: -0.03, y: 0 },
-                    ArrowRight: { x: 0.03, y: 0 },
-                    ArrowUp: { x: 0, y: -0.03 },
-                    ArrowDown: { x: 0, y: 0.03 },
-                  }
-                  const delta = directions[e.key]
-                  if (delta && !disabled) {
-                    e.preventDefault()
-                    place(p.registration_id, { x: point.x + delta.x, y: point.y + delta.y })
-                  }
-                  if (e.key === 'Escape') setSelected(null)
-                }}
               >
-                <span className="tactics-shirt">{p.position === 'keeper' ? 'ВР' : ''}</span>
-                <span className="tactics-alias">{p.alias}</span>
-              </button>
+                <button
+                  type="button"
+                  className="tactics-position"
+                  aria-label={`На поле: ${p.alias}`}
+                  aria-pressed={selected === p.registration_id}
+                  {...pointerHandlers(p.registration_id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    select(p.registration_id)
+                  }}
+                  onKeyDown={(e) => {
+                    const directions: Record<string, Point> = {
+                      ArrowLeft: { x: -0.03, y: 0 },
+                      ArrowRight: { x: 0.03, y: 0 },
+                      ArrowUp: { x: 0, y: -0.03 },
+                      ArrowDown: { x: 0, y: 0.03 },
+                    }
+                    const delta = directions[e.key]
+                    if (delta && !disabled) {
+                      e.preventDefault()
+                      place(p.registration_id, { x: point.x + delta.x, y: point.y + delta.y })
+                    }
+                    if (e.key === 'Escape') setSelected(null)
+                  }}
+                >
+                  <span className="tactics-shirt">{p.position === 'keeper' ? 'ВР' : ''}</span>
+                </button>
+                <PlayerName playerId={p.player_id} alias={p.alias} className="tactics-alias" />
+              </div>
             )
           })}
         {!people.some((p) => assignments[p.registration_id]) && (
@@ -485,7 +490,7 @@ export function TacticsScreen({
         {selected !== null
           ? `Куда поставить ${people.find((p) => p.registration_id === selected)?.alias}? Нажмите на поле.`
           : data.editable
-            ? 'Перетащите игрока или выберите его и нажмите на поле.'
+            ? 'Перетащите значок игрока или выберите его и нажмите на поле. Имя открывает профиль.'
             : 'Состав завершённой игры'}
       </p>
       <div className="tactics-scores" aria-label="Баллы команд">
@@ -573,65 +578,63 @@ export function TacticsScreen({
           )}
         </>
       )}
-      <details
-        className="panel tactics-roster"
-        open={rosterOpen}
-        onToggle={(e) => setRosterOpen(e.currentTarget.open)}
-      >
-        <summary>
-          Игроки{' '}
-          <span className="muted">
-            {people.length} · без команды{' '}
-            {people.filter((p) => !assignments[p.registration_id]).length}
-          </span>
-        </summary>
-        {(expanded ? ordered : ordered.slice(0, 6)).map((p) => (
-          <div className="tactics-roster-row" key={p.registration_id}>
-            <div className="tactics-person">
+      {data.editable && (
+        <details
+          className="panel tactics-roster"
+          open={rosterOpen}
+          onToggle={(e) => setRosterOpen(e.currentTarget.open)}
+        >
+          <summary>
+            Игроки{' '}
+            <span className="muted">
+              {people.length} · без команды{' '}
+              {people.filter((p) => !assignments[p.registration_id]).length}
+            </span>
+          </summary>
+          {(expanded ? ordered : ordered.slice(0, 6)).map((p) => (
+            <div className="tactics-roster-row" key={p.registration_id}>
+              <div className="tactics-person">
+                <div className="tactics-name">
+                  {p.position === 'keeper' ? '🧤 ' : ''}
+                  <PlayerName playerId={p.player_id} alias={p.alias} />
+                </div>
+                <small className="muted">
+                  <RatingPair
+                    attack={p.attack}
+                    defense={p.defense}
+                    keeper={p.position === 'keeper'}
+                  />
+                  {draft?.source === 'auction' &&
+                    data.auction?.prices[p.registration_id] !== undefined && (
+                      <> · {data.auction.prices[p.registration_id]} баллов</>
+                    )}
+                </small>
+              </div>
               <button
-                className="tactics-name"
+                type="button"
+                className="tactics-drag"
+                aria-label={`Перетащить: ${p.alias}`}
                 disabled={disabled}
+                {...pointerHandlers(p.registration_id)}
                 onClick={() => select(p.registration_id)}
               >
-                {p.position === 'keeper' ? '🧤 ' : ''}
-                {p.alias}
+                <GripVertical size={18} />
               </button>
-              <small className="muted">
-                <RatingPair
-                  attack={p.attack}
-                  defense={p.defense}
-                  keeper={p.position === 'keeper'}
-                />
-                {draft?.source === 'auction' &&
-                  data.auction?.prices[p.registration_id] !== undefined && (
-                    <> · {data.auction.prices[p.registration_id]} баллов</>
-                  )}
-              </small>
+              <TeamDots
+                alias={p.alias}
+                team={assignments[p.registration_id] ?? null}
+                disabled={disabled}
+                onChange={(team) => setTeam(p.registration_id, team)}
+              />
             </div>
-            <button
-              type="button"
-              className="tactics-drag"
-              aria-label={`Перетащить: ${p.alias}`}
-              disabled={disabled}
-              {...pointerHandlers(p.registration_id)}
-              onClick={() => select(p.registration_id)}
-            >
-              <GripVertical size={18} />
-            </button>
-            <TeamDots
-              alias={p.alias}
-              team={assignments[p.registration_id] ?? null}
-              disabled={disabled}
-              onChange={(team) => setTeam(p.registration_id, team)}
-            />
-          </div>
-        ))}
-        {people.length > 6 && (
-          <Button className="ghost compact" onClick={() => setExpanded(!expanded)}>
-            {expanded ? 'Свернуть список' : `Все игроки · ${people.length}`}
-          </Button>
-        )}
-      </details>
+          ))}
+          {people.length > 6 && (
+            <Button className="ghost compact" onClick={() => setExpanded(!expanded)}>
+              {expanded ? 'Свернуть список' : `Все игроки · ${people.length}`}
+            </Button>
+          )}
+        </details>
+      )}
       {data.editable && (
         <div className="tactics-footer">
           <p className="muted caption">

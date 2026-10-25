@@ -57,6 +57,206 @@ a:focus-visible {
 a {
   color: inherit;
 }
+.player-name {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-decoration-color: #7d887e70;
+  text-underline-offset: 3px;
+}
+.player-name:hover {
+  color: var(--green);
+  text-decoration-color: currentColor;
+}
+.profile-ratings {
+  margin-top: 20px;
+}
+.profile-ratings h3 {
+  margin-bottom: 8px;
+}
+.profile-reviews {
+  margin-top: 16px;
+}
+.profile-review {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.profile-review .rating-pair {
+  flex-shrink: 0;
+}
+.recent-form {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.recent-form small {
+  font-size: 10px;
+}
+.form-dots {
+  display: flex;
+  gap: 8px;
+}
+.form-dot {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: block;
+}
+.form-dot.win {
+  background: #2e895b;
+}
+.form-dot.draw {
+  background: #e3b637;
+}
+.form-dot.loss {
+  background: #cb5752;
+}
+.form-dot.empty {
+  background: #e4e8df;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.checkbox-label input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--green);
+}
+.roster-reserve {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  margin-top: 18px;
+}
+.payment-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.payment-status {
+  display: inline-grid;
+  place-items: center;
+  padding: 6px 9px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.payment-status::before,
+.payment-status-label {
+  grid-area: 1 / 1;
+}
+.payment-status::before {
+  content: 'Не подтверждено';
+  visibility: hidden;
+}
+.payment-status.positive {
+  color: #246d43;
+  background: #edf7ef;
+  border-color: #b9d9c2;
+}
+.payment-status.negative {
+  color: #a82f32;
+  background: #fff0ef;
+  border-color: #ecc0be;
+}
+.roster-actions .payment-statuses {
+  flex-direction: column;
+  align-items: stretch;
+}
+.roster-actions {
+  flex-shrink: 0;
+}
+.finalize-changes {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  margin: 16px 0;
+}
+.finalize-changes > p:first-child {
+  margin-top: 0;
+}
+.finalize-changes section + section {
+  margin-top: 16px;
+}
+.finalize-changes section p:last-child {
+  margin-bottom: 0;
+}
+.game-prediction-top {
+  margin-bottom: 24px;
+  scroll-margin-top: 16px;
+}
+.game-prediction-top .prediction-panel {
+  border: 1px solid #b5cbb9;
+}
+.game-controls {
+  margin-bottom: 18px;
+  background: #eef2e8;
+  border-color: #e0e7d8;
+}
+.game-controls h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.game-controls > .inline {
+  gap: 8px;
+}
+.game-controls .button {
+  max-width: 100%;
+}
+.game-publications {
+  margin-top: 14px;
+  font-size: 12px;
+}
+.roster-registration-time {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #667768;
+}
+.prediction-matrix-scroll {
+  overflow-x: auto;
+}
+.prediction-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin: 12px 0;
+}
+.prediction-matrix th,
+.prediction-matrix td {
+  border: 1px solid var(--line);
+  padding: 7px 4px;
+  text-align: center;
+}
+.prediction-matrix caption {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  text-align: left;
+}
 h1,
 h2,
 h3,
@@ -1959,8 +2159,15 @@ footer > span:first-child {
   border: 0;
   color: var(--ink);
   background: transparent;
-  touch-action: none;
   user-select: none;
+}
+.tactics-position {
+  display: grid;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  touch-action: none;
   cursor: grab;
 }
 .tactics-shirt {

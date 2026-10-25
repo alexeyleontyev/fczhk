@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import { Button } from './ui'
 import type { Player } from './types'
+import { PlayerName } from './player-name'
 
 export type Claim = {
   player_id: number
@@ -61,7 +62,11 @@ export function ProfileLink({ players }: { players: Player[] }) {
             : claim.status === 'accepted'
               ? 'Карточка привязана'
               : 'Заявка отклонена'}
-          : {claim.guest}
+          :{' '}
+          <PlayerName
+            playerId={claim.status === 'accepted' ? claim.player_id : claim.guest_id}
+            alias={claim.guest}
+          />
         </p>
       )}
       {claim?.status !== 'accepted' && (

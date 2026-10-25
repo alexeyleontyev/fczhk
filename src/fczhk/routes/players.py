@@ -99,6 +99,21 @@ def router(ctx):
     ):
         return rt.review_data(db, p.id, player_id, position, has_admin_access(p, cfg))
 
+    @app.get("/api/players/{player_id}/reviews")
+    def player_reviews(
+        player_id: int,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        return {
+            position: [
+                {key: row[key] for key in ("author_id", "author", "attack", "defense", "at")}
+                for row in rt.review_data(db, p.id, player_id, position, True)["reviews"]
+                if row["author_id"] != player_id
+            ]
+            for position in ("field", "keeper")
+        }
+
     @app.get("/api/players/{player_id}/stats")
     def statistics(
         player_id: int,

@@ -35,10 +35,16 @@ def chunks(value: str, size: int = 3500, *, utf16=False) -> list[str]:
     return result + ([value] if value else [])
 
 
-def app_link(cfg, match_id=None):
+def app_link(cfg, match_id=None, screen=None):
     if cfg.bot_username:
         return f"https://t.me/{cfg.bot_username}?startapp=" + (
-            f"game_{match_id}" if match_id else "home"
+            f"game_{match_id}" + (f"_{screen}" if screen else "") if match_id else "home"
+        )
+    if match_id:
+        return (
+            cfg.public_url.rstrip("/")
+            + f"/?game={match_id}"
+            + (f"&screen={screen}" if screen else "")
         )
     return cfg.public_url
 
@@ -112,6 +118,16 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
                 InlineKeyboardMarkup(
                     inline_keyboard=[
                         [InlineKeyboardButton(text="Открыть игру", url=app_link(cfg, match_id))]
+                        + (
+                            [
+                                InlineKeyboardButton(
+                                    text="Сделать прогноз",
+                                    url=app_link(cfg, match_id, "prediction"),
+                                )
+                            ]
+                            if kind == "teams"
+                            else []
+                        )
                     ]
                 )
                 if i == len(parts) - 1

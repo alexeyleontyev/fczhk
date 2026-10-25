@@ -91,7 +91,7 @@ def test_seasons_filter_statistics_but_keep_cumulative_skill_rating(env, call):
         with factory() as db:
             predictions = game_ratings.forecast_history(db, season=season)
         assert len(predictions) == 1
-        assert call("GET", "/predictions/standings" + query)[0]["points"] == (3 if wins else 0)
+        assert call("GET", "/predictions/standings" + query)[0]["points"] == (2 if wins else 0)
     total = call("GET", f"/players/{ids['admin']}/stats")
     assert (total["games"], total["wins"], total["losses"], total["goals"]) == (2, 1, 1, 1)
     assert total["partners"][0]["games"] == 2

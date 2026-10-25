@@ -8,6 +8,7 @@ import { filterPlayerNames } from './player-list-filters'
 import { RatingMark, ratingNumber } from './rating-mark'
 import { SeasonSelect, type SeasonFilter } from './seasons'
 import type { Player } from './types'
+import { PlayerName } from './player-name'
 
 export function PlayersScreen({
   players,
@@ -29,6 +30,10 @@ export function PlayersScreen({
   const [search, setSearch] = useState('')
   const [section, setSection] = useState('catalog')
   const [source, setSource] = useState('community')
+  const [ratedOnly, setRatedOnly] = useState(false)
+  const visiblePlayers = filterPlayerNames(players, search).filter(
+    (p) => !ratedOnly || p.ratings?.field.defense != null || p.ratings?.keeper.defense != null,
+  )
   return (
     <>
       <div className="page-heading">
@@ -99,78 +104,86 @@ export function PlayersScreen({
           </SectionTabs>
         )}
         {section === 'catalog' && (
-          <div className="panel compact-catalog">
-            <div className="catalog-head">
-              <span>Игрок</span>
-              <span>
-                <RatingMark kind="attack" />
-              </span>
-              <span>
-                <RatingMark kind="defense" />
-              </span>
-              <span>Σ</span>
+          <>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={ratedOnly}
+                onChange={(event) => setRatedOnly(event.target.checked)}
+              />
+              Только игроки с оценками
+            </label>
+            <div className="panel compact-catalog">
+              <div className="catalog-head">
+                <span>Игрок</span>
+                <span>
+                  <RatingMark kind="attack" />
+                </span>
+                <span>
+                  <RatingMark kind="defense" />
+                </span>
+                <span>Σ</span>
+              </div>
+              {visiblePlayers.map((p) => (
+                <details className="player-card catalog-person" key={p.id} name="catalog-player">
+                  <summary>
+                    <h3>
+                      <span className="catalog-chevron" aria-hidden="true">
+                        ›
+                      </span>
+                      <PlayerName playerId={p.id} alias={p.alias} />
+                    </h3>
+                    <span>{ratingNumber(p.ratings?.field.attack ?? null)}</span>
+                    <span>{ratingNumber(p.ratings?.field.defense ?? null)}</span>
+                    <strong>
+                      {p.ratings?.field.attack == null || p.ratings?.field.defense == null
+                        ? '—'
+                        : ratingNumber(p.ratings.field.attack + p.ratings.field.defense)}
+                    </strong>
+                  </summary>
+                  <div className="catalog-details">
+                    {p.shared_keeper ? (
+                      <span className="muted caption">
+                        Для игр с неизвестным или сменным вратарём.
+                      </span>
+                    ) : (
+                      <>
+                        <span className="muted caption">{p.guest ? 'Гость' : 'Игрок клуба'}</span>
+                        <RatingAverages player={p} />
+                        <div className="inline wrap">
+                          <button
+                            className="button secondary compact"
+                            onClick={() => openStats(p.id)}
+                          >
+                            Статистика
+                          </button>
+                          {(p.id !== me.id || isAdmin) && (
+                            <button
+                              className="button ghost compact"
+                              aria-label={`Оценки: ${p.alias}`}
+                              onClick={() => openRatings(p.id)}
+                            >
+                              {p.id === me.id ? 'Посмотреть оценки' : 'Оценить'}
+                            </button>
+                          )}
+                          {isAdmin && p.guest && (
+                            <button
+                              className="button ghost compact"
+                              aria-label={`Связать гостя ${p.alias}`}
+                              onClick={() => setModal(`link:${p.id}`)}
+                            >
+                              <ArrowUpRight size={16} /> Связать с аккаунтом
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </details>
+              ))}
+              {!visiblePlayers.length && <p className="empty-small muted">Игроки не найдены.</p>}
             </div>
-            {filterPlayerNames(players, search).map((p) => (
-              <details className="player-card catalog-person" key={p.id} name="catalog-player">
-                <summary>
-                  <h3>
-                    <span className="catalog-chevron" aria-hidden="true">
-                      ›
-                    </span>
-                    {p.alias}
-                  </h3>
-                  <span>{ratingNumber(p.ratings?.field.attack ?? null)}</span>
-                  <span>{ratingNumber(p.ratings?.field.defense ?? null)}</span>
-                  <strong>
-                    {p.ratings?.field.attack == null || p.ratings?.field.defense == null
-                      ? '—'
-                      : ratingNumber(p.ratings.field.attack + p.ratings.field.defense)}
-                  </strong>
-                </summary>
-                <div className="catalog-details">
-                  {p.shared_keeper ? (
-                    <span className="muted caption">
-                      Для игр с неизвестным или сменным вратарём.
-                    </span>
-                  ) : (
-                    <>
-                      <span className="muted caption">{p.guest ? 'Гость' : 'Игрок клуба'}</span>
-                      <RatingAverages player={p} />
-                      <div className="inline wrap">
-                        <button
-                          className="button secondary compact"
-                          onClick={() => openStats(p.id)}
-                        >
-                          Статистика
-                        </button>
-                        {(p.id !== me.id || isAdmin) && (
-                          <button
-                            className="button ghost compact"
-                            aria-label={`Оценки: ${p.alias}`}
-                            onClick={() => openRatings(p.id)}
-                          >
-                            {p.id === me.id ? 'Посмотреть оценки' : 'Оценить'}
-                          </button>
-                        )}
-                        {isAdmin && p.guest && (
-                          <button
-                            className="button ghost compact"
-                            aria-label={`Связать гостя ${p.alias}`}
-                            onClick={() => setModal(`link:${p.id}`)}
-                          >
-                            <ArrowUpRight size={16} /> Связать с аккаунтом
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </details>
-            ))}
-            {!filterPlayerNames(players, search).length && (
-              <p className="empty-small muted">Игроки не найдены.</p>
-            )}
-          </div>
+          </>
         )}
       </SectionTabs>
     </>

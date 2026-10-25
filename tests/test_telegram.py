@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -6,7 +6,13 @@ from uuid import uuid4
 import pytest
 from aiogram import Bot
 from aiogram.exceptions import TelegramMigrateToChat
-from aiogram.methods import GetChatMember, SendMessage, SetMyCommands
+from aiogram.methods import (
+    AnswerCallbackQuery,
+    EditMessageReplyMarkup,
+    GetChatMember,
+    SendMessage,
+    SetMyCommands,
+)
 from sqlalchemy import func, select
 
 from fczhk.auth import check_member
@@ -43,6 +49,54 @@ async def command_replies(env, monkeypatch, command, user_id=102, username=None)
     return [
         call.args[0] for call in sender.await_args_list if isinstance(call.args[0], SendMessage)
     ]
+
+
+async def callback_replies(env, monkeypatch, data, *, user_id=102, callback_id=None):
+    cfg, factory, *_ = env
+    cfg.bot_token = "123456:abcdefghijklmnopqrstuvwxyzABCDE"
+    sender = AsyncMock(return_value=True)
+    monkeypatch.setattr(Bot, "__call__", sender)
+    await handle_update(
+        cfg,
+        factory,
+        {
+            "update_id": 127,
+            "callback_query": {
+                "id": callback_id or str(uuid4()),
+                "from": {"id": user_id, "is_bot": False, "first_name": "Игрок"},
+                "chat_instance": "abc",
+                "message": {
+                    "message_id": 1,
+                    "date": 1700000000,
+                    "chat": {"id": user_id, "type": "private"},
+                    "text": "Игра",
+                },
+                "data": data,
+            },
+        },
+    )
+    return [call.args[0] for call in sender.await_args_list]
+
+
+def payment_button(markup):
+    return next(
+        b
+        for row in markup.inline_keyboard
+        for b in row
+        if b.callback_data and b.callback_data.startswith("paid:")
+    )
+
+
+def future_game(call, days=2):
+    from fczhk.db import now
+
+    game = call(
+        "POST",
+        "/matches",
+        {"starts_at": (now() + timedelta(days=days)).isoformat(), "location": "Поле оплаты"},
+        expected=201,
+    )
+    return call("POST", f"/matches/{game['id']}/actions/open", {"version": game["version"]})
 
 
 async def test_profile_shows_linked_all_time_and_current_season_statistics(env, call, monkeypatch):
@@ -162,7 +216,7 @@ async def test_bot_profile_refreshes_username_and_falls_back_to_id(env, monkeypa
             assert db.get(Player, env[4]["player"]).telegram_username == username
 
 
-async def test_configured_commands_exclude_players_and_include_profile(env, monkeypatch):
+async def test_configured_commands_include_lastgame_and_exclude_paid(env, monkeypatch):
     cfg = env[0]
     cfg.bot_token = "123456:abcdefghijklmnopqrstuvwxyzABCDE"
     sender = AsyncMock(return_value=True)
@@ -171,11 +225,17 @@ async def test_configured_commands_exclude_players_and_include_profile(env, monk
     commands = next(
         call.args[0] for call in sender.await_args_list if isinstance(call.args[0], SetMyCommands)
     )
-    assert [c.command for c in commands.commands] == ["start", "game", "profile", "help"]
+    assert [c.command for c in commands.commands] == [
+        "start",
+        "game",
+        "lastgame",
+        "profile",
+        "help",
+    ]
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-async def test_help_uses_saved_schedule_instead_of_fixed_days(env, monkeypatch, enabled):
+async def test_start_uses_saved_schedule_instead_of_fixed_days(env, monkeypatch, enabled):
     cfg, factory, *_ = env
     cfg.bot_token = "123456:abcdefghijklmnopqrstuvwxyzABCDE"
     with factory() as db, db.begin():
@@ -195,8 +255,8 @@ async def test_help_uses_saved_schedule_instead_of_fixed_days(env, monkeypatch, 
                 "date": 1700000000,
                 "chat": {"id": 102, "type": "private"},
                 "from": {"id": 102, "is_bot": False, "first_name": "Игрок"},
-                "text": "/help",
-                "entities": [{"offset": 0, "length": 5, "type": "bot_command"}],
+                "text": "/start",
+                "entities": [{"offset": 0, "length": 6, "type": "bot_command"}],
             },
         },
     )
@@ -209,6 +269,176 @@ async def test_help_uses_saved_schedule_instead_of_fixed_days(env, monkeypatch, 
     assert (
         "Сбор: воскресенье, 23:45 МСК" if enabled else "Автоматическое открытие сбора выключено"
     ) in message.text
+
+
+async def test_help_is_a_short_command_guide_and_paid_command_is_removed(env, monkeypatch):
+    replies = await command_replies(env, monkeypatch, "/help")
+    text = replies[0].text
+    assert len(text) < 500
+    assert all(f"/{name} —" in text for name in ("start", "game", "lastgame", "profile", "help"))
+    assert "«Я оплатил» в /game" in text and "администратор" in text
+    assert "/paid" not in text
+    assert await command_replies(env, monkeypatch, "/paid") == []
+
+
+async def test_game_payment_button_is_own_and_bound_to_the_shown_match(env, call, monkeypatch):
+    game = future_game(call, days=3)
+    path = f"/matches/{game['id']}"
+    call("POST", path + "/join", {"position": "field"}, role="player")
+    replies = await command_replies(env, monkeypatch, "/game")
+    button = payment_button(replies[-1].reply_markup)
+    assert button.text == "Я оплатил"
+    assert len(button.callback_data.encode()) <= 64
+    assert "🔴 Не оплачен · 🔴 Не подтверждено" in replies[0].text
+    earlier = future_game(call, days=1)
+    call("POST", f"/matches/{earlier['id']}/join", {"position": "keeper"}, role="player")
+    result = await callback_replies(env, monkeypatch, button.callback_data)
+    assert "Администратор проверит" in next(
+        r.text for r in result if isinstance(r, AnswerCallbackQuery)
+    )
+    updated = next(r for r in result if isinstance(r, EditMessageReplyMarkup))
+    assert payment_button(updated.reply_markup).text == "Оплачен"
+    assert call("GET", path)["registrations"][0]["payment_reported"]
+    assert not call("GET", f"/matches/{earlier['id']}")["registrations"][0]["payment_reported"]
+
+
+async def test_payment_button_rejects_other_players_and_stale_enrollment(env, call, monkeypatch):
+    game = future_game(call)
+    path = f"/matches/{game['id']}"
+    call("POST", path + "/join", {"position": "field"}, role="player")
+    replies = await command_replies(env, monkeypatch, "/game")
+    data = payment_button(replies[-1].reply_markup).callback_data
+    for user_id, payload in [(101, data), (102, "paid:invalid")]:
+        await callback_replies(env, monkeypatch, payload, user_id=user_id)
+        assert not call("GET", path)["registrations"][0]["payment_reported"]
+    await callback_replies(env, monkeypatch, data, callback_id="payment-once")
+    call("DELETE", path + "/join", role="player")
+    await callback_replies(env, monkeypatch, data)
+    assert call("GET", path)["registrations"] == []
+    rejoined = call("POST", path + "/join", {"position": "field"}, role="player")
+    for callback_id in ("payment-once", "old-button-new-click"):
+        await callback_replies(env, monkeypatch, data, callback_id=callback_id)
+        after = call("GET", path)
+        assert after["version"] == rejoined["version"]
+        assert not after["registrations"][0]["payment_reported"]
+
+
+async def test_game_button_after_join_and_after_admin_confirmation(env, call, monkeypatch):
+    game = future_game(call)
+    path = f"/matches/{game['id']}"
+    before = (await command_replies(env, monkeypatch, "/game"))[-1].reply_markup
+    assert not any(
+        b.callback_data.startswith("paid:")
+        for row in before.inline_keyboard
+        for b in row
+        if b.callback_data
+    )
+    joined = await callback_replies(env, monkeypatch, f"join:{game['id']}:field")
+    markup = next(r.reply_markup for r in joined if isinstance(r, EditMessageReplyMarkup))
+    data = payment_button(markup).callback_data
+    current = call("GET", path)
+    rid = current["registrations"][0]["id"]
+    current = call(
+        "PUT", path + f"/registrations/{rid}/payment", {"version": current["version"], "paid": True}
+    )
+    await callback_replies(env, monkeypatch, data)
+    assert call("GET", path)["version"] == current["version"]
+    assert not call("GET", path)["registrations"][0]["payment_reported"]
+    replies = await command_replies(env, monkeypatch, "/game")
+    assert "🔴 Не оплачен · 🟢 Подтверждено" in replies[0].text
+    assert not any(
+        b.callback_data.startswith("paid:")
+        for row in replies[-1].reply_markup.inline_keyboard
+        for b in row
+        if b.callback_data
+    )
+
+
+async def test_lastgame_without_results(env, monkeypatch):
+    replies = await command_replies(env, monkeypatch, "/lastgame")
+    assert [r.text for r in replies] == ["Пока нет завершённых игр с результатом."]
+
+
+async def test_lastgame_uses_latest_finished_actual_roster_and_current_goals(env, monkeypatch):
+    factory, ids = env[1], env[4]
+    monkeypatch.setattr("fczhk.bot.now", lambda: datetime(2026, 10, 20, 12, tzinfo=UTC))
+    with factory() as db, db.begin():
+        for day, status, completed in [
+            (1, "completed", True),
+            (2, "completed", True),
+            (3, "approved", False),
+            (4, "cancelled", True),
+            (5, "draft", False),
+            (6, "completed", False),
+            (25, "completed", True),
+        ]:
+            match = Match(
+                game_day=f"2026-10-{day:02d}",
+                starts_at=datetime(2026, 10, day, 17, tzinfo=UTC),
+                location=f"Поле {day}",
+                status=status,
+            )
+            db.add(match)
+            db.flush()
+            db.add(MatchResult(match_id=match.id, completed=completed))
+            db.flush()
+            if day != 2:
+                continue
+            mid = match.id
+            db.add_all(
+                [
+                    ResultParticipant(
+                        match_id=mid, player_id=ids["player"], team="white", position="field"
+                    ),
+                    ResultParticipant(
+                        match_id=mid, player_id=ids["admin"], team="white", position="keeper"
+                    ),
+                ]
+            )
+            opponent = Player(alias="Соперник")
+            db.add(opponent)
+            db.flush()
+            db.add(
+                ResultParticipant(
+                    match_id=mid, player_id=opponent.id, team="black", position="field"
+                )
+            )
+            db.add_all(
+                [
+                    ResultGoal(
+                        id="goal",
+                        match_id=mid,
+                        team="white",
+                        kind="goal",
+                        author_id=ids["player"],
+                        assist_id=ids["admin"],
+                    ),
+                    ResultGoal(
+                        id="own", match_id=mid, team="white", kind="own_goal", author_id=opponent.id
+                    ),
+                ]
+            )
+    replies = await command_replies(env, monkeypatch, "/lastgame")
+    text = replies[0].text
+    assert "02.10.2026 · 20:00 МСК" in text and "Поле 2" in text
+    assert "Белые 2 : 0 Чёрные" in text
+    assert "🧤 Администратор\nИгрок\nГолы и передачи:" in text
+    assert "⚽ Игрок · передача: Администратор" in text
+    assert "Автогол — Соперник" in text
+    assert "⚫ Чёрные\nСоперник\nГолы и передачи:\nГолов нет" in text
+    assert replies[-1].reply_markup and replies[0].parse_mode is None
+    with factory() as db, db.begin():
+        db.get(ResultGoal, (mid, "goal")).team = "black"
+    updated = await command_replies(env, monkeypatch, "/lastgame")
+    assert "Белые 1 : 1 Чёрные" in updated[0].text
+
+
+@pytest.mark.parametrize("command", ["/game", "/lastgame", "/help"])
+async def test_game_commands_require_membership(env, monkeypatch, command):
+    checker = AsyncMock(side_effect=DomainError("Нет доступа к сообществу", 403))
+    monkeypatch.setattr("fczhk.bot.check_member", checker)
+    replies = await command_replies(env, monkeypatch, command, user_id=999)
+    assert [r.text for r in replies] == ["Нет доступа к сообществу"]
 
 
 async def test_duplicate_telegram_callback_cannot_rejoin_after_later_cancel(
