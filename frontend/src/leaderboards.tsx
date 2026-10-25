@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api } from './api'
 import { seasonQuery } from './seasons'
-import { percentTone } from './percent'
+import { ResultsTable } from './results-table'
 import { DEFAULT_MIN_GAMES, filterPlayerNames, filterPlayers } from './player-list-filters'
 import { RatingPair, RatingMark } from './rating-mark'
 
 type ResultMetric = 'points' | 'win_rate' | 'goals' | 'assists' | 'goal_assist'
 type CommunityMetric = 'field_total' | 'field_attack' | 'field_defense' | 'keeper_defense'
-type ResultRow = {
+export type ResultRow = {
   player_id: number
   alias: string
   games: number
@@ -32,13 +32,6 @@ type Boards = {
   community: { boards: Record<CommunityMetric, CommunityRow[]> }
 }
 
-const resultOptions: { key: ResultMetric; label: string }[] = [
-  { key: 'points', label: 'Очки' },
-  { key: 'win_rate', label: 'Винрейт' },
-  { key: 'goals', label: 'Голы' },
-  { key: 'assists', label: 'Передачи' },
-  { key: 'goal_assist', label: 'Гол + пас' },
-]
 const communityOptions: { key: CommunityMetric; label: string }[] = [
   { key: 'field_total', label: 'Атака + защита' },
   { key: 'field_attack', label: 'Атака' },
@@ -157,7 +150,6 @@ export function Leaderboards({
 }) {
   const [data, setData] = useState<Boards | null>(null)
   const [error, setError] = useState('')
-  const [resultMetric, setResultMetric] = useState<ResultMetric>('points')
   const [communityMetric, setCommunityMetric] = useState<CommunityMetric>('field_total')
   const [resultMinimumGames, setResultMinimumGames] = useState(DEFAULT_MIN_GAMES)
   useEffect(() => {
@@ -175,7 +167,7 @@ export function Leaderboards({
       active = false
     }
   }, [revision, season])
-  const allResultRows = data?.results.boards[resultMetric] ?? []
+  const allResultRows = data?.results.boards.points ?? []
   const qualifiedResultRows = filterPlayers(allResultRows, '', resultMinimumGames)
   const resultRows = filterPlayers(qualifiedResultRows, name, '0')
   const allCommunityRows = data?.community.boards[communityMetric] ?? []
@@ -198,7 +190,6 @@ export function Leaderboards({
               Автоголы не входят в зачёт бомбардиров.
             </p>
           </details>
-          <Filters options={resultOptions} selected={resultMetric} select={setResultMetric} />
           <label className="compact-minimum">
             Игр больше
             <input
@@ -219,24 +210,7 @@ export function Leaderboards({
             <p>По выбранным фильтрам игроки не найдены.</p>
           )}
           {data && resultRows.length > 0 && (
-            <LeaderboardRows
-              key={resultMetric}
-              valueLabel={resultOptions.find((option) => option.key === resultMetric)?.label}
-              rows={resultRows}
-              rankingRows={qualifiedResultRows}
-              onPlayer={onPlayer}
-              value={(row) => row[resultMetric]}
-              formatValue={
-                resultMetric === 'win_rate'
-                  ? (row) =>
-                      `${row.win_rate.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
-                  : undefined
-              }
-              valueClassName={
-                resultMetric === 'win_rate' ? (row) => percentTone(row.win_rate) : undefined
-              }
-              details={(row) => String(row.games)}
-            />
+            <ResultsTable rows={resultRows} rankingRows={qualifiedResultRows} onPlayer={onPlayer} />
           )}
         </section>
       )}

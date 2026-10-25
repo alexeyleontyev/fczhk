@@ -14,9 +14,11 @@ type Schedule = {
 export function CollectionCountdown({
   refresh,
   currentGame,
+  showEmpty = false,
 }: {
   refresh: () => Promise<void>
   currentGame: Match | null
+  showEmpty?: boolean
 }) {
   const [schedule, setSchedule] = useState<Schedule | null>(null)
   const [remaining, setRemaining] = useState(0)
@@ -81,6 +83,11 @@ export function CollectionCountdown({
       <p className="muted caption" role="status">
         {error}
       </p>
+    ) : showEmpty ? (
+      <section className="panel">
+        <h2>{schedule ? 'Следующий сбор ещё не запланирован' : 'Загрузка расписания…'}</h2>
+        {schedule && <p className="muted caption">Дата открытия записи появится здесь.</p>}
+      </section>
     ) : null
   // Do not distract from an upcoming game with next week's collection timer.
   if (

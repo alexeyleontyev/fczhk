@@ -14,9 +14,11 @@ from ..models import (
     Audit,
     GameTemplate,
     Match,
+    MatchResult,
     Player,
     Publication,
     Registration,
+    ResultParticipant,
     SkippedGameDay,
     TeamRatingSnapshot,
     TeamSnapshot,
@@ -63,6 +65,36 @@ def router(ctx):
         if match is None:
             match = db.scalar(query.order_by(Match.starts_at.desc(), Match.id.desc()).limit(1))
         return svc.match_data(db, match) if match else None
+
+    @app.get("/api/matches/last-completed")
+    def last_completed(
+        p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        match = db.scalar(
+            select(Match)
+            .join(MatchResult, MatchResult.match_id == Match.id)
+            .where(
+                Match.status == "completed",
+                MatchResult.completed.is_(True),
+                Match.starts_at <= now(),
+            )
+            .order_by(Match.starts_at.desc(), Match.id.desc())
+            .limit(1)
+        )
+        if match is None:
+            return None
+        people, canonical = res.identities(db)
+        keeper = min(
+            (p.id for p in people.values() if p.shared_keeper and not p.merged_into), default=None
+        )
+        ids = {
+            canonical[pid]
+            for pid in db.scalars(
+                select(ResultParticipant.player_id).where(ResultParticipant.match_id == match.id)
+            )
+        }
+        ids = {keeper if people[pid].shared_keeper and keeper is not None else pid for pid in ids}
+        return {**summaries(db, [match])[0], "participant_ids": sorted(ids)}
 
     @app.get("/api/matches/{match_id}")
     def detail(

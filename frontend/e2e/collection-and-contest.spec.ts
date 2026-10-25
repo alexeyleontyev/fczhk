@@ -450,7 +450,7 @@ test('rated filter keeps zero scores, profile lazily reveals named reviews and f
   await page.getByRole('checkbox', { name: 'Только игроки с оценками', exact: true }).check()
   await expect(page.locator('.catalog-person')).toHaveCount(2)
   await page
-    .locator('.catalog-person summary')
+    .locator('.catalog-person')
     .getByRole('button', { name: person.alias, exact: true })
     .click()
   const profile = page.getByRole('dialog')

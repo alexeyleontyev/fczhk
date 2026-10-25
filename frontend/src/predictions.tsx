@@ -387,57 +387,66 @@ export function PredictionStandings({
           </p>
         )}
         {data && data.length > 0 && (
-          <table className="standings-table">
-            <thead>
-              <tr>
-                <th>Место</th>
-                <th>Прогнозист</th>
-                <th>Очки</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((row) => (
-                <tr key={row.player_id} className={row.player_id === me ? 'mine' : ''}>
-                  <td>{row.rank}</td>
-                  <td>
-                    <button className="text-button" onClick={() => onPlayer(row.player_id)}>
-                      {row.alias}
-                      {row.player_id === me ? ' · вы' : ''}
-                    </button>
-                    <div className="prediction-metrics">
-                      <span>
-                        Прогнозов: <strong>{row.predictions}</strong>
-                      </span>
-                      <span>
-                        Средние очки:{' '}
-                        <strong>
-                          {row.average_points == null
-                            ? '—'
-                            : row.average_points.toLocaleString('ru-RU', {
-                                maximumFractionDigits: 2,
-                              })}
-                        </strong>
-                      </span>
-                    </div>
-                    <details className="prediction-row-details">
-                      <summary>
-                        Учтено {row.settled} из {row.predictions}
-                      </summary>
-                      <small>
-                        Из таблицы: {row.baseline_predictions ?? 0} прогнозов, стартовые очки:{' '}
-                        {number(row.baseline_points ?? 0)}. За новые прогнозы: 3 очка —{' '}
-                        {row.three_points}, 2 — {row.two_points ?? 0}, 1 — {row.one_point}, 0,5 —{' '}
-                        {row.half_points ?? 0}.
-                      </small>
-                    </details>
-                  </td>
-                  <td>
-                    <strong>{number(row.points)}</strong>
-                  </td>
+          <div
+            className="table-scroll"
+            role="region"
+            aria-label="Таблица прогнозистов"
+            tabIndex={0}
+          >
+            <table className="standings-table forecast-standings">
+              <colgroup>
+                <col className="forecast-rank" />
+                <col className="forecast-player" />
+                <col className="forecast-count" />
+                <col className="forecast-average" />
+                <col className="forecast-points" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th aria-label="Место" title="Место">
+                    №
+                  </th>
+                  <th>Игрок</th>
+                  <th title="Количество учтённых прогнозов">Учтено</th>
+                  <th title="Средние очки за сделанный прогноз">Ср. очки</th>
+                  <th>Общие очки</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.map((row) => (
+                  <tr key={row.player_id} className={row.player_id === me ? 'mine' : ''}>
+                    <td>{row.rank}</td>
+                    <td>
+                      <button className="text-button" onClick={() => onPlayer(row.player_id)}>
+                        {row.alias}
+                        {row.player_id === me ? ' · вы' : ''}
+                      </button>
+                      <details className="prediction-row-details">
+                        <summary>
+                          Учтено {row.settled} из {row.predictions}
+                        </summary>
+                        <small>
+                          Из таблицы: {row.baseline_predictions ?? 0} прогнозов, стартовые очки:{' '}
+                          {number(row.baseline_points ?? 0)}. За новые прогнозы: 3 очка —{' '}
+                          {row.three_points}, 2 — {row.two_points ?? 0}, 1 — {row.one_point}, 0,5 —{' '}
+                          {row.half_points ?? 0}.
+                        </small>
+                      </details>
+                    </td>
+                    <td className="forecast-number">{row.settled}</td>
+                    <td className="forecast-number">
+                      {row.average_points == null
+                        ? '—'
+                        : row.average_points.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td>
+                      <strong>{number(row.points)}</strong>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
     </>

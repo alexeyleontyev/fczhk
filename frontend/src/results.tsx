@@ -554,6 +554,7 @@ export function PlayerStats({
   player,
   viewerId,
   onRate,
+  viewerAdmin = false,
   showIdentity = true,
   onMatch,
   onPlayer,
@@ -563,6 +564,7 @@ export function PlayerStats({
   player?: Player
   viewerId: number
   onRate?: (id: number) => void
+  viewerAdmin?: boolean
   showIdentity?: boolean
   onMatch: (id: number) => void
   onPlayer: (id: number) => void
@@ -716,6 +718,11 @@ export function PlayerStats({
                 <div className="profile-ratings">
                   <h3>Оценки игрока</h3>
                   <RatingAverages player={player} />
+                  {viewerAdmin && onRate && (
+                    <Button className="ghost compact" onClick={() => onRate(data.player_id)}>
+                      История оценок
+                    </Button>
+                  )}
                   <PlayerReviews key={playerId} playerId={playerId} />
                 </div>
               )}

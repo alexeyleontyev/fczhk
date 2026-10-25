@@ -17,17 +17,11 @@ test('one shared keeper card has no personal ratings or profile linking actions'
   await page.getByRole('searchbox', { name: 'Поиск игроков', exact: true }).fill('приглашенный')
   const card = page.locator('.catalog-person')
   await expect(card).toHaveCount(1)
-  await expect(card.getByRole('heading')).toContainText('Приглашённый вратарь')
-  await card.locator('summary').click()
-  await expect(card).toContainText('Для игр с неизвестным или сменным вратарём.')
+  await expect(card.locator('.catalog-name')).toContainText('Приглашённый вратарь')
+  await expect(card).toContainText('Общая карточка')
   await expect(card.getByRole('button')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Оценить игроков', exact: true }).click()
-  await expect(
-    page.getByLabel('Оцениваемый игрок').getByRole('option', {
-      name: 'Приглашённый вратарь',
-      exact: true,
-    }),
-  ).toHaveCount(0)
+  await expect(card.getByRole('textbox')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Оценить игроков', exact: true })).toHaveCount(0)
 })
 
 test('compact workspaces: one search, lazy ratings, circled metrics and details on demand', async ({
@@ -61,11 +55,10 @@ test('compact workspaces: one search, lazy ratings, circled metrics and details 
   await expect(search).toHaveCount(1)
   await search.fill(alias)
   const row = page.locator('.catalog-person').filter({ hasText: alias })
-  await expect(row.getByRole('heading', { name: alias, exact: true })).toBeVisible()
-  await expect(row.locator('summary')).toContainText('4,6')
-  await expect(row.getByRole('button', { name: 'Статистика', exact: true })).toBeHidden()
-  await row.locator('summary').click()
-  await row.getByRole('button', { name: 'Статистика', exact: true }).click()
+  await expect(row.getByRole('button', { name: alias, exact: true })).toBeVisible()
+  await expect(row.locator('.catalog-total')).toContainText('4,6')
+  await expect(row.getByLabel(`Моя атака: ${alias}`, { exact: true })).toHaveValue('1,2')
+  await row.getByRole('button', { name: alias, exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText(`Статистика: ${alias}`)
   await page.keyboard.press('Escape')
   await tabs.getByRole('tab', { name: 'Рейтинги', exact: true }).click()
@@ -98,7 +91,6 @@ test('compact workspaces: one search, lazy ratings, circled metrics and details 
     'aria-selected',
     'true',
   )
-  await row.locator('summary').click()
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

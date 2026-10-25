@@ -45,10 +45,9 @@ for (const username of [null, 'long_telegram_username_12345678901']) {
       })
       await page.getByRole('button', { name: 'Игроки', exact: true }).click()
       await page.getByLabel('Поиск игроков', { exact: true }).fill(nickname)
-      await page.locator('.catalog-person summary').first().click()
       await page
-        .locator('.player-card')
-        .getByRole('button', { name: 'Статистика', exact: true })
+        .locator('.catalog-person')
+        .getByRole('button', { name: nickname, exact: true })
         .click()
       const dialog = page.getByRole('dialog')
       await expect(

@@ -113,7 +113,7 @@ for (const role of ['admin', 'player']) {
     const search = page.getByRole('searchbox', { name: 'Поиск игроков', exact: true })
     await search.fill(other.alias)
     await page
-      .locator('.catalog-person summary')
+      .locator('.catalog-person')
       .getByRole('button', { name: other.alias, exact: true })
       .click()
     const profile = page.getByRole('dialog', { name: 'Профиль игрока', exact: true })
@@ -148,7 +148,7 @@ for (const role of ['admin', 'player']) {
     await profile.getByRole('button', { name: 'Закрыть', exact: true }).click()
     await search.fill(member.player.alias)
     await page
-      .locator('.catalog-person summary')
+      .locator('.catalog-person')
       .getByRole('button', { name: member.player.alias, exact: true })
       .click()
     await expect(
@@ -189,7 +189,7 @@ test('catalog names open profiles by keyboard and ratings are part of the statis
   await page.getByRole('searchbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
   const card = page.locator('.catalog-person').filter({ hasText: person.alias })
   await expect(card).not.toHaveAttribute('open')
-  await card.locator('summary').getByRole('button', { name: person.alias, exact: true }).focus()
+  await card.getByRole('button', { name: person.alias, exact: true }).focus()
   await page.keyboard.press('Enter')
   const profile = page.getByRole('dialog', { name: 'Профиль игрока', exact: true })
   await expect(

@@ -72,7 +72,9 @@ test('player has no administrative controls; membership profile and archive work
   await expect(page.getByRole('button', { name: 'Настройки', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Игроки', exact: true }).click()
   await page.getByLabel('Поиск игроков').fill('Михаил')
-  await expect(page.getByRole('heading', { name: 'Михаил', exact: true })).toBeVisible()
+  await expect(
+    page.locator('.catalog-person').getByRole('button', { name: 'Михаил', exact: true }),
+  ).toBeVisible()
   await page.getByRole('button', { name: 'Профиль', exact: true }).click()
   await page.getByRole('tab', { name: 'Настройки', exact: true }).click()
   await expect(page.getByLabel('Игровой alias')).toHaveValue('Михаил')

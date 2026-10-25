@@ -103,8 +103,9 @@ test('Telegram back restores nested statistics, catalog search and current game;
   expect(await page.evaluate(() => (window as TelegramTestWindow).telegramBackHandlers)).toBe(1)
   await page.getByRole('button', { name: 'Игроки', exact: true }).click()
   await page.getByLabel('Поиск игроков', { exact: true }).fill(person.alias)
-  await page.locator('.catalog-person summary').first().click()
-  const open = page.locator('.player-card').getByRole('button', { name: 'Статистика', exact: true })
+  const open = page
+    .locator('.catalog-person')
+    .getByRole('button', { name: person.alias, exact: true })
   await open.scrollIntoViewIfNeeded()
   const catalogScroll = await page.evaluate(() => window.scrollY)
   await open.click()

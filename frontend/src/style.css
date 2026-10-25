@@ -3226,3 +3226,380 @@ footer > span:first-child {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Mobile catalog and full results tables. Only each table scrolls horizontally. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.table-scroll:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.table-footnote {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 12px 0 0;
+}
+.table-footnote svg {
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.catalog-table-panel {
+  padding: 0;
+  max-width: 960px;
+  overflow: hidden;
+}
+.catalog-table-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 12px;
+}
+.catalog-table-title h2 {
+  font-size: 15px;
+}
+.catalog-table {
+  width: 100%;
+  min-width: 310px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.catalog-name-col {
+  width: 100px;
+}
+.catalog-average-col {
+  width: 28px;
+}
+.catalog-own-col {
+  width: 44px;
+}
+.catalog-save-col {
+  width: 32px;
+}
+.catalog-table th,
+.catalog-table td {
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+.catalog-table th {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  background: #f6f8f3;
+}
+.catalog-table th:first-child,
+.catalog-table .catalog-name {
+  text-align: left;
+  padding-left: 10px;
+}
+.catalog-table .catalog-person {
+  display: table-row;
+}
+.catalog-table .catalog-name {
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.catalog-name .player-name {
+  min-height: 40px;
+  font-size: 12px;
+}
+.catalog-name small {
+  display: block;
+  font-size: 9px;
+  font-weight: 400;
+}
+.catalog-link-guest {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+}
+.catalog-average {
+  color: #6d7e65;
+  font-size: 11px;
+}
+.catalog-total {
+  font-weight: 600;
+}
+.catalog-score {
+  width: 40px;
+  max-width: 100%;
+  height: 40px;
+  min-width: 0;
+  border: 1px solid #d9e2d2;
+  border-radius: 6px;
+  padding: 3px 1px;
+  text-align: center;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  background: white;
+}
+.catalog-score::placeholder {
+  color: #a7b29f;
+}
+.catalog-save {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  width: 28px;
+  height: 40px;
+  padding: 0;
+  color: white;
+  background: var(--green);
+}
+.catalog-save:disabled {
+  cursor: default;
+  background: #f5f7f1;
+  color: #b8c2af;
+  border-color: #dbe2d5;
+  opacity: 1;
+}
+.catalog-save.saved:disabled {
+  background: #edf5e7;
+  color: #3a7545;
+  border-color: #bad1b0;
+}
+.rating-dirty {
+  background: #fbfcf5;
+}
+.catalog-feedback td {
+  text-align: left;
+  padding: 9px 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.catalog-feedback [role='alert'] {
+  color: #ab443d;
+}
+.catalog-feedback [role='status'] {
+  color: var(--green);
+}
+.catalog-table-panel > .table-footnote {
+  padding: 0 12px 14px;
+}
+.keeper-catalog {
+  min-width: 260px;
+}
+.keeper-catalog .catalog-average-col {
+  width: 64px;
+}
+.keeper-catalog .catalog-own-col {
+  width: 64px;
+}
+.results-table {
+  width: 768px;
+  min-width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.result-rank-col {
+  width: 28px;
+}
+.result-name-col {
+  width: 112px;
+}
+.result-games-col {
+  width: 52px;
+}
+.result-points-col,
+.result-wins-col,
+.result-draws-col,
+.result-goals-col {
+  width: 64px;
+}
+.result-losses-col,
+.result-assists-col,
+.result-goal_assist-col,
+.result-win_rate-col {
+  width: 80px;
+}
+.results-table th,
+.results-table td {
+  padding: 10px 5px;
+  height: 52px;
+  background: white;
+}
+.results-table th {
+  background: #f6f8f3;
+}
+.results-table .result-rank {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: left;
+}
+.results-table .result-name {
+  position: sticky;
+  left: 28px;
+  z-index: 1;
+  text-align: left;
+}
+.results-table .result-games {
+  position: sticky;
+  left: 140px;
+  z-index: 1;
+  text-align: center;
+  box-shadow: 5px 0 6px -5px #203b3266;
+}
+.results-table th.result-rank,
+.results-table th.result-name,
+.results-table th.result-games {
+  z-index: 2;
+}
+.results-table .result-points {
+  font-weight: 700;
+  color: var(--green);
+}
+.table-sort {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.table-sort span {
+  color: #a6b29c;
+}
+.table-sort.active,
+.table-sort.active span {
+  color: var(--green);
+  font-weight: 600;
+}
+.result-name .table-sort {
+  justify-content: flex-start;
+}
+.result-games .table-sort,
+.result-rank .table-sort {
+  justify-content: center;
+}
+.standings-panel {
+  min-width: 0;
+}
+.forecast-standings {
+  table-layout: fixed;
+  min-width: 300px;
+  font-variant-numeric: tabular-nums;
+}
+.forecast-standings .forecast-rank {
+  width: 30px;
+}
+.forecast-standings .forecast-count {
+  width: 48px;
+}
+.forecast-standings .forecast-average {
+  width: 57px;
+}
+.forecast-standings .forecast-points {
+  width: 55px;
+}
+.forecast-standings th,
+.forecast-standings td {
+  padding: 12px 4px;
+  font-size: 12px;
+}
+.forecast-standings th {
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.forecast-standings .text-button {
+  font-size: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  min-height: 34px;
+}
+.forecast-standings .forecast-number,
+.forecast-standings th:nth-child(n + 3) {
+  text-align: right;
+}
+.forecast-standings td:last-child {
+  font-size: 19px;
+}
+.forecast-standings .prediction-row-details {
+  font-size: 9px;
+}
+.forecast-standings .prediction-row-details summary {
+  padding: 5px 0;
+}
+.previous-game-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 0;
+  font-size: 13px;
+}
+.previous-game-score strong {
+  font-size: 27px;
+  white-space: nowrap;
+}
+.previous-game-panel .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.next-game-schedule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--green);
+  text-align: left;
+  font-size: 13px;
+}
+.next-game-schedule > span {
+  flex: 1;
+}
+.next-game-schedule small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 5px;
+  line-height: 1.6;
+}
+@media (max-width: 600px) {
+  .standings-panel {
+    padding: 16px 10px;
+  }
+  .leaderboard-board {
+    padding: 16px 10px;
+  }
+  .catalog-table-panel {
+    padding: 0;
+  }
+}

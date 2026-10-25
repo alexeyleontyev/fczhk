@@ -64,11 +64,9 @@ test('season filter follows statistics, player profile, archive and predictions'
   await expect(page.locator('.game-rating-board')).toContainText('66 игр за всю историю')
   await page.getByRole('tab', { name: 'Каталог', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
-  await page.locator('.catalog-person summary').first().click()
   await page
-    .locator('.player-card')
-    .filter({ has: page.getByRole('heading', { name: person.alias, exact: true }) })
-    .getByRole('button', { name: 'Статистика', exact: true })
+    .locator('.catalog-person')
+    .getByRole('button', { name: person.alias, exact: true })
     .click()
   await expect(
     page.getByRole('dialog').getByRole('combobox', { name: 'Период статистики', exact: true }),
@@ -91,11 +89,9 @@ test('season filter follows statistics, player profile, archive and predictions'
   expect(requests.some((url) => url.includes('/api/game-ratings?'))).toBe(false)
   await page.getByRole('tab', { name: 'Каталог', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Поиск игроков', exact: true }).fill(person.alias)
-  await page.locator('.catalog-person summary').first().click()
   await page
-    .locator('.player-card')
-    .filter({ has: page.getByRole('heading', { name: person.alias, exact: true }) })
-    .getByRole('button', { name: 'Статистика', exact: true })
+    .locator('.catalog-person')
+    .getByRole('button', { name: person.alias, exact: true })
     .click()
   const dialog = page.getByRole('dialog')
   await expect(

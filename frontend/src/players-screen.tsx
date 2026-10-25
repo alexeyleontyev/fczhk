@@ -1,29 +1,29 @@
 import { useState } from 'react'
-import { Plus, ArrowUpRight } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { Leaderboards } from './leaderboards'
-import { GameRatingLeaderboard, RatingAverages } from './ratings'
+import { GameRatingLeaderboard } from './ratings'
 import { Button } from './ui'
 import { SectionTabs } from './section-tabs'
 import { filterPlayerNames } from './player-list-filters'
-import { RatingMark, ratingNumber } from './rating-mark'
 import { SeasonSelect, type SeasonFilter } from './seasons'
-import type { Player } from './types'
-import { PlayerName } from './player-name'
+import type { Player, Position } from './types'
+import { CatalogTable } from './catalog-table'
+import { useLastCompleted } from './use-last-completed'
 
 export function PlayersScreen({
   players,
   me,
   dataRevision,
+  refresh,
   openStats,
-  openRatings,
   setModal,
   ...seasonFilter
 }: SeasonFilter & {
   players: Player[]
   me: Player
   dataRevision: number
+  refresh: () => Promise<void>
   openStats: (id: number) => void
-  openRatings: (id: number | null) => void
   setModal: (value: string | null) => void
 }) {
   const isAdmin = Boolean(me.is_admin)
@@ -31,8 +31,13 @@ export function PlayersScreen({
   const [section, setSection] = useState('catalog')
   const [source, setSource] = useState('community')
   const [ratedOnly, setRatedOnly] = useState(false)
+  const [previousOnly, setPreviousOnly] = useState(false)
+  const [position, setPosition] = useState<Position>('field')
+  const previous = useLastCompleted(dataRevision)
   const visiblePlayers = filterPlayerNames(players, search).filter(
-    (p) => !ratedOnly || p.ratings?.field.defense != null || p.ratings?.keeper.defense != null,
+    (p) =>
+      (!ratedOnly || p.ratings?.field.defense != null || p.ratings?.keeper.defense != null) &&
+      (!previousOnly || Boolean(previous.match?.participant_ids.includes(p.id))),
   )
   return (
     <>
@@ -44,7 +49,6 @@ export function PlayersScreen({
           </h1>
         </div>
         <div className="inline wrap">
-          <Button onClick={() => openRatings(null)}>Оценить игроков</Button>
           {isAdmin && (
             <Button onClick={() => setModal('guest')}>
               <Plus size={17} /> Гость
@@ -113,76 +117,38 @@ export function PlayersScreen({
               />
               Только игроки с оценками
             </label>
-            <div className="panel compact-catalog">
-              <div className="catalog-head">
-                <span>Игрок</span>
-                <span>
-                  <RatingMark kind="attack" />
-                </span>
-                <span>
-                  <RatingMark kind="defense" />
-                </span>
-                <span>Σ</span>
-              </div>
-              {visiblePlayers.map((p) => (
-                <details className="player-card catalog-person" key={p.id} name="catalog-player">
-                  <summary>
-                    <h3>
-                      <span className="catalog-chevron" aria-hidden="true">
-                        ›
-                      </span>
-                      <PlayerName playerId={p.id} alias={p.alias} />
-                    </h3>
-                    <span>{ratingNumber(p.ratings?.field.attack ?? null)}</span>
-                    <span>{ratingNumber(p.ratings?.field.defense ?? null)}</span>
-                    <strong>
-                      {p.ratings?.field.attack == null || p.ratings?.field.defense == null
-                        ? '—'
-                        : ratingNumber(p.ratings.field.attack + p.ratings.field.defense)}
-                    </strong>
-                  </summary>
-                  <div className="catalog-details">
-                    {p.shared_keeper ? (
-                      <span className="muted caption">
-                        Для игр с неизвестным или сменным вратарём.
-                      </span>
-                    ) : (
-                      <>
-                        <span className="muted caption">{p.guest ? 'Гость' : 'Игрок клуба'}</span>
-                        <RatingAverages player={p} />
-                        <div className="inline wrap">
-                          <button
-                            className="button secondary compact"
-                            onClick={() => openStats(p.id)}
-                          >
-                            Статистика
-                          </button>
-                          {(p.id !== me.id || isAdmin) && (
-                            <button
-                              className="button ghost compact"
-                              aria-label={`Оценки: ${p.alias}`}
-                              onClick={() => openRatings(p.id)}
-                            >
-                              {p.id === me.id ? 'Посмотреть оценки' : 'Оценить'}
-                            </button>
-                          )}
-                          {isAdmin && p.guest && (
-                            <button
-                              className="button ghost compact"
-                              aria-label={`Связать гостя ${p.alias}`}
-                              onClick={() => setModal(`link:${p.id}`)}
-                            >
-                              <ArrowUpRight size={16} /> Связать с аккаунтом
-                            </button>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </details>
-              ))}
-              {!visiblePlayers.length && <p className="empty-small muted">Игроки не найдены.</p>}
-            </div>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={previousOnly}
+                onChange={(event) => setPreviousOnly(event.target.checked)}
+              />
+              Только участники предыдущей игры
+            </label>
+            {previousOnly && (previous.error || !previous.match) && (
+              <p className="muted caption" role="status">
+                {previous.loading
+                  ? 'Загрузка последней игры…'
+                  : previous.error || (!previous.match ? 'Завершённых игр пока нет.' : '')}
+              </p>
+            )}
+            <SectionTabs
+              label="Амплуа для оценки"
+              value={position}
+              onChange={(value) => setPosition(value as Position)}
+              options={[
+                { value: 'field', label: 'Полевые' },
+                { value: 'keeper', label: 'Вратари' },
+              ]}
+            >
+              <CatalogTable
+                players={visiblePlayers}
+                me={me}
+                position={position}
+                refresh={refresh}
+                setModal={setModal}
+              />
+            </SectionTabs>
           </>
         )}
       </SectionTabs>

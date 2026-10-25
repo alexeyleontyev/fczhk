@@ -56,7 +56,11 @@ def router(ctx):
             people = [x for x in people if not x.shared_keeper or x.id == representative.id]
             people.sort(key=lambda x: x.display_alias)
         averages = rt.public_averages(db, [x.id for x in people], has_admin_access(p, cfg))
-        return [{**public_player(x, cfg), "ratings": averages[x.id]} for x in people]
+        own = rt.catalog_own_ratings(db, p.id, [x.id for x in people])
+        return [
+            {**public_player(x, cfg), "ratings": averages[x.id], "my_ratings": own[x.id]}
+            for x in people
+        ]
 
     @app.get("/api/game-ratings")
     def game_ratings(

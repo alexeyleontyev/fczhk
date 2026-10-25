@@ -24,6 +24,7 @@ import { useNavigation } from './use-navigation'
 import { SectionTabs } from './section-tabs'
 import { TacticsScreen } from './tactics-screen'
 import { GameScreen } from './game-screen'
+import { NextGameScreen } from './next-game-screen'
 import { FinalizeCollection } from './finalize-collection'
 import { isArchivedMatch } from './archived-game-screen'
 import { MatchHistory } from './match-history'
@@ -108,8 +109,9 @@ function App() {
 
   const isAdmin = Boolean(me?.is_admin)
   const archived = isArchivedMatch(m)
+  const gameHome = selectedId === null && (!m || archived)
   const activeNavigation =
-    archived && ['game', 'lineup', 'prediction'].includes(tab)
+    archived && !gameHome && ['game', 'lineup', 'prediction'].includes(tab)
       ? 'archive'
       : ['auction', 'lineup', 'prediction'].includes(tab)
         ? 'game'
@@ -266,20 +268,23 @@ function App() {
             </button>
           </div>
         )}
-        {m && ['game', 'lineup', 'prediction'].includes(tab) && (!archived || tab === 'lineup') && (
-          <div className="match-tabs" role="tablist" aria-label="Экраны игры">
-            <button
-              role="tab"
-              aria-selected={['game', 'prediction'].includes(tab)}
-              onClick={() => openGame(m.id)}
-            >
-              {archived ? 'Итог' : 'Игра'}
-            </button>
-            <button role="tab" aria-selected={tab === 'lineup'} onClick={() => openLineup(m.id)}>
-              {archived ? 'Поле' : 'Составы'}
-            </button>
-          </div>
-        )}
+        {m &&
+          !gameHome &&
+          ['game', 'lineup', 'prediction'].includes(tab) &&
+          (!archived || tab === 'lineup') && (
+            <div className="match-tabs" role="tablist" aria-label="Экраны игры">
+              <button
+                role="tab"
+                aria-selected={['game', 'prediction'].includes(tab)}
+                onClick={() => openGame(m.id)}
+              >
+                {archived ? 'Итог' : 'Игра'}
+              </button>
+              <button role="tab" aria-selected={tab === 'lineup'} onClick={() => openLineup(m.id)}>
+                {archived ? 'Поле' : 'Составы'}
+              </button>
+            </div>
+          )}
         {tab === 'lineup' && m && (
           <TacticsScreen
             key={`${m.id}:${me.id}`}
@@ -291,7 +296,24 @@ function App() {
             onAuction={() => openAuction(m.id)}
           />
         )}
-        {['game', 'prediction'].includes(tab) && (
+        {['game', 'prediction'].includes(tab) && gameHome && (
+          <NextGameScreen
+            isAdmin={isAdmin}
+            busy={busy}
+            run={run}
+            refresh={() => refresh(true)}
+            revision={dataRevision}
+            openGame={openGame}
+            openSchedule={() =>
+              void run(async () => {
+                setTemplate(await api<Template>('/template'))
+                setManagementTab('schedule')
+                setTab('settings')
+              })
+            }
+          />
+        )}
+        {['game', 'prediction'].includes(tab) && !gameHome && (
           <GameScreen
             focusPrediction={tab === 'prediction'}
             key={m?.id ?? 'empty'}
@@ -341,9 +363,9 @@ function App() {
               players={players}
               me={me}
               dataRevision={dataRevision}
+              refresh={() => refresh(true)}
               {...seasonFilter}
               openStats={openStats}
-              openRatings={openRatings}
               setModal={setModal}
             />
           </div>
@@ -442,6 +464,7 @@ function App() {
             playerId={statsTarget}
             player={players.find((p) => p.id === statsTarget)}
             viewerId={me.id}
+            viewerAdmin={isAdmin}
             onRate={openRatings}
             onMatch={openGame}
             onPlayer={openStats}

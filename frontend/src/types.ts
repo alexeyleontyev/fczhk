@@ -1,6 +1,12 @@
 export type Position = 'field' | 'keeper'
 export type Team = 'white' | 'black'
 export type Average = { attack: number | null; defense: number | null; count?: number }
+export type OwnRating = {
+  attack: number | null
+  defense: number
+  revision: number
+  source?: 'sheet' | 'app'
+}
 export type TelegramProfile = {
   telegram_id?: number | null
   telegram_username?: string | null
@@ -13,6 +19,7 @@ export type Player = TelegramProfile & {
   is_admin?: boolean
   is_owner?: boolean
   ratings?: { field: Average; keeper: Average }
+  my_ratings?: Record<Position, OwnRating | null>
 }
 export type Entry = {
   id: number
@@ -221,3 +228,4 @@ export type MatchSummary = Pick<
   participant_count: number
   result: { completed: boolean; score: Record<Team, number> } | null
 }
+export type LastCompleted = MatchSummary & { participant_ids: number[] }

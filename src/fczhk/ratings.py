@@ -209,6 +209,37 @@ def rating_data(row: Rating | RatingHistory | None) -> dict | None:
     )
 
 
+def catalog_own_ratings(db: Session, actor: int, ids: list[int]) -> dict:
+    """Load only this viewer's votes for the whole catalog in bounded queries."""
+    result = {pid: {"field": None, "keeper": None} for pid in ids}
+    canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
+    targets = [pid for pid, resolved in canonical.items() if resolved in result]
+    authors = [pid for pid, resolved in canonical.items() if resolved == actor]
+    for row in db.scalars(
+        select(ImportedRating)
+        .where(ImportedRating.player_id.in_(targets), ImportedRating.author_id.in_(authors))
+        .order_by(ImportedRating.id)
+    ):
+        target = canonical[row.player_id]
+        if target != actor:
+            result[target][row.position] = dict(
+                attack=row.attack_milli / 1000 if row.position == "field" else None,
+                defense=row.defense_milli / 1000,
+                revision=0,
+                source="sheet",
+            )
+    # Match own_rating/save_rating: linked target cards share the latest app vote.
+    for row in db.scalars(
+        select(Rating)
+        .where(Rating.player_id.in_(targets), Rating.author_id == actor)
+        .order_by(Rating.updated_at, Rating.id)
+    ):
+        target = canonical[row.player_id]
+        if target != actor:
+            result[target][row.position] = {**rating_data(row), "source": "app"}
+    return result
+
+
 def review_data(db: Session, actor: int, target: int, position: str, admin: bool) -> dict:
     catalog_player(db, target)
     canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
