@@ -304,6 +304,7 @@ function App() {
             refresh={() => refresh(true)}
             revision={dataRevision}
             openGame={openGame}
+            createGame={() => setModal('create')}
             openSchedule={() =>
               void run(async () => {
                 setTemplate(await api<Template>('/template'))

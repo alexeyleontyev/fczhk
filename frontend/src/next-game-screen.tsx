@@ -1,4 +1,5 @@
-import { ArrowRight, CalendarDays, RefreshCw } from 'lucide-react'
+import { ArrowRight, CalendarDays, Plus, RefreshCw } from 'lucide-react'
+import { Button } from './ui'
 import { CollectionCountdown } from './collection-countdown'
 import { date } from './format'
 import { useLastCompleted } from './use-last-completed'
@@ -12,6 +13,7 @@ export function NextGameScreen({
   revision,
   openGame,
   openSchedule,
+  createGame,
 }: {
   isAdmin: boolean
   busy: boolean
@@ -20,6 +22,7 @@ export function NextGameScreen({
   revision: number
   openGame: (id: number) => void
   openSchedule: () => void
+  createGame: () => void
 }) {
   const { match, loading, error } = useLastCompleted(revision)
   return (
@@ -29,14 +32,21 @@ export function NextGameScreen({
           <div className="eyebrow">НАШ КЛУБ</div>
           <h1>Следующая игра</h1>
         </div>
-        <button
-          className="icon-button"
-          aria-label="Обновить игру"
-          disabled={busy}
-          onClick={() => void run(refresh)}
-        >
-          <RefreshCw size={18} />
-        </button>
+        <div className="inline">
+          <button
+            className="icon-button"
+            aria-label="Обновить игру"
+            disabled={busy}
+            onClick={() => void run(refresh)}
+          >
+            <RefreshCw size={18} />
+          </button>
+          {isAdmin && (
+            <Button className="secondary compact" disabled={busy} onClick={createGame}>
+              <Plus size={17} /> Новая игра
+            </Button>
+          )}
+        </div>
       </div>
       <CollectionCountdown refresh={refresh} currentGame={null} showEmpty />
       {error && (

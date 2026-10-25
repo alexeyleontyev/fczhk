@@ -231,6 +231,9 @@ for (const role of ['admin', 'player']) {
     await expect(page.locator('.previous-game-score')).toContainText('6 : 8')
     await expect(page.getByRole('button', { name: 'Игра', exact: true })).toHaveClass('active')
     if (role === 'admin') {
+      await page.getByRole('button', { name: 'Новая игра', exact: true }).click()
+      await expect(page.getByRole('dialog', { name: 'Новая игра', exact: true })).toBeVisible()
+      await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click()
       await page.getByRole('button', { name: 'Настройки', exact: true }).click()
       await page.getByRole('tab', { name: 'Администраторы', exact: true }).click()
       await page.getByRole('button', { name: 'Игра', exact: true }).click()
