@@ -280,6 +280,59 @@ def test_telegram_username_migration_preserves_identity_and_sessions(pg):
         assert db.get(Player, pid).telegram_id == 5678
 
 
+@pytest.mark.parametrize("pg", ["5b4d82a731cf"], indirect=True)
+def test_prediction_history_migration_preserves_merged_names_and_new_predictions(pg):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from fczhk.db import Base, now
+    from fczhk.models import Prediction, PredictionBaseline
+    from fczhk.predictions import standings
+    from fczhk.services import audit, merge_guest
+
+    factory, pid = pg
+    with factory() as db, db.begin():
+        source = db.scalar(select(Player).where(Player.alias == "Виталя пьяный"))
+        source_id = source.id
+        merge_guest(db, pid, source_id, pid)
+        db.get(Player, pid).alias = "Виталя Легенда 17"
+        audit(db, pid, "player.renamed", old="Виталя пьяный", new="Виталя Легенда 17")
+        match = Match(
+            game_day="2026-10-30",
+            starts_at=now(),
+            season="2026",
+            location="Поле",
+            status="approved",
+        )
+        db.add(match)
+        db.flush()
+        db.add(
+            Prediction(
+                match_id=match.id,
+                player_id=pid,
+                white_score=1,
+                black_score=0,
+                approved_version=1,
+                scoring_version=2,
+            )
+        )
+    config = Config("alembic.ini")
+    with factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        assert compare_metadata(MigrationContext.configure(conn), Base.metadata) == []
+    with factory() as db:
+        assert db.get(Player, pid).alias == "Виталя Легенда 17"
+        assert db.get(Player, source_id).merged_into == pid
+        assert db.scalar(select(Prediction.scoring_version)) == 2
+        baseline = db.get(PredictionBaseline, (source_id, "2026"))
+        assert (baseline.points_half, baseline.predictions_count) == (10, 5)
+        row = next(r for r in standings(db, "2026") if r["player_id"] == pid)
+        assert (row["points"], row["predictions"], row["settled"]) == (5, 6, 5)
+        assert row["average_points"] == 5 / 6
+
+
 @pytest.mark.parametrize("pg", ["f97c3e8d210a"], indirect=True)
 def test_notification_migration_preserves_games_posts_and_settings_and_guards_downgrade(pg):
     from fczhk.models import Publication

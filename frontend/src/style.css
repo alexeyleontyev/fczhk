@@ -2039,6 +2039,18 @@ footer > span:first-child {
 .standings-table tr.mine {
   background: #f0f5e9;
 }
+.prediction-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.prediction-metrics strong {
+  color: var(--ink);
+}
 @media (max-width: 420px) {
   .navigation button {
     font-size: 8px;

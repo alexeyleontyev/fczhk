@@ -166,12 +166,14 @@ def test_migration_replaces_old_contest_with_exact_sheet_totals_once(tmp_path):
 
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(PredictionBaseline)) == 28
-        assert db.scalar(select(func.sum(PredictionBaseline.points_half))) == 182
+        assert db.scalar(select(func.sum(PredictionBaseline.points_half))) == 214
+        assert db.scalar(select(func.sum(PredictionBaseline.predictions_count))) == 133
         assert db.execute(text("SELECT scoring_version FROM predictions")).scalar_one() == 1
         table = standings(db, season="2026")
         mine = next(r for r in table if r["alias"] == "Дима Михей")
         assert mine["points"] == mine["baseline_points"] == 4
-        assert mine["predictions"] == 0 and mine["settled"] == 0
+        assert mine["predictions"] == mine["settled"] == mine["baseline_predictions"] == 7
+        assert mine["average_points"] == 4 / 7
         assert standings(db, season="2025") == []
         assert (
             db.scalar(select(func.count()).select_from(Player).where(Player.alias == "Дима Михей"))

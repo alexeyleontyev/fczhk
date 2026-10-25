@@ -314,6 +314,8 @@ type Standing = {
   one_point: number
   half_points?: number
   baseline_points?: number
+  baseline_predictions?: number
+  average_points?: number | null
   settled: number
   predictions: number
 }
@@ -369,8 +371,9 @@ export function PredictionStandings({
           <summary>Правила конкурса</summary>
           <PredictionRules />
           <p className="muted caption">
-            Учитываются только завершённые матчи. Исправления результата пересчитывают очки. При
-            равенстве очков место общее.
+            Очки начисляются за завершённые матчи. Число прогнозов включает историю и новые
+            прогнозы. Средние очки — сумма очков, делённая на число сделанных прогнозов. Исправления
+            результата пересчитывают очки. При равенстве очков место общее.
           </p>
         </details>
         {error && (
@@ -401,14 +404,30 @@ export function PredictionStandings({
                       {row.alias}
                       {row.player_id === me ? ' · вы' : ''}
                     </button>
+                    <div className="prediction-metrics">
+                      <span>
+                        Прогнозов: <strong>{row.predictions}</strong>
+                      </span>
+                      <span>
+                        Средние очки:{' '}
+                        <strong>
+                          {row.average_points == null
+                            ? '—'
+                            : row.average_points.toLocaleString('ru-RU', {
+                                maximumFractionDigits: 2,
+                              })}
+                        </strong>
+                      </span>
+                    </div>
                     <details className="prediction-row-details">
                       <summary>
                         Учтено {row.settled} из {row.predictions}
                       </summary>
                       <small>
-                        Стартовые очки: {number(row.baseline_points ?? 0)}. За новые прогнозы: 3
-                        очка — {row.three_points}, 2 — {row.two_points ?? 0}, 1 — {row.one_point},
-                        0,5 — {row.half_points ?? 0}.
+                        Из таблицы: {row.baseline_predictions ?? 0} прогнозов, стартовые очки:{' '}
+                        {number(row.baseline_points ?? 0)}. За новые прогнозы: 3 очка —{' '}
+                        {row.three_points}, 2 — {row.two_points ?? 0}, 1 — {row.one_point}, 0,5 —{' '}
+                        {row.half_points ?? 0}.
                       </small>
                     </details>
                   </td>

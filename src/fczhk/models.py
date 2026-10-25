@@ -389,10 +389,14 @@ class Prediction(Base):
 
 class PredictionBaseline(Base):
     __tablename__ = "prediction_baselines"
-    __table_args__ = (CheckConstraint("points_half >= 0"),)
+    __table_args__ = (
+        CheckConstraint("points_half >= 0"),
+        CheckConstraint("predictions_count >= 0", name="ck_prediction_baseline_count"),
+    )
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), primary_key=True)
     season: Mapped[str] = mapped_column(String(40), primary_key=True)
     points_half: Mapped[int] = mapped_column()
+    predictions_count: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     source: Mapped[str] = mapped_column(String(250))
 
 

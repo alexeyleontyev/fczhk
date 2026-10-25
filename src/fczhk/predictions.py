@@ -70,6 +70,7 @@ def standings(db, season: str | None = None):
             alias=people[pid].alias,
             points=0,
             baseline_points=0,
+            baseline_predictions=0,
             three_points=0,
             two_points=0,
             one_point=0,
@@ -86,6 +87,9 @@ def standings(db, season: str | None = None):
         row = totals.setdefault(pid, empty(pid))
         row["baseline_points"] += baseline.points_half / 2
         row["points"] += baseline.points_half / 2
+        row["baseline_predictions"] += baseline.predictions_count
+        row["predictions"] += baseline.predictions_count
+        row["settled"] += baseline.predictions_count
     for prediction, alias, white, black in db.execute(query):
         pid = canonical[prediction.player_id]
         row = totals.setdefault(pid, empty(pid))
@@ -104,6 +108,7 @@ def standings(db, season: str | None = None):
     previous = None
     rank = 0
     for index, row in enumerate(ordered, 1):
+        row["average_points"] = row["points"] / row["predictions"] if row["predictions"] else None
         if row["points"] != previous:
             rank = index
         row["rank"] = rank
