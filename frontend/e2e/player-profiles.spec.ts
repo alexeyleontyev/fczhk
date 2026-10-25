@@ -1,6 +1,89 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Match, Player } from '../src/types'
 
+for (const games of [0, 1, 3, 5, 7]) {
+  test(`recent results: ${games} games show up to five round dots from oldest to newest`, async ({
+    page,
+    request,
+  }) => {
+    const member = await (await request.post('/api/auth/demo/player')).json()
+    const matches = Array.from({ length: games }, (_, index) => ({
+      match_id: 1000 + index,
+      starts_at: `2026-10-${20 - index}T20:00:00+03:00`,
+      team: 'white',
+      score: { white: index % 3 === 0 ? 2 : 1, black: index % 3 === 2 ? 2 : 1 },
+      goals: 0,
+      assists: 0,
+    }))
+    await page.route(`**/api/players/${member.player.id}/stats*`, (route) =>
+      route.fulfill({
+        json: {
+          player_id: member.player.id,
+          alias: member.player.alias,
+          games,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          goals: 0,
+          assists: 0,
+          win_rate: games ? 0 : null,
+          matches,
+          partners: [],
+        },
+      }),
+    )
+    await page.addInitScript(
+      (token) => sessionStorage.setItem('fczhk-session', token),
+      member.token,
+    )
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Профиль', exact: true }).click()
+    await expect(
+      page.getByRole('heading', { name: `Статистика: ${member.player.alias}`, exact: true }),
+    ).toBeVisible()
+    const dots = page.locator('.form-dot')
+    await expect(dots).toHaveCount(Math.min(5, games))
+    await expect(page.getByText('От новой к старой', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('От старой к новой', { exact: true })).toHaveCount(0)
+    if (!games) {
+      await expect(page.locator('.recent-form')).toHaveCount(0)
+      return
+    }
+    const expected = matches.slice(0, 5).reverse()
+    for (const [index, match] of expected.entries()) {
+      const outcome =
+        match.score.white > match.score.black
+          ? 'win'
+          : match.score.white === match.score.black
+            ? 'draw'
+            : 'loss'
+      await expect(dots.nth(index)).toHaveClass(`form-dot ${outcome}`)
+      await expect(dots.nth(index)).toHaveAttribute(
+        'aria-label',
+        new RegExp(`^${match.starts_at.slice(8, 10)}\\.10\\.2026:`),
+      )
+    }
+    for (const width of [320, 390, 1440]) {
+      await page.setViewportSize({ width, height: 900 })
+      const sizes = await dots.evaluateAll((items) =>
+        items.map((item) => ({
+          width: item.getBoundingClientRect().width,
+          height: item.getBoundingClientRect().height,
+          padding: getComputedStyle(item).padding,
+        })),
+      )
+      expect(sizes).toEqual(expected.map(() => ({ width: 18, height: 18, padding: '0px' })))
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      )
+      await page.screenshot({
+        path: `test-results/recent-results-${games}-${width}.png`,
+        fullPage: true,
+      })
+    }
+  })
+}
+
 async function openProfile(page: Page, name: Locator, alias: string) {
   await name.click()
   const profile = page.getByRole('dialog', { name: 'Профиль игрока', exact: true })

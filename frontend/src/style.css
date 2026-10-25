@@ -100,16 +100,17 @@ a {
   flex-wrap: wrap;
   gap: 10px;
 }
-.recent-form small {
-  font-size: 10px;
-}
 .form-dots {
   display: flex;
+  align-items: center;
+  flex-shrink: 0;
   gap: 8px;
 }
 .form-dot {
+  flex: 0 0 18px;
   width: 18px;
   height: 18px;
+  aspect-ratio: 1;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -123,9 +124,6 @@ a {
 }
 .form-dot.loss {
   background: #cb5752;
-}
-.form-dot.empty {
-  background: #e4e8df;
 }
 .checkbox-label {
   display: flex;

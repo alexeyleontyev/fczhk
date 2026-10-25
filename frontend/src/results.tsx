@@ -670,38 +670,36 @@ export function PlayerStats({
                   <span>Винрейт</span>
                 </div>
               </div>
-              <div className="recent-form" aria-label="Результаты последних пяти игр">
-                <span className="muted caption">Последние игры</span>
-                <div className="form-dots">
-                  {Array.from({ length: 5 }, (_, index) => {
-                    const match = data.matches[index]
-                    const other = match?.team === 'white' ? 'black' : 'white'
-                    const outcome = !match
-                      ? 'empty'
-                      : match.score[match.team] > match.score[other]
-                        ? 'win'
-                        : match.score[match.team] === match.score[other]
-                          ? 'draw'
-                          : 'loss'
-                    const title = !match
-                      ? 'Нет игры'
-                      : `${new Date(match.starts_at).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })}: ${outcome === 'win' ? 'Победа' : outcome === 'draw' ? 'Ничья' : 'Поражение'} · ${match.score.white} : ${match.score.black}`
-                    return match ? (
-                      <button
-                        type="button"
-                        key={index}
-                        className={`form-dot ${outcome}`}
-                        aria-label={title}
-                        title={title}
-                        onClick={() => onMatch(match.match_id)}
-                      />
-                    ) : (
-                      <span key={index} className="form-dot empty" aria-label={title} />
-                    )
-                  })}
+              {data.matches.length > 0 && (
+                <div className="recent-form" aria-label="Результаты последних игр">
+                  <span className="muted caption">Последние игры</span>
+                  <div className="form-dots">
+                    {data.matches
+                      .slice(0, 5)
+                      .reverse()
+                      .map((match) => {
+                        const other = match.team === 'white' ? 'black' : 'white'
+                        const outcome =
+                          match.score[match.team] > match.score[other]
+                            ? 'win'
+                            : match.score[match.team] === match.score[other]
+                              ? 'draw'
+                              : 'loss'
+                        const title = `${new Date(match.starts_at).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })}: ${outcome === 'win' ? 'Победа' : outcome === 'draw' ? 'Ничья' : 'Поражение'} · ${match.score.white} : ${match.score.black}`
+                        return (
+                          <button
+                            type="button"
+                            key={match.match_id}
+                            className={`form-dot ${outcome}`}
+                            aria-label={title}
+                            title={title}
+                            onClick={() => onMatch(match.match_id)}
+                          />
+                        )
+                      })}
+                  </div>
                 </div>
-                <small className="muted">От новой к старой</small>
-              </div>
+              )}
               {player && !player.shared_keeper && (
                 <div className="profile-ratings">
                   <h3>Оценки игрока</h3>
