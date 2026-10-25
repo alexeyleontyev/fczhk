@@ -74,6 +74,8 @@ test('standings show historical forecast counts and average points at mobile and
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    const points = await vitaly.locator('td').last().boundingBox()
+    expect(points!.x + points!.width).toBeLessThanOrEqual(width)
     await page.screenshot({ path: `test-results/prediction-history-${width}.png`, fullPage: true })
   }
 })

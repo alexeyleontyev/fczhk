@@ -3509,7 +3509,8 @@ footer > span:first-child {
 }
 .forecast-standings {
   table-layout: fixed;
-  min-width: 300px;
+  min-width: 260px;
+  margin-top: 8px;
   font-variant-numeric: tabular-nums;
 }
 .forecast-standings .forecast-rank {
@@ -3601,5 +3602,25 @@ footer > span:first-child {
   }
   .catalog-table-panel {
     padding: 0;
+  }
+}
+@media (max-width: 360px) {
+  .catalog-table {
+    min-width: 274px;
+  }
+  .catalog-average-col {
+    width: 24px;
+  }
+  .catalog-own-col {
+    width: 36px;
+  }
+  .catalog-save-col {
+    width: 30px;
+  }
+  .catalog-score {
+    width: 34px;
+  }
+  .catalog-save {
+    width: 26px;
   }
 }

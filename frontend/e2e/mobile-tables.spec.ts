@@ -132,6 +132,8 @@ test('previous-game filter, sorting every column and pinned games at mobile widt
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    const saveBounds = await page.locator('.catalog-save').first().boundingBox()
+    expect(saveBounds!.x + saveBounds!.width).toBeLessThanOrEqual(width)
     await page.screenshot({ path: `test-results/table-catalog-${width}.png`, fullPage: true })
   }
   await page
