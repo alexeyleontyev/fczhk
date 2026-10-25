@@ -7,6 +7,7 @@ import { TelegramIdentity } from './telegram-identity'
 import { PlayerName } from './player-name'
 import { RatingAverages } from './ratings'
 import { PlayerReviews } from './player-reviews'
+import { Button } from './ui'
 import type { Match, Player, Position, Run, Team, TelegramProfile } from './types'
 
 export type Participant = { player_id: number; alias: string; team: Team; position: Position }
@@ -551,6 +552,8 @@ type Stats = TelegramProfile & {
 export function PlayerStats({
   playerId,
   player,
+  viewerId,
+  onRate,
   showIdentity = true,
   onMatch,
   onPlayer,
@@ -558,6 +561,8 @@ export function PlayerStats({
 }: SeasonFilter & {
   playerId: number
   player?: Player
+  viewerId: number
+  onRate?: (id: number) => void
   showIdentity?: boolean
   onMatch: (id: number) => void
   onPlayer: (id: number) => void
@@ -621,7 +626,14 @@ export function PlayerStats({
   )
   return (
     <section className="statistics">
-      <h2>{data ? `Статистика: ${data.alias}` : 'Статистика'}</h2>
+      <div className="section-title statistics-heading">
+        <h2>{data ? `Статистика: ${data.alias}` : 'Статистика'}</h2>
+        {data && onRate && data.player_id !== viewerId && (
+          <Button className="secondary compact" onClick={() => onRate(data.player_id)}>
+            Оценить игрока
+          </Button>
+        )}
+      </div>
       {data && showIdentity && <TelegramIdentity {...data} />}
       <SeasonSelect {...seasonFilter} />
       {error && (

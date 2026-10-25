@@ -55,6 +55,7 @@ export function ProfileScreen({
             <PlayerStats
               playerId={me.id}
               player={me}
+              viewerId={me.id}
               showIdentity={false}
               onMatch={openGame}
               onPlayer={openStats}

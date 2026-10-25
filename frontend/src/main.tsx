@@ -441,6 +441,8 @@ function App() {
           <PlayerStats
             playerId={statsTarget}
             player={players.find((p) => p.id === statsTarget)}
+            viewerId={me.id}
+            onRate={openRatings}
             onMatch={openGame}
             onPlayer={openStats}
             {...seasonFilter}

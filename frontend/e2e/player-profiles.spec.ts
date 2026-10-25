@@ -95,6 +95,77 @@ async function openProfile(page: Page, name: Locator, alias: string) {
   await expect(profile).toHaveCount(0)
 }
 
+for (const role of ['admin', 'player']) {
+  test(`${role} can rate another player from the profile and return; own profile has no rating action`, async ({
+    page,
+    request,
+  }) => {
+    const member = await (await request.post(`/api/auth/demo/${role}`)).json()
+    const headers = { Authorization: `Bearer ${member.token}` }
+    const people: Player[] = await (await request.get('/api/players', { headers })).json()
+    const other = people.find((p) => p.id !== member.player.id && !p.shared_keeper)!
+    await page.addInitScript(
+      (token) => sessionStorage.setItem('fczhk-session', token),
+      member.token,
+    )
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Игроки', exact: true }).click()
+    const search = page.getByRole('searchbox', { name: 'Поиск игроков', exact: true })
+    await search.fill(other.alias)
+    await page
+      .locator('.catalog-person summary')
+      .getByRole('button', { name: other.alias, exact: true })
+      .click()
+    const profile = page.getByRole('dialog', { name: 'Профиль игрока', exact: true })
+    await profile.getByRole('button', { name: 'Оценить игрока', exact: true }).click()
+    const ratings = page.getByRole('dialog', { name: 'Оценки игроков', exact: true })
+    await expect(ratings.getByLabel('Оцениваемый игрок')).toHaveValue(String(other.id))
+    await ratings.getByRole('button', { name: 'Полевой', exact: true }).click()
+    await expect(
+      ratings.getByRole('button', { name: 'Сохранить оценку', exact: true }),
+    ).toBeEnabled()
+    await ratings.getByLabel('Оценка атаки').fill('2.4')
+    await ratings.getByLabel('Оценка защиты').fill('3.6')
+    await ratings.getByRole('button', { name: 'Сохранить оценку', exact: true }).click()
+    await expect(
+      ratings.getByRole('button', { name: 'Сохранить оценку', exact: true }),
+    ).toBeEnabled()
+    const saved = await (
+      await request.get(`/api/players/${other.id}/ratings/field`, { headers })
+    ).json()
+    expect(saved.own.attack).toBe(2.4)
+    expect(saved.own.defense).toBe(3.6)
+    await ratings.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    await expect(
+      profile.getByRole('heading', { name: `Статистика: ${other.alias}`, exact: true }),
+    ).toBeVisible()
+    for (const width of [320, 390, 1440]) {
+      await page.setViewportSize({ width, height: 900 })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      )
+    }
+    await profile.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    await search.fill(member.player.alias)
+    await page
+      .locator('.catalog-person summary')
+      .getByRole('button', { name: member.player.alias, exact: true })
+      .click()
+    await expect(
+      profile.getByRole('heading', { name: `Статистика: ${member.player.alias}`, exact: true }),
+    ).toBeVisible()
+    await expect(profile.getByRole('button', { name: 'Оценить игрока', exact: true })).toHaveCount(
+      0,
+    )
+    await profile.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    await page.getByRole('button', { name: 'Профиль', exact: true }).click()
+    await expect(
+      page.getByRole('heading', { name: `Статистика: ${member.player.alias}`, exact: true }),
+    ).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Оценить игрока', exact: true })).toHaveCount(0)
+  })
+}
+
 test('catalog names open profiles by keyboard and ratings are part of the statistics overview', async ({
   page,
   request,
