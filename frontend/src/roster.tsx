@@ -17,9 +17,13 @@ export function Roster({
   run: Run
 }) {
   const main = (r: Entry) => r.in_main ?? r.selected
+  const registrations = [
+    ...m.registrations.filter((r) => r.position === 'field'),
+    ...m.registrations.filter((r) => r.position === 'keeper'),
+  ]
   const groups = [
-    { title: 'Основной список', className: 'roster-main', rows: m.registrations.filter(main) },
-    { title: 'Резерв', className: 'roster-reserve', rows: m.registrations.filter((r) => !main(r)) },
+    { title: 'Основной список', className: 'roster-main', rows: registrations.filter(main) },
+    { title: 'Резерв', className: 'roster-reserve', rows: registrations.filter((r) => !main(r)) },
   ]
   return (
     <>
