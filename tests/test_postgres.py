@@ -1176,7 +1176,7 @@ def test_collection_image_migration_preserves_opening_and_queued_post(pg):
         ).scalar_one()
         pub_id = db.execute(
             text(
-                "INSERT INTO publications (match_id, kind, version, text, status, attempts, message_ids, stale, stale_marked, chat_id, created_at, next_attempt_at) VALUES (:mid, 'collection', 1, 'Прежний пост', 'pending', 0, '[]', false, false, '123', now(), now()) RETURNING id"
+                "INSERT INTO publications (match_id, kind, version, text, status, attempts, message_ids, stale, stale_marked, chat_id, next_attempt_at) VALUES (:mid, 'collection', 1, 'Прежний пост', 'pending', 0, '[]', false, false, '123', now()) RETURNING id"
             ),
             {"mid": mid},
         ).scalar_one()
