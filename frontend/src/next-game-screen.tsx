@@ -14,6 +14,7 @@ export function NextGameScreen({
   openGame,
   openSchedule,
   createGame,
+  prepareGame,
 }: {
   isAdmin: boolean
   busy: boolean
@@ -23,6 +24,7 @@ export function NextGameScreen({
   openGame: (id: number) => void
   openSchedule: () => void
   createGame: () => void
+  prepareGame: (data: { opening_at: string; starts_at: string }) => void
 }) {
   const { match, loading, error } = useLastCompleted(revision)
   return (
@@ -48,7 +50,13 @@ export function NextGameScreen({
           )}
         </div>
       </div>
-      <CollectionCountdown refresh={refresh} currentGame={null} showEmpty />
+      <CollectionCountdown
+        refresh={refresh}
+        currentGame={null}
+        showEmpty
+        busy={busy}
+        onPrepare={isAdmin ? prepareGame : undefined}
+      />
       {error && (
         <p className="alert error" role="alert">
           {error}

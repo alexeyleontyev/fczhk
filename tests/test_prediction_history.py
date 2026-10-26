@@ -39,16 +39,19 @@ def test_sheet_refresh_preserves_links_and_new_forecasts_and_is_idempotent(tmp_p
         renamed = db.scalar(select(Player).where(Player.alias == "Андреас"))
         renamed.alias = "Андреас новое имя"
         audit(db, renamed.id, "player.renamed", old="Андреас", new=renamed.alias)
-        match = Match(game_day="2026-10-24", starts_at=now(), location="Поле", status="completed")
-        db.add(match)
+        # This fixture intentionally runs before later Match columns exist.
+        mid = db.execute(
+            Match.__table__.insert()
+            .values(game_day="2026-10-24", starts_at=now(), location="Поле", status="completed")
+            .returning(Match.id)
+        ).scalar_one()
+        db.add(MatchResult(match_id=mid, completed=True))
         db.flush()
-        db.add(MatchResult(match_id=match.id, completed=True))
-        db.flush()
-        db.add(ResultGoal(match_id=match.id, id="goal", team="white", kind="goal"))
+        db.add(ResultGoal(match_id=mid, id="goal", team="white", kind="goal"))
         db.add_all(
             [
                 Prediction(
-                    match_id=match.id,
+                    match_id=mid,
                     player_id=target.id,
                     white_score=1,
                     black_score=0,
@@ -56,7 +59,7 @@ def test_sheet_refresh_preserves_links_and_new_forecasts_and_is_idempotent(tmp_p
                     scoring_version=2,
                 ),
                 Prediction(
-                    match_id=match.id,
+                    match_id=mid,
                     player_id=renamed.id,
                     white_score=1,
                     black_score=0,

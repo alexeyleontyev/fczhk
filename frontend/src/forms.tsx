@@ -317,7 +317,9 @@ export function IncludeForm({
       }}
     >
       <p className="muted">
-        Прямое включение администратором. При заполненном составе выберите, кого заменить.
+        {m.status === 'draft' && m.scheduled_opening_at
+          ? 'Игрок попадёт в начало очереди после открытия сбора. Подтверждение оплаты требуется по общим правилам.'
+          : 'Прямое включение администратором. При заполненном составе выберите, кого заменить.'}
       </p>
       <label>
         Игрок
@@ -335,7 +337,12 @@ export function IncludeForm({
           <option value="">Выберите из каталога</option>
           {players
             .filter(
-              (p) => !m.registrations.some((r) => r.player_id === p.id && (r.selected || r.forced)),
+              (p) =>
+                !m.registrations.some(
+                  (r) =>
+                    r.player_id === p.id &&
+                    ((m.status === 'draft' && m.scheduled_opening_at) || r.selected || r.forced),
+                ),
             )
             .map((p) => (
               <option key={p.id} value={p.id}>
@@ -359,21 +366,23 @@ export function IncludeForm({
           <option value="keeper">Вратарь</option>
         </select>
       </label>
-      <label>
-        Кого заменить
-        <select name="replace" key={position}>
-          <option value="">Без замены — если есть место</option>
-          {m.registrations
-            .filter((r) => r.selected && r.position === position)
-            .map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.alias}
-              </option>
-            ))}
-        </select>
-      </label>
+      {!(m.status === 'draft' && m.scheduled_opening_at) && (
+        <label>
+          Кого заменить
+          <select name="replace" key={position}>
+            <option value="">Без замены — если есть место</option>
+            {m.registrations
+              .filter((r) => r.selected && r.position === position)
+              .map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.alias}
+                </option>
+              ))}
+          </select>
+        </label>
+      )}
       <Button disabled={busy} type="submit">
-        Добавить в состав
+        {m.status === 'draft' && m.scheduled_opening_at ? 'Записать заранее' : 'Добавить в состав'}
       </Button>
     </form>
   )

@@ -131,6 +131,12 @@ def router(ctx):
             )
         before = {key: str(getattr(m, key)) for key in S.GameFields.model_fields}
         pred.validate_reschedule(db, m, body.starts_at)
+        if (
+            m.status == "draft"
+            and m.scheduled_opening_at
+            and body.starts_at <= m.scheduled_opening_at
+        ):
+            raise svc.DomainError("Начало игры должно быть позже запланированного открытия сбора")
         if db.get(res.MatchResult, m.id) and body.starts_at != m.starts_at:
             raise svc.DomainError("Время матча с результатом изменять нельзя")
         for key, value in body.model_dump(exclude={"version", "season"}).items():

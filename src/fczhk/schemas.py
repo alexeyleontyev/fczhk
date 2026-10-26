@@ -65,6 +65,11 @@ class GameEdit(GameFields, Version):
     pass
 
 
+class PrepareCollection(Payload):
+    opening_at: AwareDatetime
+    starts_at: AwareDatetime
+
+
 class ArchiveDetailsEdit(Version):
     game_day: date
     start_time: str | None = Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")

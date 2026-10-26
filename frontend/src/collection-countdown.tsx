@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Timer } from 'lucide-react'
+import { Timer, UserPlus } from 'lucide-react'
+import { Button } from './ui'
 import { api } from './api'
 import { date, time } from './format'
 import type { Match } from './types'
@@ -15,10 +16,14 @@ export function CollectionCountdown({
   refresh,
   currentGame,
   showEmpty = false,
+  onPrepare,
+  busy = false,
 }: {
   refresh: () => Promise<void>
   currentGame: Match | null
   showEmpty?: boolean
+  onPrepare?: (data: { opening_at: string; starts_at: string }) => void
+  busy?: boolean
 }) {
   const [schedule, setSchedule] = useState<Schedule | null>(null)
   const [remaining, setRemaining] = useState(0)
@@ -92,6 +97,7 @@ export function CollectionCountdown({
   // Do not distract from an upcoming game with next week's collection timer.
   if (
     currentGame &&
+    !(currentGame.status === 'draft' && currentGame.scheduled_opening_at) &&
     !['completed', 'cancelled'].includes(currentGame.status) &&
     Date.parse(currentGame.starts_at) > Date.parse(schedule.server_now)
   )
@@ -129,6 +135,17 @@ export function CollectionCountdown({
         <p className="muted caption" role="status">
           {error}
         </p>
+      )}
+      {onPrepare && schedule.starts_at && remaining > 0 && (
+        <Button
+          className="secondary compact"
+          disabled={busy}
+          onClick={() =>
+            onPrepare({ opening_at: schedule.opening_at!, starts_at: schedule.starts_at! })
+          }
+        >
+          <UserPlus size={17} /> Записать игроков заранее
+        </Button>
       )}
     </section>
   )

@@ -121,7 +121,9 @@ export function GameScreen({
             <div className="hero-copy">
               <span className={`status-pill ${m.status}`}>
                 <span />
-                {status[m.status]}
+                {m.status === 'draft' && m.scheduled_opening_at
+                  ? 'Запланирована'
+                  : status[m.status]}
               </span>
               <h2>
                 {date(m.starts_at)}
@@ -236,7 +238,11 @@ export function GameScreen({
                 )}
                 <section className="panel" hidden={activeSection !== 'overview'}>
                   <div className="section-title">
-                    <h2>Сбор на игру</h2>
+                    <h2>
+                      {m.status === 'draft' && m.scheduled_opening_at
+                        ? 'Предварительная запись'
+                        : 'Сбор на игру'}
+                    </h2>
                     <span className="muted">{m.registrations.length} записались</span>
                   </div>
                   {['finalized', 'approved', 'completed'].includes(m.status) &&
@@ -279,9 +285,11 @@ export function GameScreen({
                     })}
                   </div>
                   <p className="muted caption">
-                    {m.status === 'open'
-                      ? 'В основном списке — первые записавшиеся полевые и вратари. При утверждении пройдут игроки с оплатой, подтверждённой администратором, по времени записи.'
-                      : 'Самостоятельная запись закрыта. Изменения вносит администратор.'}
+                    {m.status === 'draft' && m.scheduled_opening_at
+                      ? 'Этот список виден только администраторам. При открытии сбора игроки займут первые места в очереди. Оплату подтверждает администратор.'
+                      : m.status === 'open'
+                        ? 'В основном списке — первые записавшиеся полевые и вратари. При утверждении пройдут игроки с оплатой, подтверждённой администратором, по времени записи.'
+                        : 'Самостоятельная запись закрыта. Изменения вносит администратор.'}
                   </p>
                   {m.status === 'open' && (
                     <div className="join-box">

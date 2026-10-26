@@ -168,6 +168,7 @@ def match_data(db: Session, match: Match) -> dict:
     return dict(
         id=match.id,
         starts_at=match.starts_at,
+        scheduled_opening_at=match.scheduled_opening_at,
         game_day=match.game_day,
         season=match.season,
         **metadata,
@@ -388,6 +389,41 @@ def add_participant(
         raise DomainError("Игрок не найден", 404)
     if p.shared_keeper and position != "keeper":
         raise DomainError("Общую карточку можно добавить только вратарём")
+    if match.status == "draft" and match.scheduled_opening_at:
+        if replace_id is not None:
+            raise DomainError("До открытия сбора добавляйте игроков без замены")
+        if match.scheduled_opening_at and match.starts_at <= now():
+            raise DomainError("Нельзя заранее записать игрока в уже начавшуюся игру", 409)
+        r = db.scalar(
+            select(Registration).where(
+                Registration.match_id == match.id, Registration.player_id == player_id
+            )
+        )
+        if r and r.active and r.position == position:
+            return
+        old_position = r.position if r and r.active else None
+        if r is None:
+            r = Registration(
+                match_id=match.id, player_id=player_id, position=position, registered_at=now()
+            )
+            db.add(r)
+        elif not r.active:
+            r.registered_at = now()
+        r.active, r.position = True, position
+        r.forced, r.selected, r.team = False, False, None
+        db.flush()
+        invalidate(db, match)
+        match.version += 1
+        audit(
+            db,
+            actor,
+            "participant.preregistered",
+            match.id,
+            player_id=player_id,
+            position=position,
+            old_position=old_position,
+        )
+        return
     regs = entries(db, match.id)
     existing = next((r for r in regs if r.player_id == player_id), None)
     if existing and (existing.selected or existing.forced):
@@ -621,6 +657,22 @@ def schedule_tick(db: Session, cfg: Settings, at: datetime | None = None) -> int
     schedule_notifications(db, template, local)
     if not template.enabled:
         return None
+    # A prepared collection keeps its own dates even if the weekly template changes.
+    planned = db.scalar(
+        select(Match)
+        .where(
+            Match.status == "draft",
+            Match.scheduled_opening_at <= local,
+            Match.starts_at > local,
+            Match.game_day.not_in(select(SkippedGameDay.game_day)),
+        )
+        .order_by(Match.scheduled_opening_at, Match.id)
+        .with_for_update()
+        .limit(1)
+    )
+    if planned:
+        open_match(db, None, planned, cfg)
+        return planned.id
     opening, starts = schedule_window(template, local)
     game_day = starts.date().isoformat()
     if db.get(SkippedGameDay, game_day):

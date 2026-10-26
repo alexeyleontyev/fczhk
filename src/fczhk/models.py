@@ -66,6 +66,7 @@ class Match(Base):
         String(40), default="2026", server_default="2026", index=True
     )
     starts_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    scheduled_opening_at: Mapped[datetime | None] = mapped_column(UTCDateTime, index=True)
     location: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     cost: Mapped[int] = mapped_column(Integer, default=0)

@@ -25,6 +25,8 @@ def extended_chat(db, kind):
 
 
 def registration_notice(db, match, player_id, action, position, actor=None):
+    if match.status == "draft":
+        return
     kind = "withdrawal" if action == "cancelled" else "registration"
     chat = extended_chat(db, kind)
     if not chat:
@@ -59,6 +61,27 @@ def next_collection(db, at=None):
     template = db.get(GameTemplate, 1)
     if not template or not template.enabled:
         return result
+    planned = db.scalar(
+        select(Match)
+        .where(
+            Match.status == "draft",
+            Match.scheduled_opening_at.is_not(None),
+            Match.starts_at > at,
+            Match.game_day.not_in(select(SkippedGameDay.game_day)),
+        )
+        .order_by(Match.scheduled_opening_at, Match.id)
+        .limit(1)
+    )
+    planned_schedule = (
+        {
+            **result,
+            "opening_at": planned.scheduled_opening_at.astimezone(MOSCOW),
+            "starts_at": planned.starts_at.astimezone(MOSCOW),
+            "location": planned.location,
+        }
+        if planned
+        else result
+    )
     opening, starts = schedule_window(template, at)
     end_day = (starts + timedelta(weeks=54)).date().isoformat()
     first_day = starts.date().isoformat()
@@ -78,6 +101,8 @@ def next_collection(db, at=None):
     for _ in range(54):
         day = starts.date().isoformat()
         if day not in skipped and day not in occupied:
+            if planned and planned.scheduled_opening_at <= opening:
+                return planned_schedule
             return {
                 **result,
                 "opening_at": opening,
@@ -86,7 +111,7 @@ def next_collection(db, at=None):
             }
         opening += timedelta(weeks=1)
         starts += timedelta(weeks=1)
-    return result
+    return planned_schedule
 
 
 def queue_scheduled(db, template, kind, key, text, expires_at, match_id=None):

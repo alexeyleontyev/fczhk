@@ -12,6 +12,7 @@ from .. import services as svc
 from ..db import now
 from ..models import (
     GameTemplate,
+    Match,
     Player,
     Publication,
     SkippedGameDay,
@@ -52,6 +53,42 @@ def router(ctx):
     ):
         return next_collection(db)
 
+    @app.post("/api/schedule/next/prepare")
+    def prepare_collection(
+        body: S.PrepareCollection,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        template = db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
+        upcoming = next_collection(db)
+        if upcoming["opening_at"] != body.opening_at or upcoming["starts_at"] != body.starts_at:
+            raise svc.DomainError(
+                "Расписание изменилось. Обновите страницу и повторите запись.", 409
+            )
+        if now() >= body.opening_at:
+            raise svc.DomainError("Сбор уже открывается. Обновите страницу.", 409)
+        match = db.scalar(
+            select(Match)
+            .where(Match.game_day == body.starts_at.astimezone(svc.MOSCOW).date().isoformat())
+            .with_for_update()
+        )
+        if match is None:
+            match = svc.create_match(
+                db,
+                p.id,
+                dict(
+                    starts_at=body.starts_at,
+                    location=template.location,
+                    description=template.description,
+                    cost=template.cost,
+                    payment_details=template.payment_details,
+                ),
+            )
+            match.scheduled_opening_at = body.opening_at
+            svc.audit(db, p.id, "match.prepared", match.id, opening_at=body.opening_at.isoformat())
+            db.flush()
+        return svc.match_data(db, match)
+
     @app.put("/api/template")
     def edit_template(
         body: S.TemplateEdit,
@@ -65,10 +102,12 @@ def router(ctx):
         for key, value in body.model_dump(exclude={"version"}).items():
             setattr(t, key, value)
         t.version += 1
-        for publication in db.scalars(select(Publication).where(
-            Publication.kind.in_((*SCHEDULED_KINDS, *EXTENDED_TYPES)),
-            Publication.status.in_(("pending", "failed")),
-        )):
+        for publication in db.scalars(
+            select(Publication).where(
+                Publication.kind.in_((*SCHEDULED_KINDS, *EXTENDED_TYPES)),
+                Publication.status.in_(("pending", "failed")),
+            )
+        ):
             if publication.kind in SCHEDULED_KINDS or not delivery_allowed(db, publication):
                 publication.status, publication.error = "cancelled", None
         svc.audit(db, p.id, "template.changed", old=before, new=body.model_dump())
@@ -82,7 +121,9 @@ def router(ctx):
         if not pub or pub.stale or pub.status not in ("failed", "uncertain"):
             raise svc.DomainError("Повторная публикация недоступна")
         if not delivery_allowed(db, pub):
-            raise svc.DomainError("Сообщение отключено в настройках или время отправки истекло", 409)
+            raise svc.DomainError(
+                "Сообщение отключено в настройках или время отправки истекло", 409
+            )
         pub.status, pub.error, pub.attempts = "pending", None, 0
         pub.next_attempt_at = now()
         svc.audit(db, p.id, "publication.retry", pub.match_id, publication_id=pub.id)

@@ -297,18 +297,21 @@ def test_prediction_history_migration_preserves_merged_names_and_new_predictions
         merge_guest(db, pid, source_id, pid)
         db.get(Player, pid).alias = "Виталя Легенда 17"
         audit(db, pid, "player.renamed", old="Виталя пьяный", new="Виталя Легенда 17")
-        match = Match(
-            game_day="2026-10-30",
-            starts_at=now(),
-            season="2026",
-            location="Поле",
-            status="approved",
-        )
-        db.add(match)
-        db.flush()
+        # The fixture predates columns introduced by later Match migrations.
+        mid = db.execute(
+            Match.__table__.insert()
+            .values(
+                game_day="2026-10-30",
+                starts_at=now(),
+                season="2026",
+                location="Поле",
+                status="approved",
+            )
+            .returning(Match.id)
+        ).scalar_one()
         db.add(
             Prediction(
-                match_id=match.id,
+                match_id=mid,
                 player_id=pid,
                 white_score=1,
                 black_score=0,
@@ -340,15 +343,17 @@ def test_notification_migration_preserves_games_posts_and_settings_and_guards_do
     factory, _ = pg
     with factory() as db, db.begin():
         db.execute(text("UPDATE game_template SET enabled=false, version=7, start_time='20:30'"))
-        match = Match(
-            game_day="2032-06-04",
-            starts_at=datetime(2032, 6, 4, 20, 30, tzinfo=MOSCOW),
-            location="Манеж",
-            status="open",
-        )
-        db.add(match)
-        db.flush()
-        mid = match.id
+        # The fixture predates columns introduced by later Match migrations.
+        mid = db.execute(
+            Match.__table__.insert()
+            .values(
+                game_day="2032-06-04",
+                starts_at=datetime(2032, 6, 4, 20, 30, tzinfo=MOSCOW),
+                location="Манеж",
+                status="open",
+            )
+            .returning(Match.id)
+        ).scalar_one()
         db.execute(
             text(
                 "INSERT INTO publications (match_id, kind, version, text, status, attempts, message_ids, chat_id, stale, stale_marked, next_attempt_at) "
@@ -1062,3 +1067,91 @@ def test_season_migration_preserves_matches_and_refuses_loss(pg):
         command.downgrade(config, "e6b2f48a913c")
     with factory() as db:
         assert db.get(Match, mid).season == "2024-2025"
+
+
+@pytest.mark.parametrize("pg", ["9f0a4b7c2d61"], indirect=True)
+def test_prepared_collection_migration_preserves_games_and_protects_saved_opening(pg):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from fczhk.db import Base
+
+    factory, _ = pg
+    with factory() as db, db.begin():
+        mid = db.execute(
+            text(
+                "INSERT INTO matches (game_day, season, starts_at, location, description, cost, payment_details, field_limit, keeper_limit, status, version, roster_version, created_at) VALUES ('2032-06-04', '2032', '2032-06-04 20:00:00+03', 'Сохранённый манеж', '', 100, '', 16, 2, 'draft', 7, 2, now()) RETURNING id"
+            )
+        ).scalar_one()
+    config = Config("alembic.ini")
+    with factory.kw["bind"].begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+    with factory() as db, db.begin():
+        match = db.get(Match, mid)
+        assert (match.location, match.version, match.roster_version, match.cost) == (
+            "Сохранённый манеж",
+            7,
+            2,
+            100,
+        )
+        assert match.scheduled_opening_at is None
+        match.scheduled_opening_at = datetime(2032, 6, 1, 12, tzinfo=MOSCOW)
+    with (
+        pytest.raises(RuntimeError, match="Нельзя удалить"),
+        factory.kw["bind"].begin() as connection,
+    ):
+        config.attributes["connection"] = connection
+        command.downgrade(config, "9f0a4b7c2d61")
+    with factory() as db:
+        assert db.get(Match, mid).scheduled_opening_at == datetime(2032, 6, 1, 12, tzinfo=MOSCOW)
+
+
+def test_parallel_workers_open_prepared_collection_once_and_preserve_priority(pg):
+    from fczhk.models import Publication
+    from fczhk.services import add_participant, entries
+
+    factory, pid = pg
+    cfg = Settings(_env_file=None, env="test")
+    at = datetime(2032, 6, 1, 12, tzinfo=MOSCOW)
+    with factory() as db, db.begin():
+        m = Match(
+            game_day="2032-06-04",
+            starts_at=datetime(2032, 6, 4, 20, tzinfo=MOSCOW),
+            scheduled_opening_at=at,
+            location="Ранний сбор",
+        )
+        other = Player(alias="Поздняя запись", telegram_id=9999)
+        db.add_all([m, other])
+        db.flush()
+        mid, other_id = m.id, other.id
+        add_participant(db, pid, m, pid, "field", None)
+        pre_id = entries(db, mid)[0].id
+
+    def tick(_):
+        with factory() as db, db.begin():
+            return schedule_tick(db, cfg, at)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(tick, range(4)))
+    assert sum(value == mid for value in results) == 1
+    with factory() as db, db.begin():
+        m = get_match(db, mid, lock=True)
+        register(db, other_id, m, "field")
+        assert [r.player_id for r in entries(db, mid)] == [pid, other_id]
+        assert entries(db, mid)[0].id == pre_id
+        assert all(not r.forced for r in entries(db, mid))
+        assert (
+            len(
+                list(
+                    db.scalars(
+                        select(Publication).where(
+                            Publication.match_id == mid, Publication.kind == "collection"
+                        )
+                    )
+                )
+            )
+            == 1
+        )

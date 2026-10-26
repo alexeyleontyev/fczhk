@@ -305,6 +305,13 @@ function App() {
             revision={dataRevision}
             openGame={openGame}
             createGame={() => setModal('create')}
+            prepareGame={(data) =>
+              void run(async () => {
+                const planned = await api<Match>('/schedule/next/prepare', 'POST', data)
+                openGame(planned.id)
+                setModal('include')
+              })
+            }
             openSchedule={() =>
               void run(async () => {
                 setTemplate(await api<Template>('/template'))
@@ -553,16 +560,31 @@ function App() {
         </Modal>
       )}
       {modal === 'include' && m && (
-        <Modal title="Добавить в состав" close={() => setModal(null)}>
+        <Modal
+          title={
+            m.status === 'draft' && m.scheduled_opening_at
+              ? 'Предварительная запись'
+              : 'Добавить в состав'
+          }
+          close={() => setModal(null)}
+        >
           <IncludeForm
             match={m}
             players={players}
             busy={busy}
             save={(data) =>
-              run(async () => {
-                await api(`/matches/${m.id}/participants`, 'POST', { ...data, version: m.version })
-                setModal(null)
-              }, 'Участник добавлен. Распределите команды заново.')
+              run(
+                async () => {
+                  await api(`/matches/${m.id}/participants`, 'POST', {
+                    ...data,
+                    version: m.version,
+                  })
+                  setModal(null)
+                },
+                m.status === 'draft' && m.scheduled_opening_at
+                  ? 'Игрок добавлен в предварительную запись'
+                  : 'Участник добавлен. Распределите команды заново.',
+              )
             }
             newGuest={() => setModal('guest')}
           />
