@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -67,6 +68,7 @@ class Match(Base):
     )
     starts_at: Mapped[datetime] = mapped_column(UTCDateTime)
     scheduled_opening_at: Mapped[datetime | None] = mapped_column(UTCDateTime, index=True)
+    collection_image_id: Mapped[str | None] = mapped_column(ForeignKey("post_images.id"))
     location: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     cost: Mapped[int] = mapped_column(Integer, default=0)
@@ -167,6 +169,19 @@ class TeamSnapshot(Base):
     __table_args__ = (UniqueConstraint("match_id", "version"),)
 
 
+class PostImage(Base):
+    __tablename__ = "post_images"
+    __table_args__ = (CheckConstraint("size > 0 AND size <= 10000000"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    content: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    mime_type: Mapped[str] = mapped_column(String(30))
+    size: Mapped[int] = mapped_column()
+    width: Mapped[int] = mapped_column()
+    height: Mapped[int] = mapped_column()
+    created_by: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
 class Publication(Base):
     __tablename__ = "publications"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -176,6 +191,7 @@ class Publication(Base):
     kind: Mapped[str] = mapped_column(String(15))
     version: Mapped[int] = mapped_column()
     text: Mapped[str] = mapped_column(Text)
+    image_id: Mapped[str | None] = mapped_column(ForeignKey("post_images.id"))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     attempts: Mapped[int] = mapped_column(default=0)
     message_ids: Mapped[list] = mapped_column(JSON, default=list)

@@ -100,6 +100,7 @@ def invalidate(db: Session, match: Match, roster_changed=True):
 def match_data(db: Session, match: Match) -> dict:
     from .archive import metadata_flags
     from .auctions import latest
+    from .post_images import metadata as image_metadata
     from .ratings import effective, public_team_data
     from .results import result_data
 
@@ -169,6 +170,7 @@ def match_data(db: Session, match: Match) -> dict:
         id=match.id,
         starts_at=match.starts_at,
         scheduled_opening_at=match.scheduled_opening_at,
+        collection_image=image_metadata(db, match.collection_image_id),
         collection_paused=collection_paused(db, match),
         game_day=match.game_day,
         season=match.season,
@@ -264,6 +266,7 @@ def enqueue(db: Session, match: Match, kind: str, chat_id: str):
         kind=kind,
         version=version,
         text=text_for(db, match, kind),
+        image_id=match.collection_image_id if kind == "collection" else None,
         chat_id=chat_id,
     )
     db.add(pub)

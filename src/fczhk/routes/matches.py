@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from .. import archive as arc
+from .. import post_images
 from .. import predictions as pred
 from .. import results as res
 from .. import schemas as S
@@ -112,6 +115,42 @@ def router(ctx):
         db: Session = Depends(db_dep, scope="function"),
     ):
         return svc.match_data(db, svc.create_match(db, p.id, body.model_dump()))
+
+    @app.put("/api/matches/{match_id}/collection-image")
+    async def upload_collection_image(
+        match_id: int, request: Request, version: int = Query(ge=1), p: Player = Depends(admin)
+    ):
+        length = request.headers.get("content-length")
+        if length and (not length.isdecimal() or int(length) > post_images.MAX_BYTES):
+            raise svc.DomainError("Выберите JPG или PNG размером до 10 МБ", 413)
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > post_images.MAX_BYTES:
+                raise svc.DomainError("Выберите JPG или PNG размером до 10 МБ", 413)
+            data.extend(chunk)
+        content = bytes(data)
+        info = await run_in_threadpool(post_images.validate, content)
+        image = await run_in_threadpool(
+            post_images.save, ctx.factory, p.id, match_id, version, content, info
+        )
+        return {"image": image}
+
+    @app.get("/api/matches/{match_id}/collection-image")
+    def collection_image(
+        match_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
+    ):
+        content, mime = post_images.content(db, match_id)
+        return Response(content=content, media_type=mime)
+
+    @app.delete("/api/matches/{match_id}/collection-image")
+    def remove_collection_image(
+        match_id: int,
+        body: S.Version,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        post_images.remove(db, p.id, match_id, body.version)
+        return {"ok": True}
 
     @app.put("/api/matches/{match_id}")
     def edit(

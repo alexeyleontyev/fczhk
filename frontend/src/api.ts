@@ -18,20 +18,25 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+async function request(
+  path: string,
+  method: string,
+  body?: BodyInit,
+  contentType = 'application/json',
+): Promise<Response> {
   const sentToken = token
   const response = await fetch(`/api${path}`, {
     method,
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': contentType,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body,
   })
-  const data = await response
-    .json()
-    .catch(() => ({ detail: 'Сервис временно недоступен. Повторите позже.' }))
   if (!response.ok) {
+    const data = await response
+      .json()
+      .catch(() => ({ detail: 'Сервис временно недоступен. Повторите позже.' }))
     const message =
       typeof data.detail === 'string'
         ? data.detail
@@ -44,7 +49,32 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
     }
     throw new ApiError(message, response.status)
   }
+  return response
+}
+
+function changed(path: string, data: unknown) {
+  window.dispatchEvent(new CustomEvent(DATA_CHANGED, { detail: { path, data } }))
+}
+
+export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  const response = await request(
+    path,
+    method,
+    body === undefined ? undefined : JSON.stringify(body),
+  )
+  const data = await response
+    .json()
+    .catch(() => ({ detail: 'Сервис временно недоступен. Повторите позже.' }))
   if (method !== 'GET' && !path.startsWith('/auth/') && !path.endsWith('/lineup/preview'))
-    window.dispatchEvent(new CustomEvent(DATA_CHANGED, { detail: { path, data } }))
+    changed(path, data)
   return data
+}
+
+export async function uploadImage(path: string, file: File): Promise<void> {
+  const response = await request(path, 'PUT', file, file.type || 'application/octet-stream')
+  changed(path, await response.json())
+}
+
+export async function imageBlob(path: string): Promise<Blob> {
+  return (await request(path, 'GET')).blob()
 }

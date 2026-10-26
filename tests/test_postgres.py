@@ -1155,3 +1155,78 @@ def test_parallel_workers_open_prepared_collection_once_and_preserve_priority(pg
             )
             == 1
         )
+
+
+@pytest.mark.parametrize("pg", ["a6e91f2c704b"], indirect=True)
+def test_collection_image_migration_preserves_opening_and_queued_post(pg):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from fczhk import post_images
+    from fczhk.db import Base
+    from fczhk.models import Publication
+    from tests.test_post_images import picture
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        mid = db.execute(
+            text(
+                "INSERT INTO matches (game_day, season, starts_at, scheduled_opening_at, location, description, cost, payment_details, field_limit, keeper_limit, status, version, roster_version, created_at) VALUES ('2032-06-04', '2032', '2032-06-04 20:00:00+03', '2032-06-01 12:00:00+03', 'Манеж', '', 100, '', 16, 2, 'draft', 7, 2, now()) RETURNING id"
+            )
+        ).scalar_one()
+        pub_id = db.execute(
+            text(
+                "INSERT INTO publications (match_id, kind, version, text, status, attempts, message_ids, stale, stale_marked, chat_id, created_at, next_attempt_at) VALUES (:mid, 'collection', 1, 'Прежний пост', 'pending', 0, '[]', false, false, '123', now(), now()) RETURNING id"
+            ),
+            {"mid": mid},
+        ).scalar_one()
+    config = Config("alembic.ini")
+    with factory.kw["bind"].begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+    with factory() as db:
+        match, pub = db.get(Match, mid), db.get(Publication, pub_id)
+        assert match.version == 7 and match.collection_image_id is None
+        assert match.scheduled_opening_at == datetime(2032, 6, 1, 12, tzinfo=MOSCOW)
+        assert pub.text == "Прежний пост" and pub.status == "pending" and pub.image_id is None
+    photo = picture()
+    post_images.save(factory, actor, mid, 7, photo, post_images.validate(photo))
+    with pytest.raises(RuntimeError, match="Нельзя удалить"), factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.downgrade(config, "a6e91f2c704b")
+    with factory() as db:
+        assert post_images.content(db, mid)[0] == photo
+
+
+def test_parallel_collection_image_changes_reject_stale_version(pg):
+    from fczhk import post_images
+    from fczhk.models import PostImage
+    from tests.test_post_images import picture
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        match = Match(
+            game_day="2032-06-04",
+            starts_at=datetime(2032, 6, 4, 20, tzinfo=MOSCOW),
+            location="Манеж",
+        )
+        db.add(match)
+        db.flush()
+        mid, version = match.id, match.version
+
+    def upload(color):
+        photo = picture(color)
+        try:
+            post_images.save(factory, actor, mid, version, photo, post_images.validate(photo))
+            return "ok"
+        except DomainError as exc:
+            assert exc.status == 409
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(upload, ["red", "blue"])) == ["conflict", "ok"]
+    with factory() as db:
+        assert db.get(Match, mid).version == version + 1
+        assert len(list(db.scalars(select(PostImage)))) == 1

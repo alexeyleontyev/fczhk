@@ -1,6 +1,7 @@
 import { ArrowRight, CalendarDays, Plus, RefreshCw } from 'lucide-react'
 import { Button } from './ui'
 import { CollectionCountdown } from './collection-countdown'
+import { CollectionImageEditor } from './collection-image'
 import { date } from './format'
 import { useLastCompleted } from './use-last-completed'
 import type { Run } from './types'
@@ -15,6 +16,7 @@ export function NextGameScreen({
   openSchedule,
   createGame,
   prepareGame,
+  saveScheduledImage,
 }: {
   isAdmin: boolean
   busy: boolean
@@ -25,6 +27,10 @@ export function NextGameScreen({
   openSchedule: () => void
   createGame: () => void
   prepareGame: (data: { opening_at: string; starts_at: string }) => void
+  saveScheduledImage: (
+    data: { opening_at: string; starts_at: string },
+    file: File,
+  ) => Promise<boolean>
 }) {
   const { match, loading, error } = useLastCompleted(revision)
   return (
@@ -56,6 +62,16 @@ export function NextGameScreen({
         showEmpty
         busy={busy}
         onPrepare={isAdmin ? prepareGame : undefined}
+        beforePrepare={
+          isAdmin
+            ? (data) => (
+                <CollectionImageEditor
+                  busy={busy}
+                  save={(file) => saveScheduledImage(data, file)}
+                />
+              )
+            : undefined
+        }
       />
       {error && (
         <p className="alert error" role="alert">

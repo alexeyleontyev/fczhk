@@ -13,6 +13,7 @@ import { PredictionPanel } from './predictions'
 import { CollectionCountdown } from './collection-countdown'
 import { PaymentStatus } from './payment-status'
 import { GameControls } from './game-controls'
+import { CollectionImageEditor } from './collection-image'
 import { ArchivedGameScreen, isArchivedMatch } from './archived-game-screen'
 import type { Match, Player, Position, Run, History } from './types'
 
@@ -32,6 +33,8 @@ export function GameScreen({
   openLineup,
   revision,
   focusPrediction = false,
+  saveImage,
+  removeImage,
 }: {
   m: Match | null
   isAdmin: boolean
@@ -48,6 +51,8 @@ export function GameScreen({
   openLineup: (matchId: number) => void
   revision: number
   focusPrediction?: boolean
+  saveImage: (file: File) => Promise<boolean>
+  removeImage: () => void
 }) {
   useEffect(() => {
     if (focusPrediction && ['finalized', 'approved'].includes(m?.status || '')) {
@@ -193,6 +198,16 @@ export function GameScreen({
                   setHistory={setHistory}
                   openLineup={openLineup}
                 />
+              )}
+              {isAdmin && m.status === 'draft' && (
+                <section className="panel">
+                  <CollectionImageEditor
+                    match={m}
+                    busy={busy}
+                    save={saveImage}
+                    remove={removeImage}
+                  />
+                </section>
               )}
               {['finalized', 'approved'].includes(m.status) && (
                 <div className="game-prediction-top" id="prediction">

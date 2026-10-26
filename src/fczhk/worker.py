@@ -4,11 +4,11 @@ from datetime import timedelta
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import case, or_, select
 
 from .db import database, now
-from .models import Publication
+from .models import PostImage, Publication
 from .notifications import SCHEDULED_KINDS, delivery_allowed
 from .operations import cleanup_sessions, heartbeat
 from .services import schedule_tick
@@ -49,7 +49,13 @@ def app_link(cfg, match_id=None, screen=None):
     return cfg.public_url
 
 
-def publication_parts(kind, content):
+def publication_parts(kind, content, photo=False):
+    if photo:
+        # Reserve room for the stale warning, keeping photo captions below Telegram's limit.
+        pieces = chunks(content, 950, utf16=True)
+        return [(pieces[0], None)] + [
+            (part, None) for part in chunks("\n".join(pieces[1:]), utf16=True)
+        ]
     # The bounded start notice contains two escaped captain links. Keep its HTML intact.
     return (
         [(content, "HTML")]
@@ -99,6 +105,11 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             pub.kind,
         )
         already_sent = list(pub.message_ids)
+        image = db.get(PostImage, pub.image_id) if pub.image_id else None
+        photo = image.content if image else None
+        filename = (
+            "collection.jpg" if image and image.mime_type == "image/jpeg" else "collection.png"
+        )
     if cfg.env == "demo":
         with factory() as db, db.begin():
             p = db.get(Publication, pub_id)
@@ -110,7 +121,7 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             p.status, p.error = "failed", "Не настроен чат публикаций или бот"
         return True
     try:
-        parts = publication_parts(kind, content)
+        parts = publication_parts(kind, content, photo=photo is not None)
         for i, (part, parse_mode) in enumerate(parts):
             if i < len(already_sent):
                 continue
@@ -130,10 +141,20 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
                         )
                     ]
                 )
-                if i == len(parts) - 1
+                if i == len(parts) - 1 or (photo is not None and i == 0)
                 else None
             )
-            sent = await bot.send_message(chat, part, reply_markup=markup, parse_mode=parse_mode)
+            if photo is not None and i == 0:
+                sent = await bot.send_photo(
+                    chat,
+                    BufferedInputFile(photo, filename=filename),
+                    caption=part,
+                    reply_markup=markup,
+                )
+            else:
+                sent = await bot.send_message(
+                    chat, part, reply_markup=markup, parse_mode=parse_mode
+                )
             already_sent.append(sent.message_id)
             with factory() as db, db.begin():
                 db.get(Publication, pub_id).message_ids = list(already_sent)
@@ -192,12 +213,25 @@ async def mark_stale(cfg, factory, bot=None):
                 if pub.kind == "result"
                 else "⚠️ НЕАКТУАЛЬНО — состав или параметры изменились\n\n"
             )
-            for mid, (part, parse_mode) in zip(
-                pub.message_ids, publication_parts(pub.kind, pub.text), strict=True
+            for index, (mid, (part, parse_mode)) in enumerate(
+                zip(
+                    pub.message_ids,
+                    publication_parts(pub.kind, pub.text, photo=pub.image_id is not None),
+                    strict=True,
+                )
             ):
                 try:
-                    await bot.edit_message_text(
-                        text=prefix + part,
+                    edit = (
+                        bot.edit_message_caption
+                        if pub.image_id and index == 0
+                        else bot.edit_message_text
+                    )
+                    await edit(
+                        **(
+                            {"caption": prefix + part}
+                            if pub.image_id and index == 0
+                            else {"text": prefix + part}
+                        ),
                         chat_id=pub.chat_id,
                         message_id=mid,
                         parse_mode=parse_mode,

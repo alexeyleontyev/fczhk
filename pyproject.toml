@@ -14,6 +14,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "openskill==6.2.0",
   "pyjwt[crypto]>=2.10,<3",
+  "pillow>=13.0.0",
 ]
 
 [dependency-groups]

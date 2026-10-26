@@ -49,6 +49,7 @@ export type Publication = {
 }
 export type Strength = { total: number | null; rated_total: number; rated: number; count: number }
 export type Match = {
+  collection_image?: CollectionImage | null
   collection_paused?: boolean
   scheduled_opening_at?: string | null
   cancellation_reason?: string | null
@@ -87,6 +88,13 @@ export type Match = {
     run_id?: number | null
     variant?: number | null
   }
+}
+export type CollectionImage = {
+  id: string
+  mime_type: string
+  size: number
+  width: number
+  height: number
 }
 export type BalanceSummary = {
   white: Average & { count: number }

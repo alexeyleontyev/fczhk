@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Timer, UserPlus } from 'lucide-react'
 import { Button } from './ui'
 import { api } from './api'
@@ -18,12 +18,14 @@ export function CollectionCountdown({
   showEmpty = false,
   onPrepare,
   busy = false,
+  beforePrepare,
 }: {
   refresh: () => Promise<void>
   currentGame: Match | null
   showEmpty?: boolean
   onPrepare?: (data: { opening_at: string; starts_at: string }) => void
   busy?: boolean
+  beforePrepare?: (data: { opening_at: string; starts_at: string }) => ReactNode
 }) {
   const [schedule, setSchedule] = useState<Schedule | null>(null)
   const [remaining, setRemaining] = useState(0)
@@ -149,6 +151,10 @@ export function CollectionCountdown({
           {error}
         </p>
       )}
+      {beforePrepare &&
+        schedule.starts_at &&
+        remaining > 0 &&
+        beforePrepare({ opening_at: schedule.opening_at!, starts_at: schedule.starts_at })}
       {onPrepare && schedule.starts_at && remaining > 0 && (
         <Button
           className="secondary compact"

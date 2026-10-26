@@ -11,7 +11,7 @@ import {
   Trophy,
   X,
 } from 'lucide-react'
-import { api, setToken } from './api'
+import { api, setToken, uploadImage } from './api'
 import { RatingFlow } from './ratings'
 import { PlayerStats } from './results'
 import { PredictionStandings } from './predictions'
@@ -313,6 +313,19 @@ function App() {
                 setModal('include')
               })
             }
+            saveScheduledImage={async (data, file) => {
+              let saved = false
+              await run(async () => {
+                const planned = await api<Match>('/schedule/next/prepare', 'POST', data)
+                await uploadImage(
+                  `/matches/${planned.id}/collection-image?version=${planned.version}`,
+                  file,
+                )
+                saved = true
+                openGame(planned.id)
+              }, 'Картинка сохранена для поста открытия сбора')
+              return saved
+            }}
             openSchedule={() =>
               void run(async () => {
                 setTemplate(await api<Template>('/template'))
@@ -325,6 +338,21 @@ function App() {
         {['game', 'prediction'].includes(tab) && !gameHome && (
           <GameScreen
             focusPrediction={tab === 'prediction'}
+            saveImage={async (file) => {
+              let saved = false
+              await run(async () => {
+                await uploadImage(`/matches/${m!.id}/collection-image?version=${m!.version}`, file)
+                saved = true
+              }, 'Картинка сохранена для поста открытия сбора')
+              return saved
+            }}
+            removeImage={() =>
+              m &&
+              void run(
+                () => api(`/matches/${m.id}/collection-image`, 'DELETE', { version: m.version }),
+                'Картинка убрана из будущего поста',
+              )
+            }
             key={m?.id ?? 'empty'}
             m={m}
             isAdmin={isAdmin}
