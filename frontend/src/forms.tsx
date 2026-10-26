@@ -317,7 +317,7 @@ export function IncludeForm({
       }}
     >
       <p className="muted">
-        {m.status === 'draft' && m.scheduled_opening_at
+        {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
           ? 'Игрок попадёт в начало очереди после открытия сбора. Подтверждение оплаты требуется по общим правилам.'
           : 'Прямое включение администратором. При заполненном составе выберите, кого заменить.'}
       </p>
@@ -341,7 +341,9 @@ export function IncludeForm({
                 !m.registrations.some(
                   (r) =>
                     r.player_id === p.id &&
-                    ((m.status === 'draft' && m.scheduled_opening_at) || r.selected || r.forced),
+                    ((m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)) ||
+                      r.selected ||
+                      r.forced),
                 ),
             )
             .map((p) => (
@@ -366,7 +368,7 @@ export function IncludeForm({
           <option value="keeper">Вратарь</option>
         </select>
       </label>
-      {!(m.status === 'draft' && m.scheduled_opening_at) && (
+      {!(m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)) && (
         <label>
           Кого заменить
           <select name="replace" key={position}>
@@ -382,7 +384,9 @@ export function IncludeForm({
         </label>
       )}
       <Button disabled={busy} type="submit">
-        {m.status === 'draft' && m.scheduled_opening_at ? 'Записать заранее' : 'Добавить в состав'}
+        {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
+          ? 'Записать заранее'
+          : 'Добавить в состав'}
       </Button>
     </form>
   )

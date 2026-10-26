@@ -36,6 +36,8 @@ class Version(Payload):
 
 class Cancellation(Version):
     reason: str = Field(min_length=2, max_length=300)
+    advance_schedule: bool = Field(default=True, strict=True)
+    expected_next_starts_at: AwareDatetime | None = None
 
 
 class SkipDay(Payload):

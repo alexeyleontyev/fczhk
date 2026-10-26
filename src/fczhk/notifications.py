@@ -6,7 +6,7 @@ from math import ceil
 from sqlalchemy import select
 
 from .db import now
-from .models import GameTemplate, Match, Player, Publication, SkippedGameDay
+from .models import Audit, GameTemplate, Match, Player, Publication, SkippedGameDay
 from .scheduling import MOSCOW, schedule_window
 
 SCHEDULED_KINDS = ("opening_notice", "payment_notice")
@@ -54,28 +54,34 @@ def registration_notice(db, match, player_id, action, position, actor=None):
     )
 
 
-def next_collection(db, at=None):
+def next_collection(db, at=None, *, exclude_planned_id=None, include_disabled=False):
     """Public schedule only; no channel IDs, payment details or writes."""
     at = at or now()
     result = dict(server_now=at, opening_at=None, starts_at=None, location=None)
     template = db.get(GameTemplate, 1)
-    if not template or not template.enabled:
+    if not template or (not template.enabled and not include_disabled):
         return result
     planned = db.scalar(
         select(Match)
         .where(
             Match.status == "draft",
-            Match.scheduled_opening_at.is_not(None),
+            (
+                Match.scheduled_opening_at.is_not(None)
+                | Match.id.in_(select(Audit.match_id).where(Audit.action == "collection.closed"))
+            ),
+            Match.id != exclude_planned_id if exclude_planned_id is not None else True,
             Match.starts_at > at,
             Match.game_day.not_in(select(SkippedGameDay.game_day)),
         )
-        .order_by(Match.scheduled_opening_at, Match.id)
+        .order_by(Match.starts_at, Match.id)
         .limit(1)
     )
     planned_schedule = (
         {
             **result,
-            "opening_at": planned.scheduled_opening_at.astimezone(MOSCOW),
+            "opening_at": planned.scheduled_opening_at.astimezone(MOSCOW)
+            if planned.scheduled_opening_at
+            else None,
             "starts_at": planned.starts_at.astimezone(MOSCOW),
             "location": planned.location,
         }
@@ -101,7 +107,7 @@ def next_collection(db, at=None):
     for _ in range(54):
         day = starts.date().isoformat()
         if day not in skipped and day not in occupied:
-            if planned and planned.scheduled_opening_at <= opening:
+            if planned and planned.starts_at <= starts:
                 return planned_schedule
             return {
                 **result,

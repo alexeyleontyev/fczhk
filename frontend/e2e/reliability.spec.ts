@@ -54,6 +54,7 @@ test('expired session returns to login and admin can cancel a future game', asyn
   await page.goto(`/?game=${match.id}`)
   await page.getByRole('tab', { name: 'Обзор', exact: true }).click()
   await page.getByRole('button', { name: 'Отменить игру', exact: true }).click()
+  await page.getByRole('radio', { name: 'Да, перенести', exact: true }).check()
   await page.getByLabel('Причина отмены').fill('Поле закрыто')
   await page
     .getByRole('dialog')

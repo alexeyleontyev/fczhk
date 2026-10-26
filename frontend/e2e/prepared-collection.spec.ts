@@ -100,6 +100,32 @@ test('admin prepares a hidden collection and early players keep their queue when
     expect(opened.registrations.slice(0, 2).map((r: { id: number }) => r.id)).toEqual(
       before.registrations.map((r: { id: number }) => r.id),
     )
+    await page.getByRole('button', { name: 'Отменить игру', exact: true }).click()
+    const question = page.getByRole('dialog')
+    await expect(question).toContainText('Перенести следующую запланированную игру на')
+    await expect(question).toContainText('Текущая игра отменяется')
+    await expect(question).toContainText('Записанные игроки и оплаты сохранятся')
+    await question.getByRole('radio', { name: 'Нет, оставить дату', exact: true }).check()
+    await question.getByLabel('Причина отмены').fill('Сбор открыт ошибочно')
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      )
+      await page.screenshot({
+        path: `test-results/cancellation-question-${width}.png`,
+        fullPage: true,
+      })
+    }
+    await question.getByRole('button', { name: 'Отменить сбор', exact: true }).click()
+    await expect(question).toHaveCount(0)
+    const closed = await (await request.get(`/api/matches/${id}`, { headers })).json()
+    expect(closed.status).toBe('draft')
+    expect(closed.starts_at).toBe(before.starts_at)
+    expect(closed.registrations.map((r: { id: number }) => r.id)).toEqual(
+      opened.registrations.map((r: { id: number }) => r.id),
+    )
+    expect((await request.get(`/api/matches/${id}`, { headers: memberHeaders })).status()).toBe(404)
   } finally {
     if (id) {
       const match = await (await request.get(`/api/matches/${id}`, { headers })).json()

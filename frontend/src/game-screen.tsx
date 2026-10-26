@@ -121,7 +121,7 @@ export function GameScreen({
             <div className="hero-copy">
               <span className={`status-pill ${m.status}`}>
                 <span />
-                {m.status === 'draft' && m.scheduled_opening_at
+                {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
                   ? 'Запланирована'
                   : status[m.status]}
               </span>
@@ -239,7 +239,7 @@ export function GameScreen({
                 <section className="panel" hidden={activeSection !== 'overview'}>
                   <div className="section-title">
                     <h2>
-                      {m.status === 'draft' && m.scheduled_opening_at
+                      {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
                         ? 'Предварительная запись'
                         : 'Сбор на игру'}
                     </h2>
@@ -285,7 +285,7 @@ export function GameScreen({
                     })}
                   </div>
                   <p className="muted caption">
-                    {m.status === 'draft' && m.scheduled_opening_at
+                    {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
                       ? 'Этот список виден только администраторам. При открытии сбора игроки займут первые места в очереди. Оплату подтверждает администратор.'
                       : m.status === 'open'
                         ? 'В основном списке — первые записавшиеся полевые и вратари. При утверждении пройдут игроки с оплатой, подтверждённой администратором, по времени записи.'

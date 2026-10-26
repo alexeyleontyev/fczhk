@@ -13,6 +13,7 @@ const titles: Record<string, string> = {
   'match.opened': 'Открыт сбор',
   'match.finalized': 'Зафиксирован список участников',
   'match.cancelled': 'Игра отменена',
+  'collection.closed': 'Сбор закрыт, дата игры сохранена',
   'teams.saved': 'Изменены составы',
   'teams.approved': 'Утверждены составы',
   'match.approved': 'Утверждены составы',

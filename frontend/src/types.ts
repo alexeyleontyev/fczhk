@@ -49,6 +49,7 @@ export type Publication = {
 }
 export type Strength = { total: number | null; rated_total: number; rated: number; count: number }
 export type Match = {
+  collection_paused?: boolean
   scheduled_opening_at?: string | null
   cancellation_reason?: string | null
   id: number

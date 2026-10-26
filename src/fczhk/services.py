@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -169,6 +169,7 @@ def match_data(db: Session, match: Match) -> dict:
         id=match.id,
         starts_at=match.starts_at,
         scheduled_opening_at=match.scheduled_opening_at,
+        collection_paused=collection_paused(db, match),
         game_day=match.game_day,
         season=match.season,
         **metadata,
@@ -389,7 +390,7 @@ def add_participant(
         raise DomainError("Игрок не найден", 404)
     if p.shared_keeper and position != "keeper":
         raise DomainError("Общую карточку можно добавить только вратарём")
-    if match.status == "draft" and match.scheduled_opening_at:
+    if match.status == "draft" and (match.scheduled_opening_at or collection_paused(db, match)):
         if replace_id is not None:
             raise DomainError("До открытия сбора добавляйте игроков без замены")
         if match.scheduled_opening_at and match.starts_at <= now():
@@ -782,14 +783,100 @@ def ensure_pregame(db: Session, match: Match):
         raise DomainError("Результат уже внесен. Изменяйте фактический состав в результате матча.")
 
 
-def cancel_match(db, actor, match, reason, cfg):
+def collection_paused(db, match):
+    return bool(
+        match.status == "draft"
+        and match.scheduled_opening_at is None
+        and db.scalar(
+            select(Audit.id)
+            .where(Audit.match_id == match.id, Audit.action == "collection.closed")
+            .limit(1)
+        )
+    )
+
+
+def cancellation_options(db, match):
+    from .notifications import next_collection
+
+    following = next_collection(
+        db,
+        match.starts_at + timedelta(seconds=1),
+        exclude_planned_id=match.id,
+        include_disabled=True,
+    )
+    return dict(
+        version=match.version,
+        current_starts_at=match.starts_at,
+        next_starts_at=following["starts_at"] or match.starts_at + timedelta(weeks=1),
+    )
+
+
+def close_collection(db, actor, match, reason, cfg, *, notify=True):
+    """Return the game to a private plan while retaining registrations and payment history."""
     from .auctions import invalidate_roster
 
+    if db.get(MatchResult, match.id) or now() >= match.starts_at:
+        raise DomainError("Закрыть сбор можно только до начала игры и ввода результата", 409)
+    was_visible = match.status != "draft"
+    opening = match.scheduled_opening_at
+    if opening is None:
+        template = db.get(GameTemplate, 1)
+        starts = match.starts_at.astimezone(MOSCOW)
+        hour, minute = map(int, template.opening_time.split(":"))
+        opening = (
+            starts - timedelta(days=(starts.weekday() - template.opening_weekday) % 7)
+        ).replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if opening >= starts:
+            opening -= timedelta(weeks=1)
+    invalidate_roster(db, match)
+    for pub in db.scalars(select(Publication).where(Publication.match_id == match.id)):
+        pub.stale = True
+        if pub.status == "pending":
+            pub.status = "cancelled"
+    match.status = "draft"
+    match.scheduled_opening_at = opening if opening > now() else None
+    match.approved_version = None
+    for entry in entries(db, match.id):
+        entry.selected = entry.forced = False
+    invalidate(db, match)
+    match.version += 1
+    audit(
+        db,
+        actor,
+        "collection.closed",
+        match.id,
+        reason=reason,
+        starts_at=match.starts_at.isoformat(),
+        auto_opening_at=match.scheduled_opening_at.isoformat()
+        if match.scheduled_opening_at
+        else None,
+    )
+    if was_visible and notify:
+        publication = enqueue(db, match, "cancellation", cfg.publication_chat_id)
+        publication.text = f"Сбор закрыт. Дата игры сохраняется.\nФКЖК · {match.starts_at.astimezone(MOSCOW):%d.%m.%Y · %H:%M МСК}\nПричина: {reason}"
+    db.flush()
+
+
+def cancel_match(
+    db, actor, match, reason, cfg, *, advance_schedule=True, expected_next_starts_at=None
+):
+    from .auctions import invalidate_roster
+
+    if not advance_schedule:
+        close_collection(db, actor, match, reason, cfg)
+        return
     if match.status == "cancelled":
         return
     ensure_pregame(db, match)
     if now() >= match.starts_at:
         raise DomainError("Отмена доступна до начала игры", 409)
+    if (
+        expected_next_starts_at is not None
+        and cancellation_options(db, match)["next_starts_at"] != expected_next_starts_at
+    ):
+        raise DomainError(
+            "Расписание изменилось. Обновите вопрос об отмене и выберите дату заново.", 409
+        )
     invalidate_roster(db, match)
     announced = match.status != "draft"
     for pub in db.scalars(select(Publication).where(Publication.match_id == match.id)):

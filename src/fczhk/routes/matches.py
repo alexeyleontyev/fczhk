@@ -198,6 +198,13 @@ def router(ctx):
         db.flush()
         return svc.match_data(db, m)
 
+    @app.get("/api/matches/{match_id}/cancellation")
+    def cancellation_options(
+        match_id: int, p: Player = Depends(admin), db: Session = Depends(db_dep, scope="function")
+    ):
+        match = svc.get_match(db, match_id)
+        return svc.cancellation_options(db, match)
+
     @app.post("/api/matches/{match_id}/cancel")
     def cancel_match(
         match_id: int,
@@ -205,8 +212,17 @@ def router(ctx):
         p: Player = Depends(admin),
         db: Session = Depends(db_dep, scope="function"),
     ):
+        db.scalar(select(GameTemplate).where(GameTemplate.id == 1).with_for_update())
         match = svc.get_match(db, match_id, body.version, lock=True)
-        svc.cancel_match(db, p.id, match, body.reason, cfg)
+        svc.cancel_match(
+            db,
+            p.id,
+            match,
+            body.reason,
+            cfg,
+            advance_schedule=body.advance_schedule,
+            expected_next_starts_at=body.expected_next_starts_at,
+        )
         db.flush()
         return svc.match_data(db, match)
 

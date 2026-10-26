@@ -26,6 +26,7 @@ import { TacticsScreen } from './tactics-screen'
 import { GameScreen } from './game-screen'
 import { NextGameScreen } from './next-game-screen'
 import { FinalizeCollection } from './finalize-collection'
+import { CancelCollection } from './cancel-collection'
 import { isArchivedMatch } from './archived-game-screen'
 import { MatchHistory } from './match-history'
 import { AuctionScreen } from './auctions'
@@ -516,28 +517,7 @@ function App() {
       )}
       {modal === 'cancel' && m && (
         <Modal title="Отменить игру?" close={() => setModal(null)}>
-          <p>
-            Запись и прогнозы закроются. История и оплаты сохранятся; возврат или перенос оплаты
-            согласуйте с участниками.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              const reason = new FormData(e.currentTarget).get('reason')
-              void run(async () => {
-                await api(`/matches/${m.id}/cancel`, 'POST', { version: m.version, reason })
-                setModal(null)
-              }, 'Игра отменена')
-            }}
-          >
-            <label>
-              Причина отмены
-              <input name="reason" required minLength={2} maxLength={300} />
-            </label>
-            <Button disabled={busy} type="submit">
-              Подтвердить отмену игры
-            </Button>
-          </form>
+          <CancelCollection match={m} busy={busy} run={run} close={() => setModal(null)} />
         </Modal>
       )}
       {modal === 'finalize' && m && (
@@ -562,7 +542,7 @@ function App() {
       {modal === 'include' && m && (
         <Modal
           title={
-            m.status === 'draft' && m.scheduled_opening_at
+            m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
               ? 'Предварительная запись'
               : 'Добавить в состав'
           }
@@ -581,7 +561,7 @@ function App() {
                   })
                   setModal(null)
                 },
-                m.status === 'draft' && m.scheduled_opening_at
+                m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
                   ? 'Игрок добавлен в предварительную запись'
                   : 'Участник добавлен. Распределите команды заново.',
               )

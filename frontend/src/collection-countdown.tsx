@@ -83,6 +83,16 @@ export function CollectionCountdown({
     }
   }, [])
 
+  if (schedule?.starts_at && !schedule.opening_at)
+    return (
+      <section className="panel">
+        <h2>Сбор закрыт</h2>
+        <p className="muted caption">
+          Игра запланирована на {date(schedule.starts_at)} · {time(schedule.starts_at)} МСК. Время
+          повторного открытия определит администратор.
+        </p>
+      </section>
+    )
   if (!schedule?.opening_at)
     return error ? (
       <p className="muted caption" role="status">
@@ -97,7 +107,10 @@ export function CollectionCountdown({
   // Do not distract from an upcoming game with next week's collection timer.
   if (
     currentGame &&
-    !(currentGame.status === 'draft' && currentGame.scheduled_opening_at) &&
+    !(
+      currentGame.status === 'draft' &&
+      (currentGame.scheduled_opening_at || currentGame.collection_paused)
+    ) &&
     !['completed', 'cancelled'].includes(currentGame.status) &&
     Date.parse(currentGame.starts_at) > Date.parse(schedule.server_now)
   )

@@ -3624,3 +3624,44 @@ footer > span:first-child {
     width: 26px;
   }
 }
+
+.cancellation-choice {
+  border: 0;
+  padding: 0;
+  margin: 0 0 20px;
+  min-width: 0;
+}
+.cancellation-choice legend {
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.cancellation-choice > label {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.cancellation-choice label > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.cancellation-choice input {
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--green);
+}
+.cancellation-choice small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  margin-top: 8px;
+}
