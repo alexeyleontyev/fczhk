@@ -32,6 +32,20 @@ def selected(db, match):
     return [r for r in rows if r.id in ids]
 
 
+def rating_opinions(db, match):
+    if db.get(MatchResult, match.id):
+        players = db.scalars(
+            select(ResultParticipant).where(ResultParticipant.match_id == match.id)
+        )
+    else:
+        players = selected(db, match)
+    return {
+        "authors": ratings.field_opinions(
+            db, [p.player_id for p in players if p.position == "field"]
+        )
+    }
+
+
 def data(db, match, cfg):
     regs = selected(db, match)
     people, canonical = results.identities(db)
@@ -191,20 +205,21 @@ def share(db, actor, match, body, cfg):
         "⚽ Вариант состава",
         f"Автор: {author}",
         f"Игра {match.starts_at.astimezone(services.MOSCOW):%d.%m.%Y · %H:%M МСК}",
+        "Суммы оценок — только полевые игроки, без вратарей.",
     ]
     for team, label in (("white", "⚪ Белые"), ("black", "⚫ Чёрные")):
         members = [p for p in players if body.assignments[p["registration_id"]] == team]
 
         def score(kind):
-            relevant = [p for p in members if kind == "defense" or p["position"] == "field"]
+            relevant = [p for p in members if p["position"] == "field"]
             known = [p[kind] for p in relevant if p[kind] is not None]
             if not known:
                 return "—"
             value = f"{sum(known):.2f}".rstrip("0").rstrip(".").replace(".", ",")
             return ("≥ " if len(known) < len(relevant) else "") + value
 
-        values = [p["defense"] for p in members] + [
-            p["attack"] for p in members if p["position"] == "field"
+        values = [
+            p[kind] for p in members if p["position"] == "field" for kind in ("attack", "defense")
         ]
         known = [value for value in values if value is not None]
         total = f"{sum(known):.2f}".rstrip("0").rstrip(".").replace(".", ",") if known else "—"

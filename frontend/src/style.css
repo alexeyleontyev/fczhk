@@ -3412,11 +3412,14 @@ footer > span:first-child {
   width: 64px;
 }
 .results-table {
-  width: 768px;
+  width: 456px;
   min-width: 100%;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
+}
+.results-table.results-scoring {
+  width: 336px;
 }
 .result-rank-col {
   width: 28px;
@@ -3427,15 +3430,21 @@ footer > span:first-child {
 .result-games-col {
   width: 52px;
 }
-.result-points-col,
+.result-points-col {
+  width: 52px;
+}
 .result-wins-col,
 .result-draws-col,
-.result-goals-col {
-  width: 64px;
+.result-losses-col {
+  width: 44px;
 }
-.result-losses-col,
-.result-assists-col,
-.result-goal_assist-col,
+.result-goals-col,
+.result-assists-col {
+  width: 48px;
+}
+.result-goal_assist-col {
+  width: 48px;
+}
 .result-win_rate-col {
   width: 80px;
 }
@@ -3697,4 +3706,245 @@ footer > span:first-child {
 .collection-countdown .collection-image-editor {
   border-top: 1px solid var(--line);
   padding-top: 16px;
+}
+
+/* Independent rating sources for a personal lineup comparison. */
+.lineup-ratings {
+  --soft: #edf3e8;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.lineup-rating-block + .lineup-rating-block,
+.lineup-rating-difference {
+  border-top: 1px solid var(--line);
+}
+.lineup-rating-picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--soft);
+}
+.lineup-rating-picker-heading strong {
+  font-size: 13px;
+}
+.lineup-rating-picker-heading small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+.lineup-rating-select {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-width: 190px;
+  max-width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  padding: 8px 11px;
+  text-align: left;
+}
+.lineup-rating-select span {
+  overflow-wrap: anywhere;
+}
+.lineup-rating-select small {
+  margin: 0;
+}
+.lineup-rating-search {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.lineup-rating-search label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.lineup-rating-search input {
+  width: 100%;
+  min-height: 44px;
+}
+.lineup-rating-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin-top: 8px;
+}
+.lineup-rating-options button {
+  padding: 9px 8px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 5px;
+  background: white;
+  color: var(--ink);
+  text-align: left;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.lineup-rating-options button[aria-pressed='true'] {
+  background: var(--soft);
+  color: var(--green);
+}
+.lineup-rating-options small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+  font-size: 11px;
+}
+.lineup-rating-options .lineup-rating-general {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+.lineup-rating-teams,
+.lineup-rating-teams.tactics-scores {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.lineup-rating-teams > .lineup-rating-team {
+  display: block;
+  min-width: 0;
+  padding: 16px;
+  font-size: 13px;
+}
+.lineup-rating-teams > .lineup-rating-team + .lineup-rating-team {
+  border-top: 0;
+  border-left: 1px solid var(--line);
+}
+.lineup-rating-team > strong {
+  display: block;
+  font-size: 15px;
+}
+.lineup-rating-team > strong small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.lineup-rating-team p {
+  overflow-wrap: anywhere;
+}
+.lineup-rating-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.lineup-rating-metrics > span {
+  min-width: 0;
+}
+.lineup-rating-metrics small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lineup-rating-metrics .rating-mark {
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+}
+.lineup-rating-metrics b {
+  display: block;
+  font-size: clamp(16px, 5vw, 22px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lineup-rating-metrics .total b {
+  color: var(--green);
+}
+.lineup-rating-note {
+  padding: 0 16px 14px;
+  margin: 0;
+}
+.lineup-rating-details {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.lineup-rating-details summary {
+  min-height: 36px;
+  align-content: center;
+  color: var(--green);
+  font-size: 12px;
+}
+.lineup-rating-details table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+.lineup-rating-details th,
+.lineup-rating-details td {
+  padding: 7px 2px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.lineup-rating-details th:first-child,
+.lineup-rating-details td:first-child {
+  width: 64%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.lineup-rating-details td small {
+  display: block;
+  font-size: 11px;
+}
+.lineup-rating-difference {
+  background: var(--soft);
+  padding: 14px 16px;
+}
+.lineup-rating-difference h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.lineup-rating-difference p {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+.lineup-rating-difference .lineup-rating-team {
+  padding: 12px 0 0;
+}
+.lineup-rating-difference .lineup-rating-team + .lineup-rating-team {
+  border: 0;
+  padding-left: 16px;
+}
+@media (max-width: 640px) {
+  .lineup-rating-teams,
+  .lineup-rating-teams.tactics-scores {
+    grid-template-columns: 1fr;
+  }
+  .lineup-rating-teams > .lineup-rating-team + .lineup-rating-team {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .lineup-rating-select {
+    width: 100%;
+    font-size: 16px;
+  }
+  .lineup-rating-picker-heading {
+    gap: 8px;
+  }
+  .lineup-rating-picker-heading > div {
+    width: 100%;
+  }
+  .lineup-rating-details summary {
+    min-height: 44px;
+  }
+  .lineup-rating-difference .lineup-rating-team + .lineup-rating-team {
+    padding: 16px 0 0;
+    margin-top: 12px;
+  }
 }

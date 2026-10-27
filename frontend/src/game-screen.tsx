@@ -344,7 +344,13 @@ export function GameScreen({
                             <Button
                               disabled={busy}
                               className="secondary compact"
-                              onClick={() =>
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    'Вы точно хотите сменить амплуа? Время записи обновится, и вы займёте новое место в очереди.',
+                                  )
+                                )
+                                  return
                                 void run(
                                   () =>
                                     api(`/matches/${m.id}/join`, 'POST', {
@@ -352,7 +358,7 @@ export function GameScreen({
                                     }),
                                   'Амплуа изменено. Время записи обновлено.',
                                 )
-                              }
+                              }}
                             >
                               Сменить амплуа
                             </Button>

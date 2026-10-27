@@ -464,36 +464,143 @@ async def test_duplicate_telegram_callback_cannot_rejoin_after_later_cancel(
     assert call("GET", f"/matches/{game['id']}")["registrations"] == []
 
 
-async def test_bot_cancel_button_removes_own_registration_once(env, call, game, monkeypatch):
-    cfg, factory, *_ = env
-    cfg.bot_token = "123456:abcdefghijklmnopqrstuvwxyzABCDE"
-    monkeypatch.setattr(Bot, "__call__", AsyncMock(return_value=True))
-    with factory() as db, db.begin():
-        db.get(GameTemplate, 1).extended_chat_id = "-1002222222"
-    call("POST", f"/matches/{game['id']}/join", {"position": "keeper"}, role="player")
-    update = {
-        "update_id": 125,
-        "callback_query": {
-            "id": "cancel-once",
-            "from": {"id": 102, "is_bot": False, "first_name": "Игрок"},
-            "chat_instance": "abc",
-            "inline_message_id": "inline",
-            "data": f"leave:{game['id']}",
-        },
+def confirmation_buttons(replies):
+    question = next(
+        r
+        for r in replies
+        if isinstance(r, SendMessage)
+        and r.reply_markup
+        and any(
+            b.callback_data and b.callback_data.startswith("reg:")
+            for row in r.reply_markup.inline_keyboard
+            for b in row
+        )
+    )
+    buttons = {
+        b.callback_data.split(":")[3]: b.callback_data
+        for row in question.reply_markup.inline_keyboard
+        for b in row
     }
-    await handle_update(cfg, factory, update)
-    assert call("GET", f"/matches/{game['id']}")["registrations"] == []
-    call("POST", f"/matches/{game['id']}/join", {"position": "field"}, role="player")
-    await handle_update(cfg, factory, update)
-    assert len(call("GET", f"/matches/{game['id']}")["registrations"]) == 1
-    from sqlalchemy import select
+    assert all(len(value.encode()) <= 64 for value in buttons.values())
+    return question, buttons
 
+
+def registration_state(env, game_id):
+    from fczhk.models import Registration
+
+    with env[1]() as db:
+        r = db.scalar(
+            select(Registration).where(
+                Registration.match_id == game_id, Registration.player_id == env[4]["player"]
+            )
+        )
+        return {c.key: getattr(r, c.key) for c in Registration.__table__.columns}
+
+
+async def test_bot_cancel_button_removes_own_registration_once(env, call, game, monkeypatch):
+    with env[1]() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1002222222"
+    m = call("POST", f"/matches/{game['id']}/join", {"position": "keeper"}, role="player")
+    m = call(
+        "PUT",
+        f"/matches/{m['id']}/registrations/{m['registrations'][0]['id']}/payment",
+        {"version": m["version"], "paid": True, "reported": True},
+    )
+    original = registration_state(env, m["id"])
+    replies = await callback_replies(
+        env, monkeypatch, f"leave:{m['id']}", callback_id="cancel-once"
+    )
+    question, buttons = confirmation_buttons(replies)
+    assert "обе отметки оплаты сброшены" in question.text
+    assert registration_state(env, m["id"]) == original
+    for _ in range(2):
+        await callback_replies(env, monkeypatch, buttons["l"], callback_id="confirm-cancel-once")
+    assert call("GET", f"/matches/{m['id']}")["registrations"] == []
+    cancelled = registration_state(env, m["id"])
+    assert not cancelled["paid"] and not cancelled["payment_reported"]
+    assert cancelled["paid_at"] is None and cancelled["payment_reported_at"] is None
+    call("POST", f"/matches/{m['id']}/join", {"position": "field"}, role="player")
+    rejoined = registration_state(env, m["id"])
+    await callback_replies(env, monkeypatch, buttons["l"])
+    await callback_replies(env, monkeypatch, f"leave:{m['id']}", callback_id="cancel-once")
+    assert registration_state(env, m["id"]) == rejoined
     from fczhk.models import Publication
 
-    with factory() as db:
+    with env[1]() as db:
         assert (
             len(list(db.scalars(select(Publication).where(Publication.kind == "withdrawal")))) == 1
         )
+
+
+@pytest.mark.parametrize("position,action", [("field", "k"), ("keeper", "f")])
+async def test_bot_role_confirmation_no_preserves_queue_and_yes_preserves_payments(
+    env, call, game, monkeypatch, position, action
+):
+    target = "keeper" if position == "field" else "field"
+    m = call("POST", f"/matches/{game['id']}/join", {"position": position}, role="player")
+    m = call(
+        "PUT",
+        f"/matches/{m['id']}/registrations/{m['registrations'][0]['id']}/payment",
+        {"version": m["version"], "paid": True, "reported": True},
+    )
+    original = registration_state(env, m["id"])
+    question, buttons = confirmation_buttons(
+        await callback_replies(env, monkeypatch, f"join:{m['id']}:{target}")
+    )
+    assert "Вы точно хотите сменить амплуа" in question.text
+    assert registration_state(env, m["id"]) == original
+    await callback_replies(env, monkeypatch, buttons["n"])
+    await callback_replies(env, monkeypatch, buttons[action])
+    assert registration_state(env, m["id"]) == original
+    _, buttons = confirmation_buttons(
+        await callback_replies(env, monkeypatch, f"join:{m['id']}:{target}")
+    )
+    await callback_replies(env, monkeypatch, buttons[action])
+    changed = registration_state(env, m["id"])
+    assert changed["position"] == target and changed["registered_at"] > original["registered_at"]
+    assert {k: v for k, v in changed.items() if k not in ("position", "registered_at")} == {
+        k: v for k, v in original.items() if k not in ("position", "registered_at")
+    }
+    version = call("GET", f"/matches/{m['id']}")["version"]
+    await callback_replies(env, monkeypatch, buttons[action])
+    assert registration_state(env, m["id"]) == changed
+    assert call("GET", f"/matches/{m['id']}")["version"] == version
+
+
+@pytest.mark.parametrize(
+    "case", ["other_player", "tampered", "expired", "rejoined", "role_changed", "finalized"]
+)
+async def test_bot_confirmation_rejects_foreign_forged_and_stale_questions(
+    env, call, game, monkeypatch, case
+):
+    from fczhk.db import now
+
+    m = call("POST", f"/matches/{game['id']}/join", {"position": "field"}, role="player")
+    _, buttons = confirmation_buttons(
+        await callback_replies(env, monkeypatch, f"join:{m['id']}:keeper")
+    )
+    data = buttons["k"]
+    if case == "tampered":
+        data = data.replace(":k:", ":l:")
+    elif case == "expired":
+        later = now() + timedelta(minutes=6)
+        monkeypatch.setattr("fczhk.bot.now", lambda: later)
+    elif case == "rejoined":
+        call("DELETE", f"/matches/{m['id']}/join", role="player")
+        call("POST", f"/matches/{m['id']}/join", {"position": "field"}, role="player")
+    elif case == "role_changed":
+        call("POST", f"/matches/{m['id']}/join", {"position": "keeper"}, role="player")
+    elif case == "finalized":
+        m = call("GET", f"/matches/{m['id']}")
+        call("POST", f"/matches/{m['id']}/actions/finalize", {"version": m["version"]})
+    original = registration_state(env, m["id"])
+    version = call("GET", f"/matches/{m['id']}")["version"]
+    result = await callback_replies(
+        env, monkeypatch, data, user_id=101 if case == "other_player" else 102
+    )
+    assert any(isinstance(r, AnswerCallbackQuery) and r.show_alert for r in result)
+    assert registration_state(env, m["id"]) == original
+    assert call("GET", f"/matches/{m['id']}")["version"] == version
 
 
 async def test_membership_fails_closed_for_left_or_unavailable(env, monkeypatch):

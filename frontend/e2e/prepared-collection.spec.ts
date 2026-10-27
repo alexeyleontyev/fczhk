@@ -1,3 +1,4 @@
+import { answerConfirmation } from './confirmation-helpers'
 import { expect, test } from '@playwright/test'
 
 test('admin prepares a hidden collection and early players keep their queue when it opens', async ({
@@ -84,7 +85,11 @@ test('admin prepares a hidden collection and early players keep their queue when
         fullPage: true,
       })
     }
-    await page.getByRole('button', { name: 'Открыть сбор', exact: true }).click()
+    await answerConfirmation(
+      page.getByRole('button', { name: 'Открыть сбор', exact: true }),
+      true,
+      'Открыть сбор?',
+    )
     await expect(page.getByRole('button', { name: 'Утвердить составы', exact: true })).toBeVisible()
     const joined = await request.post(`/api/matches/${id}/join`, {
       headers: memberHeaders,

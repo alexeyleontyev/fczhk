@@ -1,3 +1,4 @@
+import { answerConfirmation, publicationState } from './confirmation-helpers'
 import { test, expect } from '@playwright/test'
 
 test('mobile result: unknown goals, actual rosters, corrections and player statistics', async ({
@@ -52,7 +53,21 @@ test('mobile result: unknown goals, actual rosters, corrections and player stati
   await result
     .getByRole('combobox', { name: 'Автор гола', exact: true })
     .selectOption(String(white.id))
-  await result.getByRole('button', { name: 'Завершить матч', exact: true }).click()
+  const beforeCompletion = await send(`/matches/${m.id}`)
+  await answerConfirmation(
+    result.getByRole('button', { name: 'Завершить матч', exact: true }),
+    false,
+    '⚪ Белые 1 : 0',
+  )
+  expect((await send(`/matches/${m.id}`)).version).toBe(beforeCompletion.version)
+  expect(publicationState(await send(`/matches/${m.id}`))).toEqual(
+    publicationState(beforeCompletion),
+  )
+  await answerConfirmation(
+    result.getByRole('button', { name: 'Завершить матч', exact: true }),
+    true,
+    'Завершить матч?',
+  )
   await expect(page.locator('.archive-scoreboard')).toContainText('1 : 0')
   await expect(page.getByRole('heading', { name: 'Сбор на игру', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'История изменений', exact: true }).click()
@@ -65,7 +80,21 @@ test('mobile result: unknown goals, actual rosters, corrections and player stati
   await expect(
     result.getByRole('combobox', { name: 'Автор гола', exact: true }).last(),
   ).toHaveValue('')
-  await result.getByRole('button', { name: 'Сохранить исправления', exact: true }).click()
+  const beforeCorrection = await send(`/matches/${m.id}`)
+  await answerConfirmation(
+    result.getByRole('button', { name: 'Сохранить исправления', exact: true }),
+    false,
+    '⚪ Белые 1 : 1',
+  )
+  expect((await send(`/matches/${m.id}`)).version).toBe(beforeCorrection.version)
+  expect(publicationState(await send(`/matches/${m.id}`))).toEqual(
+    publicationState(beforeCorrection),
+  )
+  await answerConfirmation(
+    result.getByRole('button', { name: 'Сохранить исправления', exact: true }),
+    true,
+    'Сохранить исправления результата?',
+  )
   await expect(page.locator('.archive-scoreboard')).toContainText('1 : 1')
   await expect(page.locator('.archive-goals').getByText('Автогол', { exact: true })).toBeVisible()
   await page.screenshot({ path: 'test-results/mvp3-result-mobile.png', fullPage: true })

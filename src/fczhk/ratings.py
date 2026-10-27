@@ -156,6 +156,41 @@ def public_averages(db: Session, ids: list[int], admin=False) -> dict:
     return result
 
 
+def field_opinions(db: Session, ids: list[int]) -> list[dict]:
+    """Current named votes for these field players, with no edit history."""
+    if not ids:
+        return []
+    people = {p.id: p for p in db.scalars(select(Player))}
+    canonical = {pid: p.merged_into or pid for pid, p in people.items()}
+    targets = {canonical[pid] for pid in ids}
+    relevant = [pid for pid, target in canonical.items() if target in targets]
+    votes = {}
+    for row in db.scalars(
+        select(ImportedRating)
+        .where(ImportedRating.player_id.in_(relevant), ImportedRating.position == "field")
+        .order_by(ImportedRating.id)
+    ):
+        votes[canonical[row.author_id], canonical[row.player_id]] = dict(
+            attack=row.attack_milli / 1000, defense=row.defense_milli / 1000
+        )
+    for row in db.scalars(
+        select(Rating)
+        .where(Rating.player_id.in_(relevant), Rating.position == "field")
+        .order_by(Rating.updated_at, Rating.id)
+    ):
+        votes[canonical[row.author_id], canonical[row.player_id]] = dict(
+            attack=row.attack / 10, defense=row.defense / 10
+        )
+    authors = {}
+    for (author, target), score in votes.items():
+        if author != target and not people[author].shared_keeper:
+            entry = authors.setdefault(
+                author, dict(player_id=author, alias=people[author].display_alias, ratings={})
+            )
+            entry["ratings"][target] = score
+    return sorted(authors.values(), key=lambda entry: (entry["alias"], entry["player_id"]))
+
+
 def community_leaderboards(db: Session) -> dict:
     """Current mean community scores, excluding unrated positions."""
     people = [

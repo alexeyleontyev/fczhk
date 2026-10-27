@@ -1,3 +1,4 @@
+import { answerConfirmation } from './confirmation-helpers'
 import { test, expect } from '@playwright/test'
 
 test('mobile admin: create, enroll, payment, finalize, teams and publish', async ({ page }) => {
@@ -19,7 +20,11 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
   await page.getByLabel('Куда переводить').fill('Тест: без перевода')
   await page.getByRole('button', { name: 'Создать черновик' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Открыть сбор', exact: true }).click()
+  await answerConfirmation(
+    page.getByRole('button', { name: 'Открыть сбор', exact: true }),
+    true,
+    'Открыть сбор?',
+  )
   await expect(page.getByText('Запись открыта', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Записаться полевым' }).click()
   await expect(page.getByText('Вы записаны полевым', { exact: true }).first()).toBeVisible()
@@ -52,10 +57,18 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
     'aria-pressed',
     'true',
   )
-  await page.getByRole('button', { name: 'Утвердить состав', exact: true }).click()
+  await answerConfirmation(
+    page.getByRole('button', { name: 'Утвердить состав', exact: true }),
+    true,
+    'Заменить утверждённые составы?',
+  )
   await page.getByRole('tab', { name: 'Игра', exact: true }).click()
   await expect(page.getByText('Команды готовы', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Опубликовать составы' }).click()
+  await answerConfirmation(
+    page.getByRole('button', { name: 'Опубликовать составы' }),
+    true,
+    'Опубликовать составы в канале сборов?',
+  )
   await expect(
     page.getByRole('status').filter({ hasText: 'Публикация поставлена в очередь' }),
   ).toBeVisible()

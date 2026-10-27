@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { Button } from './ui'
 import { time } from './format'
+import { gameSummary } from './confirmation-summary'
 import type { Match, Template, Player, Position } from './types'
 
 const weekdays = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
@@ -23,6 +24,13 @@ export function GameForm({
       onSubmit={(e) => {
         e.preventDefault()
         const f = new FormData(e.currentTarget)
+        if (
+          match?.status === 'open' &&
+          !window.confirm(
+            `Сохранить параметры открытого сбора?\n${gameSummary({ starts_at: `${f.get('starts_at')}:00+03:00`, location: String(f.get('location')) })}\n\nПрежний пост будет помечен неактуальным. Новый пост будет отправлен в канал сборов.`,
+          )
+        )
+          return
         void save({
           starts_at: `${f.get('starts_at')}:00+03:00`,
           location: f.get('location'),
@@ -309,6 +317,15 @@ export function IncludeForm({
       onSubmit={(e: FormEvent<HTMLFormElement>) => {
         e.preventDefault()
         const f = new FormData(e.currentTarget)
+        const replaced = m.registrations.find((r) => r.id === Number(f.get('replace')))
+        const incoming = players.find((p) => p.id === Number(f.get('player')))
+        if (
+          replaced &&
+          !window.confirm(
+            `Заменить «${replaced.alias}» на «${incoming?.alias || 'выбранного игрока'}»?\n\nЗаявка «${replaced.alias}» будет отменена, обе отметки оплаты сброшены. При повторной записи прежнее место в очереди не сохранится. Если команды уже утверждены, их потребуется распределить заново.`,
+          )
+        )
+          return
         void save({
           player_id: Number(f.get('player')),
           position,

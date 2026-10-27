@@ -3,6 +3,7 @@ import { api } from './api'
 import { date, time } from './format'
 import type { Match, Run, Team } from './types'
 import { PlayerName } from './player-name'
+import { gameSummary } from './confirmation-summary'
 
 type AuctionPlayer = { registration_id: number; player_id: number; alias: string }
 type Lot = {
@@ -186,8 +187,15 @@ export function AuctionScreen({
     captainSelection.white !== captainSelection.black &&
     Object.values(captainSelection).every((id) => captains.some((r) => String(r.player_id) === id))
   const fieldCount = m.registrations.filter((r) => r.selected && r.position === 'field').length
-  const control = (action: string) =>
-    run(async () => {
+  const control = async (action: string) => {
+    const question =
+      action === 'cancel'
+        ? 'Отменить аукцион? Незавершённые ставки будут аннулированы. Возобновить эти торги будет нельзя; история завершённых лотов сохранится.'
+        : action === 'manual'
+          ? 'Завершить торги вручную? Незавершённые ставки будут аннулированы. Выигранные игроки сохранятся, остальных потребуется распределить вручную. Возобновить эти торги будет нельзя.'
+          : null
+    if (question && !window.confirm(`${question}\n\n${gameSummary(m)}`)) return
+    await run(async () => {
       if (auction)
         setAuction(
           await api<Auction>(`/matches/${m.id}/auction/control`, 'POST', {
@@ -197,6 +205,7 @@ export function AuctionScreen({
           }),
         )
     }, 'Состояние аукциона обновлено')
+  }
   return (
     <>
       <div className="page-heading auction-heading">
@@ -415,6 +424,14 @@ export function AuctionScreen({
                 onSubmit={(e) => {
                   e.preventDefault()
                   if (!hasDistinctCaptains) return
+                  const captain = (team: Team) =>
+                    captains.find((r) => String(r.player_id) === captainSelection[team])?.alias
+                  if (
+                    !window.confirm(
+                      `${auction ? 'Начать новый аукцион?' : 'Начать аукцион?'}\n${gameSummary(m)}\n\nКапитаны: ⚪ ${captain('white')} и ⚫ ${captain('black')}.\nТекущее распределение и утверждение команд будут сброшены. История предыдущих торгов сохранится. В чат будет отправлено уведомление о начале аукциона.`,
+                    )
+                  )
+                    return
                   const f = new FormData(e.currentTarget)
                   void run(
                     async () =>

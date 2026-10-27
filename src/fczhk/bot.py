@@ -1,4 +1,8 @@
 import asyncio
+import hashlib
+import hmac
+import re
+import secrets
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
@@ -78,6 +82,65 @@ def dispatcher(cfg, factory):
             except (TelegramBadRequest, TelegramForbiddenError):
                 # A removed/unchanged message must not undo a successful registration or mark.
                 pass
+
+    def confirmation_signature(pid, match, registration, action, expires, nonce):
+        value = "|".join(
+            map(
+                str,
+                (
+                    pid,
+                    match.id,
+                    registration.id,
+                    registration.registered_at.isoformat(),
+                    registration.position,
+                    registration.active,
+                    action,
+                    expires,
+                    nonce,
+                ),
+            )
+        )
+        return hmac.new(cfg.bot_token.encode(), value.encode(), hashlib.sha256).hexdigest()[:16]
+
+    def registration_question(pid, match, registration, action):
+        expires, nonce = int(now().timestamp()) + 300, secrets.token_hex(4)
+
+        def button(code, text):
+            signature = confirmation_signature(pid, match, registration, code, expires, nonce)
+            payload = f"reg:{match.id}:{registration.id}:{code}:{expires}:{nonce}:{signature}"
+            assert len(payload.encode()) <= 64
+            return InlineKeyboardButton(text=text, callback_data=payload)
+
+        if action == "l":
+            text = (
+                "Вы точно хотите отменить запись?\n\n"
+                "Место в очереди будет потеряно, обе отметки оплаты сброшены. "
+                "При повторной записи время будет новым, оплату потребуется подтвердить заново."
+            )
+            yes = "Да, отменить запись"
+        else:
+            position = "полевого" if action == "f" else "вратаря"
+            text = (
+                f"Вы точно хотите сменить амплуа на {position}?\n\n"
+                "Время записи обновится, и вы займёте новое место в очереди. "
+                "Отметки оплаты сохранятся."
+            )
+            yes = "Да, сменить амплуа"
+        text += f"\n\nИгра: {match.starts_at.astimezone(MOSCOW):%d.%m.%Y · %H:%M} МСК.\nВопрос действует 5 минут."
+        return text, InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    button(action, yes),
+                    button("n", "Нет, оставить как есть"),
+                ]
+            ]
+        )
+
+    async def ask_registration_question(query, question):
+        if not isinstance(query.message, Message):
+            raise DomainError("Откройте /game заново для подтверждения.")
+        await query.message.answer(question[0], reply_markup=question[1], parse_mode=None)
+        await query.answer("Подтвердите действие кнопками «Да» или «Нет».")
 
     async def identify(user):
         await check_member(cfg, user.id)
@@ -272,12 +335,34 @@ def dispatcher(cfg, factory):
             def save_join():
                 with factory() as db, db.begin():
                     match = get_match(db, int(mid), lock=True)
-                    if not db.get(BotCallbackReceipt, query.id):
+                    if db.get(BotCallbackReceipt, query.id):
+                        return None, game_menu(db, match, pid)
+                    registration = db.scalar(
+                        select(Registration).where(
+                            Registration.match_id == match.id,
+                            Registration.player_id == pid,
+                        )
+                    )
+                    if registration and registration.active and registration.position != position:
+                        if match.status != "open":
+                            raise DomainError(
+                                "Самостоятельная запись доступна только в открытый сбор"
+                            )
+                        if registration.forced:
+                            raise DomainError("Амплуа закрепленного участника меняет администратор")
+                        question = registration_question(
+                            pid, match, registration, "f" if position == "field" else "k"
+                        )
+                    else:
                         register(db, pid, match, position)
-                        db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=match.id))
-                    return game_menu(db, match, pid)
+                        question = None
+                    db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=match.id))
+                    return question, game_menu(db, match, pid)
 
-            markup = await asyncio.to_thread(save_join)
+            question, markup = await asyncio.to_thread(save_join)
+            if question:
+                await ask_registration_question(query, question)
+                return
             await query.answer("Вы записаны. Оплату подтверждает администратор.", show_alert=True)
             await update_menu(query, markup)
         except (DomainError, ValueError) as exc:
@@ -338,22 +423,92 @@ def dispatcher(cfg, factory):
                 with factory() as db, db.begin():
                     match = get_match(db, int(mid), lock=True)
                     if db.get(BotCallbackReceipt, query.id):
-                        return
+                        return None
                     registration = db.scalar(
                         select(Registration).where(
                             Registration.match_id == match.id,
                             Registration.player_id == pid,
                         )
                     )
-                    if registration:
-                        cancel(db, pid, match, registration)
+                    question = None
+                    if registration and registration.active:
+                        if match.status != "open":
+                            raise DomainError("После финализации изменения вносит администратор")
+                        question = registration_question(pid, match, registration, "l")
                     db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=match.id))
+                    return question
 
-            await asyncio.to_thread(save_leave)
+            question = await asyncio.to_thread(save_leave)
+            if question:
+                await ask_registration_question(query, question)
+                return
             await query.answer("Вы не записаны на эту игру.", show_alert=True)
         except (DomainError, ValueError) as exc:
             await query.answer(
                 exc.message if isinstance(exc, DomainError) else "Неизвестная игра", show_alert=True
+            )
+
+    @router.callback_query(F.data.startswith("reg:"))
+    async def confirm_registration(query: CallbackQuery):
+        try:
+            _, mid, rid, action, expires, nonce, signature = query.data.split(":")
+            mid, rid, expires = int(mid), int(rid), int(expires)
+            if (
+                action not in ("f", "k", "l", "n")
+                or not re.fullmatch(r"[a-f0-9]{8}", nonce)
+                or not re.fullmatch(r"[a-f0-9]{16}", signature)
+            ):
+                raise ValueError()
+            pid = await identify(query.from_user)
+
+            def save_confirmation():
+                with factory() as db, db.begin():
+                    match = get_match(db, mid, lock=True)
+                    registration = db.get(Registration, rid)
+                    if (
+                        not registration
+                        or registration.match_id != mid
+                        or registration.player_id != pid
+                    ):
+                        raise DomainError("Этот вопрос принадлежит другому игроку. Откройте /game.")
+                    receipt = f"reg:{mid}:{rid}:{expires}:{nonce}"
+                    if db.get(BotCallbackReceipt, receipt) or db.get(BotCallbackReceipt, query.id):
+                        return "Действие уже обработано. Откройте /game для обновления.", None
+                    expected = confirmation_signature(
+                        pid, match, registration, action, expires, nonce
+                    )
+                    if (
+                        not registration.active
+                        or not 0 <= expires - int(now().timestamp()) <= 300
+                        or not hmac.compare_digest(signature, expected)
+                    ):
+                        raise DomainError(
+                            "Вопрос устарел или заявка изменилась. Откройте /game заново."
+                        )
+                    if action == "n":
+                        text = "Действие отменено. Заявка и отметки оплаты сохранены."
+                    elif action == "l":
+                        cancel(db, pid, match, registration)
+                        text = "Запись отменена. При повторной записи место в очереди будет новым."
+                    else:
+                        register(db, pid, match, "field" if action == "f" else "keeper")
+                        text = "Амплуа изменено. Время записи обновлено; отметки оплаты сохранены."
+                    db.add(BotCallbackReceipt(id=receipt, player_id=pid, match_id=mid))
+                    db.add(BotCallbackReceipt(id=query.id, player_id=pid, match_id=mid))
+                    return text, game_menu(db, match, pid)
+
+            text, markup = await asyncio.to_thread(save_confirmation)
+            if markup:
+                await update_menu(query, None)
+                if isinstance(query.message, Message):
+                    await query.message.answer(text, reply_markup=markup, parse_mode=None)
+            await query.answer(text, show_alert=True)
+        except (DomainError, ValueError) as exc:
+            await query.answer(
+                exc.message
+                if isinstance(exc, DomainError)
+                else "Некорректный вопрос. Откройте /game.",
+                show_alert=True,
             )
 
     dp.include_router(router)

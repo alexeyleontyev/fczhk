@@ -63,7 +63,14 @@ test('catalog saves field and keeper votes inline and rejects a stale revision',
   await expect(attack).toHaveValue('1')
   await expect(defense).toHaveValue('2')
   await defense.fill('3,3')
+  const fieldSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/players/${guest.id}/ratings`) &&
+      response.request().method() === 'PUT',
+  )
   await save.click()
+  expect((await fieldSave).ok()).toBe(true)
+  await expect(row.locator('.catalog-total')).toHaveText('4,3')
   await expect(save).toBeDisabled()
   expect(
     (await (await request.get(`/api/players/${guest.id}/ratings/field`, { headers })).json()).own
@@ -75,7 +82,14 @@ test('catalog saves field and keeper votes inline and rejects a stale revision',
     .click()
   await expect(attack).toHaveCount(0)
   await defense.fill('0')
+  const keeperSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/players/${guest.id}/ratings`) &&
+      response.request().method() === 'PUT',
+  )
   await save.click()
+  expect((await keeperSave).ok()).toBe(true)
+  await expect(row.locator('.catalog-average')).toHaveText('0')
   await expect(save).toBeDisabled()
   expect(
     (await (await request.get(`/api/players/${guest.id}/ratings/keeper`, { headers })).json()).own
@@ -111,9 +125,9 @@ test('previous-game filter, sorting every column and pinned games at mobile widt
     draws: i,
     losses: 12 - i * 6,
     points: 24 + i * 4,
-    goals: 13 - i,
+    goals: 13 - i * 5,
     assists: i * 3,
-    goal_assist: 13 + i * 2,
+    goal_assist: 13 - i * 2,
     win_rate: 40 + i * 10,
   }))
   await page.route('**/api/leaderboards*', (route) =>
@@ -142,55 +156,103 @@ test('previous-game filter, sorting every column and pinned games at mobile widt
     .click()
   const table = page.locator('.results-table')
   await expect(table.locator('tbody tr')).toHaveCount(3)
-  for (const label of [
-    '№',
-    'Игрок',
-    'Игры',
-    'Очки',
-    'Победы',
-    'Ничьи',
-    'Поражения',
-    'Голы',
-    'Передачи',
-    'Гол + пас',
-    'Винрейт',
-  ]) {
-    const header = table
+  const tabs = page.getByRole('tablist', { name: 'Вид зачёта', exact: true })
+  await expect(tabs.getByRole('tab', { name: 'Игры', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await expect(table.locator('tbody .result-name').first()).toHaveText(selected[2].alias)
+  for (const [view, labels] of [
+    ['Игры', ['№', 'Игрок', 'Игры', 'Очки', 'Победы', 'Ничьи', 'Поражения', 'Винрейт']],
+    ['Голы и пасы', ['№', 'Игрок', 'Игры', 'Голы', 'Пасы', 'Гол + пас']],
+  ] as const) {
+    await tabs.getByRole('tab', { name: view, exact: true }).click()
+    await expect(table.getByRole('columnheader')).toHaveCount(labels.length)
+    if (view === 'Игры')
+      await expect(table.getByRole('button', { name: 'Голы', exact: true })).toHaveCount(0)
+    else {
+      await expect(table.getByRole('button', { name: 'Очки', exact: true })).toHaveCount(0)
+      await expect(table.locator('tbody .result-name').first()).toHaveText(selected[0].alias)
+      await expect(table.locator('tbody .result-rank')).toHaveText(['1', '2', '3'])
+    }
+    for (const label of labels) {
+      const header = table
+        .getByRole('columnheader')
+        .filter({ has: page.getByRole('button', { name: label, exact: true }) })
+      await header.getByRole('button').click()
+      const first = await table.locator('tbody .result-name').allTextContents()
+      await header.getByRole('button').click()
+      expect(await table.locator('tbody .result-name').allTextContents()).toEqual(
+        [...first].reverse(),
+      )
+    }
+    for (const width of [320, 390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 })
+      const region = page.getByRole('region', {
+        name: 'Зачёты с горизонтальной прокруткой',
+        exact: true,
+      })
+      await region.evaluate((el) => {
+        el.scrollLeft = 0
+      })
+      const nameBefore = await table.locator('tbody .result-name').first().boundingBox()
+      const gamesBefore = await table.locator('tbody .result-games').first().boundingBox()
+      await region.evaluate((el) => {
+        el.scrollLeft = el.scrollWidth
+      })
+      const nameAfter = await table.locator('tbody .result-name').first().boundingBox()
+      const gamesAfter = await table.locator('tbody .result-games').first().boundingBox()
+      expect(Math.abs(nameBefore!.x - nameAfter!.x)).toBeLessThan(1)
+      expect(Math.abs(gamesBefore!.x - gamesAfter!.x)).toBeLessThan(1)
+      expect(nameAfter!.x + nameAfter!.width).toBeLessThanOrEqual(gamesAfter!.x + 1)
+      expect(gamesAfter!.x + gamesAfter!.width).toBeLessThanOrEqual(width)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      )
+      await page.screenshot({
+        path: `test-results/table-results-${view === 'Игры' ? 'games' : 'scoring'}-${width}.png`,
+        fullPage: true,
+      })
+    }
+  }
+  await tabs.getByRole('tab', { name: 'Игры', exact: true }).click()
+  await expect(
+    table
       .getByRole('columnheader')
-      .filter({ has: page.getByRole('button', { name: label, exact: true }) })
-    await header.getByRole('button').click()
-    const first = await table.locator('tbody .result-name').allTextContents()
-    await header.getByRole('button').click()
-    expect(await table.locator('tbody .result-name').allTextContents()).toEqual(
-      [...first].reverse(),
-    )
-  }
-  for (const width of [320, 390, 1440]) {
-    await page.setViewportSize({ width, height: 900 })
-    const region = page.getByRole('region', {
-      name: 'Зачёты с горизонтальной прокруткой',
-      exact: true,
-    })
-    await region.evaluate((el) => {
-      el.scrollLeft = 0
-    })
-    const nameBefore = await table.locator('tbody .result-name').first().boundingBox()
-    const gamesBefore = await table.locator('tbody .result-games').first().boundingBox()
-    await region.evaluate((el) => {
-      el.scrollLeft = el.scrollWidth
-    })
-    const nameAfter = await table.locator('tbody .result-name').first().boundingBox()
-    const gamesAfter = await table.locator('tbody .result-games').first().boundingBox()
-    expect(Math.abs(nameBefore!.x - nameAfter!.x)).toBeLessThan(1)
-    expect(Math.abs(gamesBefore!.x - gamesAfter!.x)).toBeLessThan(1)
-    expect(nameAfter!.x + nameAfter!.width).toBeLessThanOrEqual(gamesAfter!.x + 1)
-    expect(gamesAfter!.x + gamesAfter!.width).toBeLessThanOrEqual(width)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await page.screenshot({
-      path: `test-results/table-results-pinned-${width}.png`,
-      fullPage: true,
-    })
-  }
+      .filter({ has: page.getByRole('button', { name: 'Винрейт', exact: true }) }),
+  ).toHaveAttribute('aria-sort', 'ascending')
+  await tabs.getByRole('tab', { name: 'Голы и пасы', exact: true }).click()
+  await expect(
+    table
+      .getByRole('columnheader')
+      .filter({ has: page.getByRole('button', { name: 'Гол + пас', exact: true }) }),
+  ).toHaveAttribute('aria-sort', 'ascending')
+  await page.getByLabel('Поиск игроков', { exact: true }).fill(selected[0].alias)
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await tabs.getByRole('tab', { name: 'Голы и пасы', exact: true }).focus()
+  await page.keyboard.press('ArrowLeft')
+  await expect(tabs.getByRole('tab', { name: 'Игры', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await page.getByLabel('Поиск игроков', { exact: true }).fill('')
+  await page.getByLabel('Игр больше', { exact: true }).fill('16')
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await tabs.getByRole('tab', { name: 'Голы и пасы', exact: true }).click()
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await page.getByLabel('Игр больше', { exact: true }).fill('99')
+  await expect(table.locator('tbody tr')).toHaveCount(0)
+  await expect(tabs).toBeVisible()
+  await tabs.getByRole('tab', { name: 'Игры', exact: true }).click()
+  await expect(table.locator('tbody tr')).toHaveCount(0)
+  await page.getByLabel('Игр больше', { exact: true }).fill('0')
+  await expect(table.locator('tbody tr')).toHaveCount(3)
+  await expect(
+    table
+      .getByRole('columnheader')
+      .filter({ has: page.getByRole('button', { name: 'Винрейт', exact: true }) }),
+  ).toHaveAttribute('aria-sort', 'ascending')
 })
 
 for (const role of ['admin', 'player']) {

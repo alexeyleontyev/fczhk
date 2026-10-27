@@ -1,3 +1,4 @@
+import { answerConfirmation } from './confirmation-helpers'
 import { expect, test } from '@playwright/test'
 
 const red = Buffer.from(
@@ -87,7 +88,11 @@ test('admin saves a private opening photo before any player joins, replaces and 
     ).toBeNull()
     await input.setInputFiles({ name: 'opening.png', mimeType: 'image/png', buffer: red })
     await expect(page.getByRole('button', { name: 'Заменить картинку', exact: true })).toBeEnabled()
-    await page.getByRole('button', { name: 'Открыть сбор', exact: true }).click()
+    await answerConfirmation(
+      page.getByRole('button', { name: 'Открыть сбор', exact: true }),
+      true,
+      'Пост с картинкой',
+    )
     await expect(page.getByRole('button', { name: 'Утвердить составы', exact: true })).toBeVisible()
     await expect(input).toHaveCount(0)
     const opened = await (await request.get(`/api/matches/${id}`, { headers })).json()

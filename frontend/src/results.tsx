@@ -8,6 +8,7 @@ import { PlayerName } from './player-name'
 import { RatingAverages } from './ratings'
 import { PlayerReviews } from './player-reviews'
 import { Button } from './ui'
+import { gameSummary } from './confirmation-summary'
 import type { Match, Player, Position, Run, Team, TelegramProfile } from './types'
 
 export type Participant = { player_id: number; alias: string; team: Team; position: Position }
@@ -125,6 +126,14 @@ export function MatchResult({
     setError('')
   }
   const save = async (completed: boolean) => {
+    if (!data) return
+    if (
+      completed &&
+      !window.confirm(
+        `${data.completed ? 'Сохранить исправления результата?' : 'Завершить матч?'}\n${gameSummary(m)}\n\n⚪ Белые ${score('white')} : ${score('black')} Чёрные ⚫\nФактических участников: ${data.participants.length}.\n\nСтатистика игроков и очки прогнозистов обновятся. Пост с результатом будет поставлен в очередь публикации. Вернуть матч в черновик через интерфейс нельзя.`,
+      )
+    )
+      return
     let success = false
     await run(
       async () => {

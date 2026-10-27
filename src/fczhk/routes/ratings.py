@@ -32,6 +32,12 @@ def router(ctx):
     ):
         return lineups.data(db, visible(db, match_id, p), ctx.cfg)
 
+    @app.get("/api/matches/{match_id}/lineup/ratings")
+    def lineup_ratings(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        return lineups.rating_opinions(db, visible(db, match_id, p))
+
     @app.post("/api/matches/{match_id}/lineup/preview")
     def lineup_preview(
         match_id: int,

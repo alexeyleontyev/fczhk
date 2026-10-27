@@ -1,3 +1,4 @@
+import { answerConfirmation, publicationState } from './confirmation-helpers'
 import { test, expect } from '@playwright/test'
 
 test('completed lineup shows missing ratings as dashes and keeps genuine zero scores', async ({
@@ -72,14 +73,14 @@ test('completed lineup shows missing ratings as dashes and keeps genuine zero sc
   await page.goto(`/?game=${m.id}&screen=lineup`)
   await expect(page.getByRole('button', { name: 'На поле: Исторический полевой' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'На поле: Исторический вратарь' })).toBeVisible()
-  const scores = page.getByLabel('Баллы команд')
-  await expect(scores.locator(':scope > div > span')).toHaveText([
-    'А —',
-    'З —',
-    'Σ —',
-    'А —',
-    'З —',
-    'Σ —',
+  const scores = page.getByLabel('Баллы команд', { exact: true })
+  await expect(scores.locator('.lineup-rating-metrics b')).toHaveText([
+    '—',
+    '—',
+    '—',
+    '—',
+    '—',
+    '—',
   ])
   await expect(scores).not.toContainText('≥')
   await expect(page.getByRole('button', { name: 'Утвердить состав' })).toHaveCount(0)
@@ -91,7 +92,7 @@ test('completed lineup shows missing ratings as dashes and keeps genuine zero sc
   players[0].source = 'community'
   await page.reload()
   const white = scores.locator(':scope > div').first()
-  await expect(white).toContainText('Σ 0')
+  await expect(white.locator('.total b')).toHaveText('0')
   await expect(white).not.toContainText('≥')
   await expect(white).not.toContainText('—')
   await expect(page.locator('.tactics-screen')).not.toContainText(
@@ -109,7 +110,7 @@ test('completed lineup shows missing ratings as dashes and keeps genuine zero sc
   })
   assignments[-803] = 'white'
   await page.reload()
-  await expect(white).toContainText('Σ ≥ 0')
+  await expect(white.locator('.total b')).toHaveText('≥ 0')
 })
 
 test('tactical positions follow ratings; member drag/tap drafts are private, persistent and isolated', async ({
@@ -263,6 +264,22 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
     ).toHaveClass(/black/)
     await admin.getByRole('button', { name: 'Утвердить состав', exact: true }).click()
     await expect(admin.getByRole('status').filter({ hasText: 'Состав утверждён' })).toBeVisible()
+    await admin.getByRole('button', { name: 'Скрыть сообщение', exact: true }).click()
+    const beforeConfirmation = await send(`/matches/${m.id}`)
+    await answerConfirmation(
+      admin.getByRole('button', { name: 'Утвердить состав', exact: true }),
+      false,
+      'Заменить утверждённые составы?',
+    )
+    expect((await send(`/matches/${m.id}`)).version).toBe(beforeConfirmation.version)
+    expect((await send(`/matches/${m.id}`)).registrations).toEqual(beforeConfirmation.registrations)
+    await expect(admin.getByRole('status').filter({ hasText: 'Состав утверждён' })).toHaveCount(0)
+    await answerConfirmation(
+      admin.getByRole('button', { name: 'Утвердить состав', exact: true }),
+      true,
+      'Заменить утверждённые составы?',
+    )
+    await expect(admin.getByRole('status').filter({ hasText: 'Состав утверждён' })).toBeVisible()
     await page.reload()
     await expect(
       page.getByRole('alert').filter({ hasText: 'Список или оценки изменились' }),
@@ -297,10 +314,16 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
     await page.reload()
     const share = page.getByRole('button', { name: 'Поделиться в чат', exact: true })
     await expect(share).toBeEnabled()
+    const beforeShare = await send(`/matches/${m.id}`)
+    await answerConfirmation(share, false, 'в чат для составов?')
+    expect(publicationState(await send(`/matches/${m.id}`))).toEqual(publicationState(beforeShare))
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Состав поставлен в очередь' }),
+    ).toHaveCount(0)
     const shared = page.waitForResponse(
       (r) => r.url().endsWith(`/matches/${m.id}/lineup/share`) && r.request().method() === 'POST',
     )
-    await share.click()
+    await answerConfirmation(share, true, 'в чат для составов?')
     expect((await shared).ok()).toBe(true)
     await expect(
       page.getByRole('status').filter({ hasText: 'Состав поставлен в очередь' }),

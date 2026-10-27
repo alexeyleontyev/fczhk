@@ -1,3 +1,4 @@
+import { answerConfirmation } from './confirmation-helpers'
 import { expect, test } from '@playwright/test'
 import type { Match, Player } from '../src/types'
 
@@ -83,7 +84,11 @@ test('quick final score creates goal placeholders and preserves filled authors',
   await setScore(8, 6)
   await expect(page.locator('.goal-editor')).toHaveCount(14)
   await expect(author).toHaveValue(String(admin.player.id))
-  await page.getByRole('button', { name: 'Завершить матч', exact: true }).click()
+  await answerConfirmation(
+    page.getByRole('button', { name: 'Завершить матч', exact: true }),
+    true,
+    'Завершить матч?',
+  )
   await expect(page.locator('.archive-scoreboard')).toContainText('8 : 6')
   const saved = await (await request.get(`/api/matches/${m.id}/result`, { headers })).json()
   expect(saved.goals).toHaveLength(14)

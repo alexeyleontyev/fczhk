@@ -1,20 +1,27 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ArrowLeftRight } from 'lucide-react'
 import { percentTone } from './percent'
 import type { ResultRow } from './leaderboards'
+import { SectionTabs } from './section-tabs'
 
-const metrics = [
-  ['games', 'Игры'],
-  ['points', 'Очки'],
-  ['wins', 'Победы'],
-  ['draws', 'Ничьи'],
-  ['losses', 'Поражения'],
-  ['goals', 'Голы'],
-  ['assists', 'Передачи'],
-  ['goal_assist', 'Гол + пас'],
-  ['win_rate', 'Винрейт'],
-] as const
-type Sort = 'rank' | 'alias' | (typeof metrics)[number][0]
+const columns = {
+  games: [
+    ['games', 'Игры', 'Игры'],
+    ['points', 'Очки', 'Очки'],
+    ['wins', 'В', 'Победы'],
+    ['draws', 'Н', 'Ничьи'],
+    ['losses', 'П', 'Поражения'],
+    ['win_rate', 'ВР, %', 'Винрейт'],
+  ],
+  scoring: [
+    ['games', 'Игры', 'Игры'],
+    ['goals', 'Голы', 'Голы'],
+    ['assists', 'Пасы', 'Пасы'],
+    ['goal_assist', 'Г+П', 'Гол + пас'],
+  ],
+} as const
+type View = keyof typeof columns
+type Sort = 'rank' | 'alias' | (typeof columns)[View][number][0]
 
 export function ResultsTable({
   rows,
@@ -25,10 +32,18 @@ export function ResultsTable({
   rankingRows: ResultRow[]
   onPlayer: (id: number) => void
 }) {
-  const [sort, setSort] = useState<Sort>('points')
-  const [ascending, setAscending] = useState(false)
+  const [view, setView] = useState<View>('games')
+  const scroll = useRef<HTMLDivElement>(null)
+  const [sorting, setSorting] = useState<Record<View, { sort: Sort; ascending: boolean }>>({
+    games: { sort: 'points', ascending: false },
+    scoring: { sort: 'goal_assist', ascending: false },
+  })
+  const { sort, ascending } = sorting[view]
+  const metrics = columns[view]
+  const rankingMetric = view === 'games' ? 'points' : 'goal_assist'
   const [expanded, setExpanded] = useState(false)
-  const rank = (row: ResultRow) => rankingRows.findIndex((p) => p.points === row.points) + 1
+  const rank = (row: ResultRow) =>
+    1 + rankingRows.filter((p) => p[rankingMetric] > row[rankingMetric]).length
   const value = (row: ResultRow, key: Sort) => (key === 'rank' ? rank(row) : row[key])
   const ordered = [...rows].sort((a, b) => {
     const x = value(a, sort),
@@ -41,7 +56,7 @@ export function ResultsTable({
       a.player_id - b.player_id
     )
   })
-  function header(key: Sort, label: string, className = '') {
+  function header(key: Sort, label: string, className = '', fullLabel = label) {
     return (
       <th
         key={key}
@@ -51,9 +66,16 @@ export function ResultsTable({
       >
         <button
           className={`table-sort ${sort === key ? 'active' : ''}`}
+          aria-label={fullLabel}
+          title={fullLabel !== label ? fullLabel : undefined}
           onClick={() => {
-            setAscending(sort === key ? !ascending : key === 'alias' || key === 'rank')
-            setSort(key)
+            setSorting((old) => ({
+              ...old,
+              [view]: {
+                sort: key,
+                ascending: sort === key ? !ascending : key === 'alias' || key === 'rank',
+              },
+            }))
           }}
         >
           {label}
@@ -63,14 +85,29 @@ export function ResultsTable({
     )
   }
   return (
-    <>
+    <SectionTabs
+      label="Вид зачёта"
+      value={view}
+      onChange={(next) => {
+        setView(next)
+        scroll.current?.scrollTo({ left: 0 })
+      }}
+      options={[
+        { value: 'games', label: 'Игры' },
+        { value: 'scoring', label: 'Голы и пасы' },
+      ]}
+    >
       <div
         className="table-scroll"
+        ref={scroll}
         role="region"
         aria-label="Зачёты с горизонтальной прокруткой"
         tabIndex={0}
       >
-        <table className="results-table compact-table">
+        <table
+          className={`results-table results-${view} compact-table`}
+          aria-label={view === 'games' ? 'Зачёт по играм' : 'Зачёт по голам и пасам'}
+        >
           <colgroup>
             <col className="result-rank-col" />
             <col className="result-name-col" />
@@ -83,8 +120,8 @@ export function ResultsTable({
             <tr>
               {header('rank', '№', 'result-rank')}
               {header('alias', 'Игрок', 'result-name')}
-              {metrics.map(([key, label]) =>
-                header(key, label, key === 'games' ? 'result-games' : ''),
+              {metrics.map(([key, label, fullLabel]) =>
+                header(key, label, key === 'games' ? 'result-games' : '', fullLabel),
               )}
             </tr>
           </thead>
@@ -103,7 +140,7 @@ export function ResultsTable({
                     className={
                       key === 'games'
                         ? 'result-games'
-                        : key === 'points'
+                        : key === rankingMetric
                           ? 'result-points'
                           : key === 'win_rate'
                             ? percentTone(row.win_rate)
@@ -121,15 +158,17 @@ export function ResultsTable({
         </table>
       </div>
       <p className="table-footnote">
-        <ArrowLeftRight size={14} /> Листайте таблицу. Игрок и игры закреплены слева.
+        <ArrowLeftRight size={14} /> Игрок и игры закреплены. Сортировка — по заголовку.
         <br />
-        Нажмите на заголовок для сортировки.
+        {view === 'games'
+          ? 'Место — по очкам. В/Н/П — победы, ничьи, поражения; ВР — винрейт.'
+          : 'Место — по Г+П: голы + пасы.'}
       </p>
       {rows.length > 10 && (
         <button className="button ghost compact" onClick={() => setExpanded(!expanded)}>
           {expanded ? 'Свернуть' : `Показать всех (${rows.length})`}
         </button>
       )}
-    </>
+    </SectionTabs>
   )
 }

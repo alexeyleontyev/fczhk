@@ -55,7 +55,9 @@ for (const viewport of [
     const games = await page.request.get('/api/matches', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    const gameId = (await games.json())[0].id
+    const gameId = (await games.json()).find(
+      (game: { status: string }) => game.status === 'open',
+    ).id
     await page.goto(`/?game=${gameId}`)
     const login = page.getByRole('button', { name: 'Войти через Telegram', exact: true })
     await expect(login).toBeEnabled()

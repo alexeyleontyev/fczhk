@@ -52,7 +52,8 @@ def test_member_shares_proposal_with_verified_author_and_without_changing_teams(
         assert "Автор: Игрок (@football_member)" in publication.text
         assert "⚽ Вариант состава" in publication.text
         assert "⚪ Белые · 9" in publication.text and "⚫ Чёрные · 9" in publication.text
-        assert publication.text.count("Атака 24 · Защита 29 · Σ 53") == 2
+        assert publication.text.count("Атака 24 · Защита 24 · Σ 48") == 2
+        assert "без вратарей" in publication.text
         assert all(person["alias"] in publication.text for person in p["players"])
         assert (
             db.scalar(
@@ -177,7 +178,7 @@ def test_sharing_official_lineup_uses_frozen_scores(env, call, game):
     )
     with env[1]() as db:
         text = db.get(Publication, sent["publication_id"]).text
-        assert text.count("Атака 6 · Защита 11 · Σ 17") == 2
+        assert text.count("Атака 6 · Защита 6 · Σ 12") == 2
 
 
 def preview(call, m, method="community", **kwargs):

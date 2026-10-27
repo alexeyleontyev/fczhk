@@ -5,8 +5,10 @@ import { api } from './api'
 import { Button } from './ui'
 import { TeamDots } from './team-board'
 import { PlayerName } from './player-name'
-import { RatingMark, RatingPair, ratingNumber as fmt } from './rating-mark'
+import { RatingPair } from './rating-mark'
+import { LineupRatings } from './lineup-ratings'
 import { tacticalLayout, type Point } from './tactical-layout'
+import { gameSummary, teamSummary } from './confirmation-summary'
 import type { Match, Player, Position, Team, Run, BalanceRun } from './types'
 
 type Person = {
@@ -324,11 +326,20 @@ export function TacticsScreen({
         Number(Boolean(assignments[b.registration_id])) || a.alias.localeCompare(b.alias, 'ru'),
   )
   async function confirm() {
+    if (
+      (m.status === 'approved' || data!.official_players) &&
+      !window.confirm(
+        `Заменить утверждённые составы?\n${gameSummary(m)}\n\n${teamSummary(people.map((p) => ({ alias: p.alias, team: assignments[p.registration_id] ?? null })))}\n\nЭтот вариант станет общим для всех участников. Прежние публикации составов будут помечены неактуальными.`,
+      )
+    )
+      return
     const d = base()
-    await api(`/matches/${m.id}/lineup/confirm`, 'POST', d)
-    setData(await api<Lineup>(`/matches/${m.id}/lineup`))
-    setDraft(null)
-    setPreview(null)
+    await run(async () => {
+      await api(`/matches/${m.id}/lineup/confirm`, 'POST', d)
+      setData(await api<Lineup>(`/matches/${m.id}/lineup`))
+      setDraft(null)
+      setPreview(null)
+    }, 'Состав утверждён для всех участников')
   }
   function clearBoard() {
     setDraft({
@@ -353,14 +364,24 @@ export function TacticsScreen({
     people.some((p) => assignments[p.registration_id] === 'white') &&
     people.some((p) => assignments[p.registration_id] === 'black')
   async function share() {
+    if (
+      !window.confirm(
+        `Отправить ${draft ? 'личный вариант' : data!.official_players ? 'утверждённые составы' : 'вариант состава'} в чат для составов?\n${gameSummary(m)}\n\n${teamSummary(people.map((p) => ({ alias: p.alias, team: assignments[p.registration_id] ?? null })))}`,
+      )
+    )
+      return
     const d = base()
-    await api(`/matches/${m.id}/lineup/share`, 'POST', {
-      version: d.version,
-      roster_version: d.roster_version,
-      fingerprint: d.fingerprint,
-      assignments,
-      official: !draft && Boolean(data!.official_players),
-    })
+    await run(
+      () =>
+        api(`/matches/${m.id}/lineup/share`, 'POST', {
+          version: d.version,
+          roster_version: d.roster_version,
+          fingerprint: d.fingerprint,
+          assignments,
+          official: !draft && Boolean(data!.official_players),
+        }),
+      'Состав поставлен в очередь отправки в чат',
+    )
   }
   return (
     <div className="tactics-screen">
@@ -421,7 +442,7 @@ export function TacticsScreen({
                 ? 'Распределите всех игроков по двум командам'
                 : 'Отправить вариант состава в чат ФК Желтый Колобок'
           }
-          onClick={() => void run(share, 'Состав поставлен в очередь отправки в чат')}
+          onClick={() => void share()}
         >
           <Share2 size={16} /> Поделиться в чат
         </Button>
@@ -493,51 +514,6 @@ export function TacticsScreen({
             ? 'Перетащите значок игрока или выберите его и нажмите на поле. Имя открывает профиль.'
             : 'Состав завершённой игры'}
       </p>
-      <div className="tactics-scores" aria-label="Баллы команд">
-        {(['white', 'black'] as Team[]).map((team) => {
-          const teamPeople = people.filter((p) => assignments[p.registration_id] === team)
-          const sum = (kind: 'attack' | 'defense') => {
-            const relevant = teamPeople.filter((p) => kind === 'defense' || p.position === 'field')
-            const rated = relevant.filter((p) => p[kind] !== null)
-            const known = relevant.reduce((n, p) => n + (p[kind] ?? 0), 0)
-            return rated.length ? `${rated.length < relevant.length ? '≥ ' : ''}${fmt(known)}` : '—'
-          }
-          const total = teamPeople.reduce(
-            (n, p) => n + (p.defense ?? 0) + (p.position === 'field' ? (p.attack ?? 0) : 0),
-            0,
-          )
-          const partial = teamPeople.some(
-            (p) => p.defense === null || (p.position === 'field' && p.attack === null),
-          )
-          const rated = teamPeople.some(
-            (p) => p.defense !== null || (p.position === 'field' && p.attack !== null),
-          )
-          return (
-            <div key={team}>
-              <strong>
-                {team === 'white' ? '⚪ Белые' : '⚫ Чёрные'} <small>{teamPeople.length}</small>
-              </strong>
-              <span>
-                <RatingMark kind="attack" /> {sum('attack')}
-              </span>
-              <span>
-                <RatingMark kind="defense" /> {sum('defense')}
-              </span>
-              <span>Σ {rated ? `${partial ? '≥ ' : ''}${fmt(total)}` : '—'}</span>
-              {draft?.source === 'game' && (
-                <small className="tactics-mu">
-                  OpenSkill μ:{' '}
-                  {fmt(
-                    teamPeople
-                      .filter((p) => p.position === 'field')
-                      .reduce((n, p) => n + (p.game_mu ?? 0), 0),
-                  )}
-                </small>
-              )}
-            </div>
-          )
-        })}
-      </div>
       {data.editable && (
         <>
           <div className="tactics-sources">
@@ -635,6 +611,14 @@ export function TacticsScreen({
           )}
         </details>
       )}
+      <LineupRatings
+        key={m.id}
+        matchId={m.id}
+        version={data.version}
+        people={people}
+        assignments={assignments}
+        showGameRating={draft?.source === 'game'}
+      />
       {data.editable && (
         <div className="tactics-footer">
           <p className="muted caption">
@@ -652,7 +636,7 @@ export function TacticsScreen({
                   auctionRunning ||
                   !['finalized', 'approved'].includes(m.status)
                 }
-                onClick={() => void run(confirm, 'Состав утверждён для всех участников')}
+                onClick={() => void confirm()}
               >
                 Утвердить состав
               </Button>
@@ -673,8 +657,9 @@ export function TacticsScreen({
       <details className="panel tactics-details">
         <summary>Действия и подробности</summary>
         <p className="muted caption">
-          Сумма атаки — только полевые, защиты — все игроки. Σ — атака + защита. Знак ≥ означает,
-          что есть игроки без оценок. OpenSkill считается отдельно.
+          Суммы атаки и защиты — только полевые игроки. Σ — атака + защита. Знак ≥ означает, что
+          есть игроки без оценок. OpenSkill считается отдельно. Индивидуальные оценки — текущие;
+          общие оценки утверждённого состава сохраняются на игру.
         </p>
         {data.editable && (
           <div className="inline">

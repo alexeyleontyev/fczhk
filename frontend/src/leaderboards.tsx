@@ -209,7 +209,7 @@ export function Leaderboards({
           {data && allResultRows.length > 0 && !resultRows.length && (
             <p>По выбранным фильтрам игроки не найдены.</p>
           )}
-          {data && resultRows.length > 0 && (
+          {data && allResultRows.length > 0 && (
             <ResultsTable rows={resultRows} rankingRows={qualifiedResultRows} onPlayer={onPlayer} />
           )}
         </section>

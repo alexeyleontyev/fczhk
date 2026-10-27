@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+import { answerConfirmation } from './confirmation-helpers'
+import { test, expect, type Dialog } from '@playwright/test'
 
 test('two captains: sealed bids, ties, free completion, approval and restart persistence', async ({
   page,
@@ -82,7 +83,7 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
   )
   await whiteCaptain.selectOption(String(white.id))
   await expect(startAuction).toBeEnabled()
-  await startAuction.click()
+  await answerConfirmation(startAuction, true, 'Начать аукцион?')
   await expect(panel.getByText('Торги идут', { exact: true })).toBeVisible()
   const startedMatch = await send(`/matches/${m.id}`)
   expect(startedMatch.publications.some((p: { kind: string }) => p.kind === 'auction_start')).toBe(
@@ -109,6 +110,13 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
     await other.goto(page.url())
     await other.getByRole('button', { name: 'Войти игроком', exact: true }).click()
     const blackPanel = other.locator('.auction-panel')
+    const bidDialogs: string[] = []
+    const rejectBidDialog = async (dialog: Dialog) => {
+      bidDialogs.push(dialog.message())
+      await dialog.dismiss()
+    }
+    page.on('dialog', rejectBidDialog)
+    other.on('dialog', rejectBidDialog)
     await panel.getByLabel('Ваша закрытая ставка').fill('0')
     await panel.getByRole('button', { name: 'Подтвердить ставку' }).click()
     await expect(
@@ -146,6 +154,9 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
     await expect(purchased.getByText('10 баллов', { exact: true })).toBeVisible()
     await panel.locator('summary').filter({ hasText: 'История лотов' }).click()
     await expect(panel.getByText(/Бесплатно после заполнения соперника/)).toBeVisible()
+    expect(bidDialogs).toEqual([])
+    page.off('dialog', rejectBidDialog)
+    other.off('dialog', rejectBidDialog)
     await panel.getByRole('button', { name: 'К составам', exact: true }).click()
     await expect(page.locator('.tactics-pitch')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Утвердить состав', exact: true })).toBeVisible()

@@ -18,6 +18,7 @@ import { PredictionStandings } from './predictions'
 import { BrowserLogin } from './browser-login'
 import { Button, Modal } from './ui'
 import { initial } from './format'
+import { gameSummary, teamSummary } from './confirmation-summary'
 import { GameForm, IncludeForm, TemplateForm } from './forms'
 import { useClubData } from './use-club-data'
 import { useNavigation } from './use-navigation'
@@ -132,13 +133,27 @@ function App() {
     // A failed or navigation-aborted data request must preserve a valid login.
     await refresh(true)
   }
-  const action = (name: string) =>
-    m
-      ? run(
-          () => api(`/matches/${m.id}/actions/${name}`, 'POST', { version: m.version }),
-          name === 'publish' ? 'Публикация поставлена в очередь' : 'Сохранено',
-        )
-      : Promise.resolve()
+  const action = async (name: string) => {
+    if (!m) return
+    if (
+      name === 'open' &&
+      !window.confirm(
+        `Открыть сбор?\n${gameSummary(m)}\n\nЗапись станет доступна игрокам. Пост${m.collection_image ? ' с картинкой' : ''} будет отправлен в канал сборов. Предварительные заявки сохранят свою очередь.`,
+      )
+    )
+      return
+    if (
+      name === 'publish' &&
+      !window.confirm(
+        `Опубликовать составы в канале сборов?\n${gameSummary(m)}\n\n${teamSummary(m.registrations.filter((r) => r.selected))}`,
+      )
+    )
+      return
+    await run(
+      () => api(`/matches/${m.id}/actions/${name}`, 'POST', { version: m.version }),
+      name === 'publish' ? 'Публикация поставлена в очередь' : 'Сохранено',
+    )
+  }
 
   if (loading)
     return (
