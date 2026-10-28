@@ -17,7 +17,15 @@ from sqlalchemy import func, select
 
 from fczhk.auth import check_member
 from fczhk.bot import configure_bot, handle_update
-from fczhk.models import GameTemplate, Match, MatchResult, Player, ResultGoal, ResultParticipant
+from fczhk.models import (
+    GameTemplate,
+    Match,
+    MatchResult,
+    Player,
+    Registration,
+    ResultGoal,
+    ResultParticipant,
+)
 from fczhk.services import MOSCOW, DomainError
 
 
@@ -289,7 +297,7 @@ async def test_game_payment_button_is_own_and_bound_to_the_shown_match(env, call
     button = payment_button(replies[-1].reply_markup)
     assert button.text == "Я оплатил"
     assert len(button.callback_data.encode()) <= 64
-    assert "🔴 Не оплачен · 🔴 Не подтверждено" in replies[0].text
+    assert "Игрок · 🔴🔴 · " in replies[0].text
     earlier = future_game(call, days=1)
     call("POST", f"/matches/{earlier['id']}/join", {"position": "keeper"}, role="player")
     result = await callback_replies(env, monkeypatch, button.callback_data)
@@ -345,13 +353,108 @@ async def test_game_button_after_join_and_after_admin_confirmation(env, call, mo
     assert call("GET", path)["version"] == current["version"]
     assert not call("GET", path)["registrations"][0]["payment_reported"]
     replies = await command_replies(env, monkeypatch, "/game")
-    assert "🔴 Не оплачен · 🟢 Подтверждено" in replies[0].text
+    assert "Игрок · 🔴🟢 · " in replies[0].text
     assert not any(
         b.callback_data.startswith("paid:")
         for row in replies[-1].reply_markup.inline_keyboard
         for b in row
         if b.callback_data
     )
+
+
+async def test_game_tracks_current_roster_from_open_collection_to_approved_teams(
+    env, call, monkeypatch
+):
+    game = future_game(call)
+    path = f"/matches/{game['id']}"
+    registered_at = datetime(2026, 10, 20, 12, tzinfo=UTC)
+    with env[1]() as db, db.begin():
+        match = db.get(Match, game["id"])
+        match.field_limit, match.keeper_limit = 2, 1
+        for i, (alias, position, paid) in enumerate(
+            [
+                ("Ранний полевой", "field", False),
+                ("Оплативший полевой", "field", True),
+                ("Резервный полевой", "field", True),
+                ("Ранний вратарь", "keeper", False),
+                ("Оплативший вратарь", "keeper", True),
+            ]
+        ):
+            player = Player(alias=alias)
+            db.add(player)
+            db.flush()
+            db.add(
+                Registration(
+                    match_id=match.id,
+                    player_id=player.id,
+                    position=position,
+                    registered_at=registered_at + timedelta(seconds=i),
+                    paid=paid,
+                    payment_reported=paid,
+                )
+            )
+
+    async def reply():
+        return "\n".join(r.text for r in await command_replies(env, monkeypatch, "/game"))
+
+    text = await reply()
+    assert "Запись открыта" in text
+    main, reserve = text.split("\nРезерв\n")
+    assert "1. Ранний полевой · 🔴🔴 · 20.10 15:00:00" in main
+    assert "2. Оплативший полевой · 🟢🟢" in main
+    assert "1. Ранний вратарь · 🔴🔴" in main
+    assert "Полевые\n3. Резервный полевой · 🟢🟢" in reserve
+    assert "Вратари\n2. Оплативший вратарь · 🟢🟢" in reserve
+    assert not any(
+        label in text for label in ("Оплачен", "Не оплачен", "Подтверждено", "основной список")
+    )
+
+    game = call("POST", path + "/actions/finalize", {"version": game["version"]})
+    text = await reply()
+    assert "Сбор завершён" in text and "Запись открыта" not in text
+    main, reserve = text.split("\nРезерв\n")
+    assert "Оплативший полевой" in main and "Резервный полевой" in main
+    assert "Оплативший вратарь" in main
+    assert "Ранний полевой" not in main and "Ранний вратарь" not in main
+    assert "Ранний полевой" in reserve and "Ранний вратарь" in reserve
+
+    assignments = {
+        str(r["id"]): "black" if r["alias"] == "Резервный полевой" else "white"
+        for r in game["registrations"]
+        if r["selected"]
+    }
+    game = call("PUT", path + "/teams", {"version": game["version"], "assignments": assignments})
+    game = call("POST", path + "/actions/approve", {"version": game["version"]})
+    text = await reply()
+    assert "Составы утверждены" in text and "Сбор завершён" not in text
+    white, black = text.split("⚪ Белые\n")[1].split("\n\n⚫ Чёрные\n")
+    assert white == "1. 🧤 Оплативший вратарь · 🟢🟢\n2. Оплативший полевой · 🟢🟢"
+    assert black == "1. Резервный полевой · 🟢🟢"
+    assert "Ранний" not in text and "\nРезерв\n" not in text and "20.10 15:00:" not in text
+    markup = (await command_replies(env, monkeypatch, "/game"))[-1].reply_markup
+    assert not any(
+        b.callback_data.startswith(("join:", "leave:"))
+        for row in markup.inline_keyboard
+        for b in row
+        if b.callback_data
+    )
+
+    game = call("POST", path + "/teams/swap-colors", {"version": game["version"]})
+    text = await reply()
+    white, black = text.split("⚪ Белые\n")[1].split("\n\n⚫ Чёрные\n")
+    assert white == "1. Резервный полевой · 🟢🟢"
+    assert black == "1. 🧤 Оплативший вратарь · 🟢🟢\n2. Оплативший полевой · 🟢🟢"
+
+    # Editing an approved lineup revokes approval until the teams are confirmed again.
+    call(
+        "PUT",
+        path + "/teams",
+        {"version": game["version"], "assignments": dict.fromkeys(assignments)},
+    )
+    text = await reply()
+    assert "Сбор завершён" in text and "Составы утверждены" not in text
+    assert "⚪ Белые" not in text and "⚫ Чёрные" not in text
+    assert "\nРезерв\n" in text
 
 
 async def test_lastgame_without_results(env, monkeypatch):

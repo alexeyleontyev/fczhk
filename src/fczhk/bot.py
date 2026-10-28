@@ -19,6 +19,51 @@ from .services import MOSCOW, DomainError, cancel, get_match, match_data, regist
 from .worker import app_link, chunks
 
 
+def game_text(data):
+    status = {
+        "open": "Запись открыта",
+        "finalized": "Сбор завершён",
+        "approved": "Составы утверждены",
+    }
+    lines = [
+        f"⚽ {data['starts_at'].astimezone(MOSCOW):%d.%m · %H:%M} МСК",
+        data["location"],
+        status[data["status"]],
+    ]
+
+    def player_line(registration, number, *, approved=False):
+        role = "🧤 " if approved and registration["position"] == "keeper" else ""
+        reported = "🟢" if registration["payment_reported"] else "🔴"
+        confirmed = "🟢" if registration["paid"] else "🔴"
+        line = f"{number}. {role}{registration['alias']} · {reported}{confirmed}"
+        if not approved:
+            line += f" · {registration['registered_at'].astimezone(MOSCOW):%d.%m %H:%M:%S}"
+        return line
+
+    registrations = data["registrations"]
+    if data["status"] == "approved":
+        for team, label in (("white", "⚪ Белые"), ("black", "⚫ Чёрные")):
+            lines.extend(["", label])
+            players = sorted(
+                (r for r in registrations if r["selected"] and r["team"] == team),
+                key=lambda r: r["position"] != "keeper",
+            )
+            lines.extend(player_line(r, i, approved=True) for i, r in enumerate(players, 1))
+    else:
+        for in_main in (True, False):
+            players = [r for r in registrations if r["in_main"] == in_main]
+            if not players:
+                continue
+            if not in_main:
+                lines.extend(["", "Резерв"])
+            for position, label in (("field", "Полевые"), ("keeper", "Вратари")):
+                group = [r for r in players if r["position"] == position]
+                if group:
+                    lines.extend(["", label])
+                    lines.extend(player_line(r, r["queue"]) for r in group)
+    return "\n".join(lines)
+
+
 def dispatcher(cfg, factory):
     dp = Dispatcher()
     router = Router()
@@ -213,35 +258,14 @@ def dispatcher(cfg, factory):
                     )
                     if not m:
                         return None
-                    data = match_data(db, m)
-                    lines = [
-                        f"⚽ {m.starts_at.astimezone(MOSCOW):%d.%m · %H:%M} МСК",
-                        m.location,
-                        "",
-                    ]
-                    for position, label in (("field", "Полевые"), ("keeper", "Вратари")):
-                        lines.append(label)
-                        for r in data["registrations"]:
-                            if r["position"] == position:
-                                date = (
-                                    r["registered_at"].astimezone(MOSCOW).strftime("%d.%m %H:%M:%S")
-                                )
-                                lines.append(
-                                    f"{r['queue']}. {r['alias']} · "
-                                    + ("🟢 Оплачен" if r["payment_reported"] else "🔴 Не оплачен")
-                                    + " · "
-                                    + ("🟢 Подтверждено" if r["paid"] else "🔴 Не подтверждено")
-                                    + f" · {date} · "
-                                    + ("основной список" if r["in_main"] else "резерв")
-                                )
-                    return lines, game_menu(db, m, pid)
+                    return game_text(match_data(db, m)), game_menu(db, m, pid)
 
             result = await asyncio.to_thread(read_game)
             if result is None:
                 await message.answer("Ближайшая игра еще не опубликована.", reply_markup=menu())
                 return
-            lines, markup = result
-            parts = chunks("\n".join(lines), utf16=True)
+            text, markup = result
+            parts = chunks(text, utf16=True)
             for i, part in enumerate(parts):
                 await message.answer(
                     part,
