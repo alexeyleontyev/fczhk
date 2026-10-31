@@ -28,6 +28,7 @@ test('lineup rating sources are independent, prefer rated participants and exclu
     ['Белый', 'field'],
     ['Чёрный', 'field'],
     ['Вратарь', 'keeper'],
+    ['Без личной оценки', 'field'],
   ]) {
     const guest = await send('/players/guests', 'POST', { alias: `${label} ${stamp}` })
     guests.push(guest)
@@ -63,7 +64,8 @@ test('lineup rating sources are independent, prefer rated participants and exclu
   }
   await vote(guests[0].id, 4, 2, adminAuth.token)
   await vote(guests[1].id, 2, 4, adminAuth.token)
-  await vote(player.id, 0, 0, adminAuth.token)
+  await vote(player.id, 1, 3, adminAuth.token)
+  await vote(guests[3].id, 3, 1, adminAuth.token)
   await vote(guests[0].id, 0, 0, playerAuth.token)
   await vote(guests[1].id, 2, 2, playerAuth.token)
   await vote(guests[2].id, null, 5, adminAuth.token, 'keeper')
@@ -87,9 +89,11 @@ test('lineup rating sources are independent, prefer rated participants and exclu
   const upper = comparison.getByRole('region', { name: 'Основные оценки', exact: true })
   const lower = comparison.getByRole('region', { name: 'Оценки для сравнения', exact: true })
   const values = (block: typeof upper) => block.locator('.lineup-rating-metrics b')
-  await expect(values(upper)).toHaveText(['2', '1', '3', '2', '3', '5'])
+  await expect(values(upper)).toHaveText(['6', '5', '11', '2', '3', '5'])
   await expect(lower.locator('.lineup-rating-select')).toContainText(player.alias)
-  await expect(values(lower)).toHaveText(['≥ 0', '≥ 0', '≥ 0', '2', '2', '4'])
+  // Personal zeroes remain zero; unrated teammates and the author use common scores.
+  await expect(values(lower)).toHaveText(['4', '4', '8', '2', '2', '4'])
+  await expect(lower).toContainText(`Общие оценки для: ${guests[3].alias}, ${player.alias}`)
   async function choose(block: typeof upper, alias?: string) {
     await block.getByRole('button', { name: /^Выбрать источник:/ }).click()
     if (alias) await block.getByRole('searchbox').fill(alias)
@@ -104,17 +108,18 @@ test('lineup rating sources are independent, prefer rated participants and exclu
   await expect(upper.locator('.lineup-rating-options')).not.toContainText(guests[0].alias)
   await upper.getByRole('searchbox').press('Escape')
   await choose(lower, admin.alias)
-  await expect(values(lower)).toHaveText(['4', '2', '6', '2', '4', '6'])
-  await expect(values(upper)).toHaveText(['2', '1', '3', '2', '3', '5'])
+  await expect(values(lower)).toHaveText(['8', '6', '14', '2', '4', '6'])
+  await expect(values(upper)).toHaveText(['6', '5', '11', '2', '3', '5'])
   await expect(comparison.getByLabel('Разница: Белые').locator('b')).toHaveText(['−2', '−1', '−3'])
   await expect(comparison.getByLabel('Разница: Чёрные').locator('b')).toHaveText(['0', '−1', '−1'])
   await choose(upper, player.alias)
-  await expect(values(lower)).toHaveText(['4', '2', '6', '2', '4', '6'])
-  await expect(comparison.getByLabel('Разница: Белые').locator('b')).toHaveText(['—', '—', '—'])
+  await expect(values(lower)).toHaveText(['8', '6', '14', '2', '4', '6'])
+  await expect(values(upper)).toHaveText(['4', '4', '8', '2', '2', '4'])
+  await expect(comparison.getByLabel('Разница: Белые').locator('b')).toHaveText(['−4', '−2', '−6'])
   await choose(upper, admin.alias)
   await expect(comparison.getByLabel('Разница: Белые').locator('b')).toHaveText(['0', '0', '0'])
   await choose(lower)
-  await expect(values(lower)).toHaveText(['2', '1', '3', '2', '3', '5'])
+  await expect(values(lower)).toHaveText(['6', '5', '11', '2', '3', '5'])
   await expect(comparison.getByLabel('Разница: Белые').locator('b')).toHaveText(['+2', '+1', '+3'])
   for (const width of [320, 500, 640, 768, 1024]) {
     await page.setViewportSize({ width, height: 1000 })
@@ -140,6 +145,23 @@ test('lineup rating sources are independent, prefer rated participants and exclu
   }
   await lower.getByText('Оценки по игрокам', { exact: true }).first().click()
   await expect(lower.locator('table').first()).toContainText(guests[0].alias)
+  await choose(lower, player.alias)
+  const rows = lower.locator('table').first().getByRole('row')
+  await expect(rows.filter({ hasText: guests[0].alias }).getByRole('cell')).toHaveText([
+    guests[0].alias,
+    '0',
+    '0',
+  ])
+  await expect(rows.filter({ hasText: guests[3].alias }).getByRole('cell')).toHaveText([
+    `${guests[3].alias}Пропуски — из общих оценок`,
+    '3',
+    '1',
+  ])
+  await expect(rows.filter({ hasText: player.alias }).getByRole('cell')).toHaveText([
+    `${player.alias}Для себя — общие оценки`,
+    '1',
+    '3',
+  ])
   const after = await send(`/matches/${match.id}`)
   expect({ ...after, publications: publicationState(after) }).toEqual({
     ...before,

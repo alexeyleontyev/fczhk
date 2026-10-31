@@ -268,11 +268,20 @@ export function GameScreen({
                           {m.team_ratings.strength.total === null && (
                             <> · известная сумма {score(m.team_ratings.strength.rated_total)}</>
                           )}
+                          {m.team_ratings.strength.with_keepers && (
+                            <>
+                              {' '}
+                              (с вратарями:{' '}
+                              {m.team_ratings.strength.with_keepers.total === null
+                                ? `неполная, известная сумма ${score(m.team_ratings.strength.with_keepers.rated_total)}`
+                                : score(m.team_ratings.strength.with_keepers.total)}
+                              )
+                            </>
+                          )}
                         </p>
                         <p className="muted caption">
-                          Полевые: атака + защита; вратари: защита. Оценены{' '}
-                          {m.team_ratings.strength.rated} из {m.team_ratings.strength.count}{' '}
-                          игроков.
+                          Только полевые: атака + защита. Оценены {m.team_ratings.strength.rated} из{' '}
+                          {m.team_ratings.strength.count} полевых. В скобках — с защитой вратарей.
                           {m.team_ratings.frozen ? ' Зафиксировано при утверждении.' : ''}
                         </p>
                       </div>

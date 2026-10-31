@@ -92,9 +92,15 @@ test('archived report shows frozen ratings, goals and metadata with private admi
   await page.goto(`/?game=${m.id}`)
   const report = page.locator('.archived-game')
   await expect(report.getByLabel('Счёт матча', { exact: true })).toContainText('2 : 1')
-  await expect(report.getByLabel('Сила сбора', { exact: true })).toContainText('Σ 18')
-  await expect(report.getByLabel('Сила команды Белые', { exact: true })).toHaveText('Σ 8')
-  await expect(report.getByLabel('Сила команды Чёрные', { exact: true })).toHaveText('Σ 10')
+  await expect(report.getByLabel('Сила сбора', { exact: true })).toContainText(
+    'Σ 9 (с вратарями: 18)',
+  )
+  await expect(report.getByLabel('Сила команды Белые', { exact: true })).toHaveText(
+    'Σ 4 (с вратарями: 8)',
+  )
+  await expect(report.getByLabel('Сила команды Чёрные', { exact: true })).toHaveText(
+    'Σ 5 (с вратарями: 10)',
+  )
   await expect(report.locator('.archive-game-meta')).toContainText('20:30 МСК')
   await expect(report.locator('.archive-game-meta')).toContainText('Манеж архива')
   const blackRow = report
@@ -142,7 +148,9 @@ test('archived report shows frozen ratings, goals and metadata with private admi
   await page.getByRole('button', { name: 'Сменить роль', exact: true }).click()
   await page.getByRole('button', { name: 'Войти игроком', exact: true }).click()
   await expect(report.locator('.archive-game-actions')).toHaveCount(0)
-  await expect(report.getByLabel('Сила сбора', { exact: true })).toContainText('Σ 18')
+  await expect(report.getByLabel('Сила сбора', { exact: true })).toContainText(
+    'Σ 9 (с вратарями: 18)',
+  )
   await expect(report.getByLabel('Счёт матча', { exact: true })).toContainText('2 : 1')
   await page.route(`**/api/matches/${m.id}`, (route) =>
     route.fulfill({

@@ -27,7 +27,7 @@ export function GameForm({
         if (
           match?.status === 'open' &&
           !window.confirm(
-            `Сохранить параметры открытого сбора?\n${gameSummary({ starts_at: `${f.get('starts_at')}:00+03:00`, location: String(f.get('location')) })}\n\nПрежний пост будет помечен неактуальным. Новый пост будет отправлен в канал сборов.`,
+            `Сохранить параметры открытого сбора?\n${gameSummary({ starts_at: `${f.get('starts_at')}:00+03:00`, location: String(f.get('location')) })}\nЛимит: ${f.get('field_limit')} полевых + ${f.get('keeper_limit')} вратаря.\n\nПервые игроки в пределах лимита попадут в основной список, остальные — в резерв. Оплаты и время записи сохранятся. Прежний пост будет помечен неактуальным. Новый пост будет отправлен в канал сборов.`,
           )
         )
           return
@@ -38,6 +38,8 @@ export function GameForm({
           description: f.get('description'),
           payment_details: f.get('payment_details'),
           cost: Math.round(Number(f.get('cost')) * 100),
+          field_limit: Number(f.get('field_limit')),
+          keeper_limit: Number(f.get('keeper_limit')),
         })
       }}
     >
@@ -84,6 +86,34 @@ export function GameForm({
           maxLength={500}
         />
       </label>
+      <label>
+        Полевых в сборе · обе команды
+        <input
+          name="field_limit"
+          type="number"
+          min="2"
+          max="18"
+          step="1"
+          defaultValue={match?.field_limit ?? 16}
+          required
+        />
+      </label>
+      <label>
+        Вратарей в сборе
+        <input
+          name="keeper_limit"
+          type="number"
+          min="0"
+          max="2"
+          step="1"
+          defaultValue={match?.keeper_limit ?? 2}
+          required
+        />
+      </label>
+      <p className="muted caption">
+        На поле — по 7 полевых и вратарю. При 18 полевых и 2 вратарях в каждой команде будет 9+1:
+        два полевых на замене. Игроки сверх лимита сбора попадают в резерв.
+      </p>
       <label>
         Описание
         <textarea

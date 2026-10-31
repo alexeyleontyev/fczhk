@@ -101,6 +101,10 @@ function changes(row: History['audit'][number]): string[] {
       result.push(
         `Сезон: ${String(old.season || 'Не указан')} → ${String(next.season || 'Не указан')}`,
       )
+    if (old.field_limit !== next.field_limit)
+      result.push(`Лимит полевых: ${String(old.field_limit)} → ${String(next.field_limit)}`)
+    if (old.keeper_limit !== next.keeper_limit)
+      result.push(`Лимит вратарей: ${String(old.keeper_limit)} → ${String(next.keeper_limit)}`)
     return result.length ? result : ['Параметры игры сохранены.']
   }
   return []

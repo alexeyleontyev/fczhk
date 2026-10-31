@@ -4,7 +4,7 @@ from fractions import Fraction
 from itertools import combinations
 
 from .balancing import Partition, choose, distance, suggested_distance, summary
-from .schemas import BalanceSettings
+from .schemas import MAX_FIELD_PLAYERS, BalanceSettings
 
 ALGORITHM = "openskill-field-sum/multistart-diversity-v1"
 
@@ -28,8 +28,8 @@ def game_summary(inputs: list[dict], assignments: dict[int, str | None]) -> dict
 
 def generate(inputs: list[dict], settings: BalanceSettings) -> dict:
     count = len(inputs)
-    if not 2 <= count <= 16:
-        raise ValueError("Нужно от 2 до 16 полевых игроков")
+    if not 2 <= count <= MAX_FIELD_PLAYERS:
+        raise ValueError(f"Нужно от 2 до {MAX_FIELD_PLAYERS} полевых игроков")
     size = count // 2
     ratings = [Fraction(str(row["game_mu"])) for row in inputs]
     total = sum(ratings)

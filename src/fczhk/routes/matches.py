@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from .. import archive as arc
+from .. import auctions as auc
 from .. import post_images
 from .. import predictions as pred
 from .. import results as res
@@ -178,7 +179,28 @@ def router(ctx):
             raise svc.DomainError("Начало игры должно быть позже запланированного открытия сбора")
         if db.get(res.MatchResult, m.id) and body.starts_at != m.starts_at:
             raise svc.DomainError("Время матча с результатом изменять нельзя")
-        for key, value in body.model_dump(exclude={"version", "season"}).items():
+        # Older clients omit capacity; preserve the configured values in that case.
+        limits = {key for key in ("field_limit", "keeper_limit") if key in body.model_fields_set}
+        changed_limits = {key for key in limits if getattr(body, key) != getattr(m, key)}
+        if changed_limits:
+            svc.ensure_pregame(db, m)
+            auc.guard(db, m)
+            regs = svc.entries(db, m.id)
+            for key in changed_limits:
+                position = "field" if key == "field_limit" else "keeper"
+                occupied = sum(
+                    r.position == position
+                    and (r.forced or (m.status not in ("draft", "open") and r.selected))
+                    for r in regs
+                )
+                if occupied > getattr(body, key):
+                    raise svc.DomainError(
+                        "Лимит меньше числа уже включённых игроков. Сначала измените список участников.",
+                        409,
+                    )
+            m.roster_version += 1
+        excluded = {"version", "season", "field_limit", "keeper_limit"} - limits
+        for key, value in body.model_dump(exclude=excluded).items():
             setattr(m, key, value)
         if body.season is not None:
             m.season = body.season

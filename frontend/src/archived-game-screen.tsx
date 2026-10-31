@@ -18,10 +18,10 @@ type RatedPlayer = Average & { player_id: number; position: Position }
 type Scores = { players: RatedPlayer[]; official_players: RatedPlayer[] | null }
 const teamLabel = (team: Team) => (team === 'white' ? 'Белые' : 'Чёрные')
 
-function total(players: (Average & { position: Position })[]): string {
-  const values = players.flatMap((p) =>
-    p.position === 'keeper' ? [p.defense] : [p.attack, p.defense],
-  )
+function total(players: (Average & { position: Position })[], withKeepers = false): string {
+  const values = players
+    .filter((p) => withKeepers || p.position === 'field')
+    .flatMap((p) => (p.position === 'keeper' ? [p.defense] : [p.attack, p.defense]))
   const known = values.filter((value): value is number => value !== null)
   return known.length
     ? `${known.length < values.length ? '≥ ' : ''}${ratingNumber(known.reduce((sum, n) => sum + n, 0))}`
@@ -283,8 +283,14 @@ export function ArchivedGameScreen({
               </p>
               <div className="archive-strength" aria-label="Сила сбора">
                 <span>Сила сбора</span>
-                <strong>Σ {total(participants.map(score))}</strong>
+                <strong>
+                  Σ {total(participants.map(score))}{' '}
+                  <small>(с вратарями: {total(participants.map(score), true)})</small>
+                </strong>
               </div>
+              <p className="muted caption">
+                Сила — только полевые: атака + защита. В скобках — с защитой вратарей.
+              </p>
               <div className="section-title">
                 <h2>Составы и голы</h2>
                 <Button className="ghost compact" onClick={() => openLineup(m.id)}>
@@ -322,7 +328,8 @@ export function ArchivedGameScreen({
                           {teamLabel(team)} <small className="muted">{people.length}</small>
                         </h3>
                         <strong aria-label={`Сила команды ${teamLabel(team)}`}>
-                          Σ {total(people.map(score))}
+                          Σ {total(people.map(score))}{' '}
+                          <small>(с вратарями: {total(people.map(score), true)})</small>
                         </strong>
                       </div>
                       <table

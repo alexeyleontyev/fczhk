@@ -256,10 +256,21 @@ export function LineupRatings({
     source === COMMUNITY
       ? 'Общие оценки'
       : choices.find((p) => String(p.player_id) === source)!.alias
-  const score = (source: string, person: Person): Score | undefined =>
+  const personalScore = (source: string, person: Person): Score | undefined =>
+    source === String(person.player_id)
+      ? undefined
+      : choices.find((p) => String(p.player_id) === source)?.ratings[person.player_id]
+  const usesAverage = (source: string, person: Person) =>
+    source !== COMMUNITY &&
+    (personalScore(source, person)?.attack == null ||
+      personalScore(source, person)?.defense == null)
+  const score = (source: string, person: Person): Score =>
     source === COMMUNITY
       ? person
-      : choices.find((p) => String(p.player_id) === source)?.ratings[person.player_id]
+      : {
+          attack: personalScore(source, person)?.attack ?? person.attack,
+          defense: personalScore(source, person)?.defense ?? person.defense,
+        }
   const sums = (source: string, team: Team) =>
     totals(
       assigned.filter((p) => assignments[p.registration_id] === team),
@@ -312,9 +323,7 @@ export function LineupRatings({
                 const members = assigned.filter((p) => assignments[p.registration_id] === team)
                 const fields = members.filter((p) => p.position === 'field')
                 const values = sums(source, team)
-                const missing = fields.filter(
-                  (p) => score(source, p)?.attack == null || score(source, p)?.defense == null,
-                )
+                const missing = fields.filter((p) => usesAverage(source, p))
                 return (
                   <div className="lineup-rating-team" key={team}>
                     <strong>
@@ -332,11 +341,11 @@ export function LineupRatings({
                     />
                     {source !== COMMUNITY && (
                       <p className="muted caption">
-                        Оценено {fields.length - missing.length} из {fields.length} полевых
+                        Лично оценено {fields.length - missing.length} из {fields.length} полевых
                         {missing.length > 0 && (
                           <>
                             <br />
-                            Без оценки: {missing.map((p) => p.alias).join(', ')}
+                            Общие оценки для: {missing.map((p) => p.alias).join(', ')}
                           </>
                         )}
                       </p>
@@ -362,8 +371,12 @@ export function LineupRatings({
                               <tr key={p.registration_id}>
                                 <td>
                                   <PlayerName playerId={p.player_id} alias={p.alias} />
-                                  {source === String(p.player_id) && (
-                                    <small className="muted">Себя не оценивает</small>
+                                  {usesAverage(source, p) && (
+                                    <small className="muted">
+                                      {source === String(p.player_id)
+                                        ? 'Для себя — общие оценки'
+                                        : 'Пропуски — из общих оценок'}
+                                    </small>
                                   )}
                                 </td>
                                 <td>{fmt(score(source, p)?.attack ?? null)}</td>
@@ -380,7 +393,8 @@ export function LineupRatings({
             </div>
             {side === 'upper' && (
               <p className="lineup-rating-note muted caption">
-                Все суммы — только по полевым игрокам. Вратари не учитываются.
+                Все суммы — только по полевым игрокам. Вратари не учитываются. Если личной оценки
+                нет, в том числе для самого автора, берём общую оценку.
               </p>
             )}
           </section>

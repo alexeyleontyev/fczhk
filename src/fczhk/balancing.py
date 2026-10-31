@@ -9,7 +9,7 @@ from fractions import Fraction
 from itertools import combinations
 from math import ceil
 
-from .schemas import BalanceSettings
+from .schemas import MAX_FIELD_PLAYERS, BalanceSettings
 
 ALGORITHM = "exhaustive-balance/multistart-diversity-v1"
 
@@ -138,8 +138,8 @@ def choose(pool: list[Partition], count: int, threshold: int) -> list[Partition]
 
 def generate(inputs: list[dict], settings: BalanceSettings) -> dict:
     count = len(inputs)
-    if not 2 <= count <= 16:
-        raise ValueError("Нужно от 2 до 16 полевых игроков")
+    if not 2 <= count <= MAX_FIELD_PLAYERS:
+        raise ValueError(f"Нужно от 2 до {MAX_FIELD_PLAYERS} полевых игроков")
     if any(values(r) is None for r in inputs):
         raise ValueError("Не у всех полевых есть обе оценки")
     candidates = partitions(inputs)

@@ -3084,6 +3084,19 @@ footer > span:first-child {
   font-size: 18px;
   font-variant-numeric: tabular-nums;
 }
+.archive-strength strong,
+.archive-team .section-title strong {
+  min-width: 0;
+  text-align: right;
+}
+.archive-strength strong small,
+.archive-team .section-title strong small {
+  display: block;
+  white-space: normal;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
 .archive-teams {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

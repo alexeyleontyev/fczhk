@@ -239,7 +239,7 @@ def text_for(db: Session, match: Match, kind: str) -> str:
     strength = team_rating_data(db, match).get("strength")
     if strength:
         lines.append(f"\nСила сбора: {strength_text(strength)}")
-        lines.append("Полевые: атака + защита; вратари: защита.")
+        lines.append("Сила — только полевые: атака + защита. В скобках — с защитой вратарей.")
     for team, label in (("white", "⚪ Белые"), ("black", "⚫ Черные")):
         suffix = f" · сила {strength_text(strength['teams'][team])}" if strength else ""
         lines.append(f"\n{label}{suffix}")

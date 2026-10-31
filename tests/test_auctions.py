@@ -57,6 +57,27 @@ def bid(call, mid, a, amount, role="admin", expected=200):
     )
 
 
+def test_auction_supports_nine_field_players_per_team_and_blocks_capacity_changes(
+    env, call, auction_game
+):
+    with env[1]() as db, db.begin():
+        db.get(Match, auction_game).field_limit = 18
+        players = [Player(alias=f"Дополнительный лот {i}") for i in range(12)]
+        db.add_all(players)
+        db.flush()
+        db.add_all(
+            Registration(match_id=auction_game, player_id=p.id, position="field", selected=True)
+            for p in players
+        )
+    auction = start(call, env, auction_game)
+    assert auction["limits"] == {"white": 9, "black": 9}
+    assert len(auction["participants"]) == 18
+    from tests.test_game_limits import edit
+
+    m = call("GET", f"/matches/{auction_game}")
+    assert "аукцион" in edit(call, m, field_limit=17, expected=409)["detail"]
+
+
 def control(call, mid, a, action, expected=200):
     return call(
         "POST",

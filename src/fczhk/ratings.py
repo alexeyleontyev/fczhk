@@ -615,28 +615,66 @@ def strength_summary(inputs, assignments):
             count=len(rows),
         )
 
+    def strength(rows):
+        return {
+            **totals([row for row in rows if row["position"] == "field"]),
+            "with_keepers": totals(rows),
+        }
+
     return {
-        **totals(inputs),
+        **strength(inputs),
         "teams": {
-            team: totals([row for row in inputs if assignments.get(row["registration_id"]) == team])
+            team: strength([row for row in inputs if assignments.get(row["registration_id"]) == team])
             for team in ("white", "black")
         },
     }
+
+
+def snapshot_strength(data, teams):
+    """Present old snapshots with field-only totals, without changing saved ratings."""
+    saved = data.get("strength")
+    if not saved or "with_keepers" in saved:
+        return saved
+    scores = {
+        (row["player_id"], row["position"]): row
+        for row in data.get("lineup_inputs", data.get("inputs", []))
+    }
+    fields = [row for row in teams if row["position"] == "field"]
+    inputs = [
+        {
+            "registration_id": i,
+            "position": "field",
+            "attack": scores.get((row["player_id"], "field"), {}).get("attack"),
+            "defense": scores.get((row["player_id"], "field"), {}).get("defense"),
+        }
+        for i, row in enumerate(fields)
+    ]
+    result = strength_summary(inputs, {i: row["team"] for i, row in enumerate(fields)})
+    result["with_keepers"] = {key: value for key, value in saved.items() if key != "teams"}
+    for team in ("white", "black"):
+        result["teams"][team]["with_keepers"] = saved["teams"][team]
+    return result
 
 
 def team_rating_data(db: Session, match: Match, approval=False) -> dict:
     from .auctions import formation_method
 
     if match.status in ("approved", "completed") and not approval:
-        snapshot = db.scalar(
-            select(TeamRatingSnapshot)
+        saved = db.execute(
+            select(TeamRatingSnapshot, TeamSnapshot.teams)
             .join(TeamSnapshot, TeamSnapshot.id == TeamRatingSnapshot.snapshot_id)
             .where(
                 TeamSnapshot.match_id == match.id, TeamSnapshot.version == match.approved_version
             )
-        )
-        if snapshot:
-            return {**snapshot.data, "frozen": True, "stale": False}
+        ).first()
+        if saved:
+            snapshot, teams = saved
+            return {
+                **snapshot.data,
+                "strength": snapshot_strength(snapshot.data, teams),
+                "frozen": True,
+                "stale": False,
+            }
         # MVP 1 historical teams have no rating snapshot; never retrofit today's ratings.
         return dict(
             summary=None, strength=None, inputs=[], method="legacy-manual", frozen=True, stale=False
@@ -703,6 +741,11 @@ def public_team_data(db: Session, match: Match) -> dict:
 
 
 def strength_text(value):
+    suffix = (
+        f" (с вратарями: {strength_text(value['with_keepers'])})" if "with_keepers" in value else ""
+    )
     if value["total"] is not None:
-        return f"{value['total']:.2f}"
-    return f"неполная: {value['rated_total']:.2f} по {value['rated']} из {value['count']} игроков"
+        return f"{value['total']:.2f}{suffix}"
+    return (
+        f"неполная: {value['rated_total']:.2f} по {value['rated']} из {value['count']} игроков{suffix}"
+    )

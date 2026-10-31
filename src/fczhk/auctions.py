@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from .models import Auction, AuctionLot, Player, Publication, TeamRatingDraft
 from .notifications import extended_chat
 from .ratings import lock_ratings
+from .schemas import MAX_FIELD_PLAYERS
 from .services import MOSCOW, DomainError, audit, ensure_pregame, entries, invalidate, save_teams
 
 TEAMS = ("white", "black")
@@ -337,8 +338,8 @@ def start(db, actor, match, body, cfg):
     lock_ratings(db)
     regs = [r for r in entries(db, match.id) if r.selected]
     field = [r for r in regs if r.position == "field"]
-    if not 2 <= len(field) <= 16:
-        raise DomainError("Для аукциона нужно от 2 до 16 полевых")
+    if not 2 <= len(field) <= MAX_FIELD_PLAYERS:
+        raise DomainError(f"Для аукциона нужно от 2 до {MAX_FIELD_PLAYERS} полевых")
     captains = {body.white_captain, body.black_captain}
     eligible = {r.player_id for r in field if db.get(Player, r.player_id).telegram_id}
     if len(captains) != 2 or not captains <= eligible:

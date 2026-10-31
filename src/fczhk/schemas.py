@@ -7,6 +7,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 Position = Literal["field", "keeper"]
 Team = Literal["white", "black"]
+MAX_FIELD_PLAYERS = 18
 
 
 class Payload(BaseModel):
@@ -61,6 +62,8 @@ class GameFields(Payload):
     description: str = Field(default="", max_length=1500)
     cost: int = Field(default=0, ge=0, le=100_000_000)
     payment_details: str = Field(default="", max_length=500)
+    field_limit: int = Field(default=16, ge=2, le=MAX_FIELD_PLAYERS, strict=True)
+    keeper_limit: int = Field(default=2, ge=0, le=2, strict=True)
 
 
 class GameEdit(GameFields, Version):

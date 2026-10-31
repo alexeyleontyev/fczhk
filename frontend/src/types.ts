@@ -47,7 +47,13 @@ export type Publication = {
   stale_marked: boolean
   error: string | null
 }
-export type Strength = { total: number | null; rated_total: number; rated: number; count: number }
+export type Strength = {
+  total: number | null
+  rated_total: number
+  rated: number
+  count: number
+  with_keepers?: { total: number | null; rated_total: number; rated: number; count: number }
+}
 export type Match = {
   collection_image?: CollectionImage | null
   collection_paused?: boolean
