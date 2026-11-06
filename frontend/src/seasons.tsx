@@ -18,7 +18,7 @@ export function defaultSeason(seasons: string[], at = new Date()) {
 export function SeasonSelect({ season, seasons, onSeason }: SeasonFilter) {
   return (
     <label className="season-filter">
-      Период статистики
+      <span>Период</span>
       <select
         aria-label="Период статистики"
         value={season}

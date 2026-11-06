@@ -20,7 +20,7 @@ function ReviewScore({
   const status = retained === 0 ? 'excluded' : retained < 1 ? 'partial' : 'included'
   const label =
     retained === 0
-      ? 'Не учтена'
+      ? 'Не участвует в среднем по правилу усечения'
       : retained < 1
         ? `Частично: ${(retained * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
         : 'Учтена'

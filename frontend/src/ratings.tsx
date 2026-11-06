@@ -5,6 +5,14 @@ import { PlayerName } from './player-name'
 import { DEFAULT_MIN_GAMES, filterPlayers } from './player-list-filters'
 import { CommunityRatingExplanation } from './community-rating-explanation'
 import { ReviewRatings } from './review-ratings'
+import {
+  changeRatingDraft,
+  ratingEntry,
+  ratingInput,
+  saveRatingDraft,
+  useRatingDrafts,
+} from './rating-drafts'
+import { RatingDraftBar, RatingDraftFeedback } from './rating-draft-controls'
 import type {
   Average,
   BalanceRun,
@@ -235,12 +243,14 @@ export function RatingFlow({
   target,
   run,
   busy,
+  refresh,
 }: {
   me: Player
   players: Player[]
   target: number | null
   run: Run
   busy: boolean
+  refresh: () => Promise<void>
 }) {
   const rateable = players.filter((p) => !p.shared_keeper)
   const eligible = rateable.filter((p) => p.id !== me.id)
@@ -256,8 +266,22 @@ export function RatingFlow({
   const [loaded, setData] = useState<ReviewData | null>(null)
   const [loadedKey, setLoadedKey] = useState('')
   const data = loadedKey === `${playerId}:${position}` ? loaded : null
-  const [attack, setAttack] = useState('')
-  const [defense, setDefense] = useState('')
+  const drafts = useRatingDrafts(me.id)
+  const entry = ratingEntry(drafts, playerId ?? 0, position)
+  const current =
+    (entry.confirmed?.revision ?? -1) > (data?.own?.revision ?? -1) ? entry.confirmed : data?.own
+  const values = entry.draft ?? {
+    playerId: playerId ?? 0,
+    alias: rateable.find((p) => p.id === playerId)?.alias ?? '',
+    position,
+    attack: ratingInput(current?.attack),
+    defense: ratingInput(current?.defense),
+    revision: current?.revision ?? 0,
+  }
+  const { attack, defense } = values
+  const setAttack = (value: string) => changeRatingDraft(me.id, { ...values, attack: value })
+  const setDefense = (value: string) => changeRatingDraft(me.id, { ...values, defense: value })
+  busy = busy || Boolean(entry.saving)
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
   const person = rateable.find((p) => p.id === playerId)
@@ -265,8 +289,6 @@ export function RatingFlow({
   useEffect(() => {
     let active = true
     setData(null)
-    setAttack('')
-    setDefense('')
     setError('')
     if (!person) return
     void api<ReviewData>(`/players/${person.id}/ratings/${position}`)
@@ -274,8 +296,6 @@ export function RatingFlow({
         if (!active) return
         setData(value)
         setLoadedKey(`${playerId}:${position}`)
-        setAttack(value.own?.attack == null ? '' : String(value.own.attack))
-        setDefense(value.own?.defense == null ? '' : String(value.own.defense))
       })
       .catch((e) => {
         if (active) setError((e as Error).message)
@@ -313,6 +333,7 @@ export function RatingFlow({
     )
   return (
     <div className="rating-flow">
+      <RatingDraftBar actor={me.id} refresh={refresh} />
       <p className="muted caption">
         От 0 до 5 с шагом 0,1. Пустое значение — не ноль. Свои оценки можно изменить; оценки других
         игроков с именами авторов доступны в профиле.
@@ -386,17 +407,16 @@ export function RatingFlow({
               onSubmit={(e) => {
                 e.preventDefault()
                 void run(async () => {
-                  const result = await api<ReviewData>(`/players/${person.id}/ratings`, 'PUT', {
-                    position,
-                    attack: position === 'field' ? attack : null,
-                    defense,
-                    revision: data.own?.revision ?? 0,
-                  })
-                  setData(result)
-                  if (!target) next()
-                }, 'Ваша оценка сохранена')
+                  if (!entry.draft) changeRatingDraft(me.id, values)
+                  if (await saveRatingDraft(me.id, person.id, position)) {
+                    await refresh()
+                    setReload((x) => x + 1)
+                    if (!target) next()
+                  }
+                })
               }}
             >
+              <RatingDraftFeedback actor={me.id} player={person.id} position={position} />
               <ScoreInputs
                 position={position}
                 attack={attack}

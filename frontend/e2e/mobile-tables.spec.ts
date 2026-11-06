@@ -54,12 +54,12 @@ test('catalog saves field and keeper votes inline and rejects a stale revision',
   ).toBe(true)
   await save.click()
   await expect(
-    page.getByRole('alert').filter({ hasText: 'Ваша оценка уже изменена' }),
+    page.getByRole('alert').filter({ hasText: 'Оценку изменили в другом окне' }),
   ).toBeVisible()
   await expect(defense).toHaveValue('4,5')
   await attack.fill('2')
   await expect(save).toBeDisabled()
-  await page.getByRole('button', { name: 'Загрузить актуальные оценки', exact: true }).click()
+  await page.getByRole('button', { name: 'Использовать оценку сервера', exact: true }).click()
   await expect(attack).toHaveValue('1')
   await expect(defense).toHaveValue('2')
   await defense.fill('3,3')

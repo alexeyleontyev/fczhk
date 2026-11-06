@@ -13,6 +13,10 @@ export function useClubData() {
   const [loading, setLoading] = useState(true)
   const [demo, setDemo] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null)
+  const [syncError, setSyncError] = useState('')
+  const matchRef = useRef<Match | null>(null)
+  matchRef.current = match
   const selected = useRef<number | null>(null)
   const dirty = useRef(new Set<string>())
   const generation = useRef(0)
@@ -21,17 +25,36 @@ export function useClubData() {
   const initial = useRef<Promise<void> | null>(null)
 
   function setSelectedId(id: number | null) {
-    if (selected.current !== id) setMatch(null)
+    if (selected.current !== id) {
+      setMatch(null)
+      setLastUpdated(null)
+      setSyncError('')
+      ++generation.current
+    }
     selected.current = id
     select(id)
   }
 
-  async function loadMatch(id: number | null) {
+  async function loadMatch(id: number | null, background = false) {
     const request = ++generation.current
     const next = await api<Match | null>(id ? `/matches/${id}` : '/matches/current')
     if (request === generation.current) {
       loadedSelection.current = id
-      setMatch(next)
+      const previous = matchRef.current
+      if (
+        !previous ||
+        !next ||
+        previous.id !== next.id ||
+        next.version > previous.version ||
+        (!background && next.version === previous.version)
+      ) {
+        matchRef.current = next
+        setMatch(next)
+        if (previous && (!next || previous.id !== next.id || previous.version !== next.version))
+          setRevision((value) => value + 1)
+      }
+      setLastUpdated(Date.now())
+      setSyncError('')
     }
   }
 
@@ -93,6 +116,9 @@ export function useClubData() {
       ++identityGeneration.current
       loadedSelection.current = undefined
       dirty.current.clear()
+      setLastUpdated(null)
+      setSyncError('')
+      matchRef.current = null
       setMe(null)
       setMatch(null)
       setPlayers([])
@@ -147,7 +173,47 @@ export function useClubData() {
     void loadMatch(selectedId).catch((error) => setLoadError(error.message))
   }, [selectedId, me?.id, loading])
 
+  useEffect(() => {
+    if (!me || loading || (selectedId && ['completed', 'cancelled'].includes(match?.status ?? '')))
+      return
+    let pending = false,
+      active = true
+    const update = async () => {
+      if (!active || pending || document.visibilityState === 'hidden' || !hasToken()) return
+      if (!navigator.onLine) {
+        setSyncError('Нет подключения. Показаны последние полученные данные.')
+        return
+      }
+      pending = true
+      try {
+        await loadMatch(selected.current, true)
+      } catch (e) {
+        if (active && hasToken()) setSyncError((e as Error).message)
+      } finally {
+        pending = false
+      }
+    }
+    const offline = () => setSyncError('Нет подключения. Показаны последние полученные данные.')
+    const timer = setInterval(() => void update(), 15000)
+    const visible = () => {
+      if (document.visibilityState === 'visible') void update()
+    }
+    const online = () => void update()
+    document.addEventListener('visibilitychange', visible)
+    window.addEventListener('online', online)
+    window.addEventListener('offline', offline)
+    return () => {
+      active = false
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', visible)
+      window.removeEventListener('online', online)
+      window.removeEventListener('offline', offline)
+    }
+  }, [me?.id, loading, selectedId, match?.status])
+
   return {
+    lastUpdated,
+    syncError,
     me,
     players,
     seasons,

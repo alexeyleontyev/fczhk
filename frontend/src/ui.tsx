@@ -49,9 +49,9 @@ export function Modal({
       if (event.key !== 'Tab') return
       const elements = Array.from(
         ref.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)',
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, [tabindex]',
         ) || [],
-      )
+      ).filter((el) => el.tabIndex >= 0 && el.getClientRects().length > 0 && !el.closest('[inert]'))
       const first = elements[0],
         last = elements[elements.length - 1]
       if (event.shiftKey && document.activeElement === first) {
@@ -80,7 +80,7 @@ export function Modal({
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="section-title">
+        <div className="section-title modal-heading">
           <h2>{title}</h2>
           <button className="icon-button" aria-label="Закрыть" onClick={close}>
             <X />

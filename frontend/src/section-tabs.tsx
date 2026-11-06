@@ -17,7 +17,7 @@ export function SectionTabs<T extends string>({
   const selected = options.find((o) => o.value === value) ?? options[0]
   return (
     <div className="section-workspace">
-      <nav className="section-tabs" role="tablist" aria-label={label}>
+      <nav className="section-tabs" role="tablist" aria-label={label} hidden={options.length < 2}>
         {options.map((o, i) => (
           <button
             key={o.value}

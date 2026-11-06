@@ -90,10 +90,9 @@ for (const viewport of [
 
 test('a temporary profile failure preserves the browser session for reload', async ({ page }) => {
   const token = await configure(page)
-  let failed = false
+  let failures = 0
   await page.route('**/api/me', async (route) => {
-    if (!failed) {
-      failed = true
+    if (failures++ < 2) {
       await route.fulfill({ status: 503, json: { detail: 'Временная ошибка профиля' } })
     } else await route.continue()
   })

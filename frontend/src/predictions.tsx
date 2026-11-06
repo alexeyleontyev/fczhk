@@ -88,6 +88,10 @@ export function PredictionPanel({
   const [time, setTime] = useState({ server: 0, received: 0 })
   const [tick, setTick] = useState(performance.now())
   const [predictionCategory, setPredictionCategory] = useState('score')
+  const [draftVersion, setDraftVersion] = useState<{
+    revision: number
+    approved: number | null
+  } | null>(null)
   const accept = (value: PredictionData) => {
     setData(value)
     setTime({ server: new Date(value.server_time).getTime(), received: performance.now() })
@@ -195,7 +199,13 @@ export function PredictionPanel({
           )}
           {editable && (
             <form
-              key={`${m.id}:${data.mine?.revision || 0}:${data.approved_version}`}
+              key={m.id}
+              onChange={() =>
+                setDraftVersion(
+                  (old) =>
+                    old ?? { revision: data.mine?.revision || 0, approved: data.approved_version },
+                )
+              }
               onSubmit={(e) => {
                 e.preventDefault()
                 const f = new FormData(e.currentTarget)
@@ -209,10 +219,11 @@ export function PredictionPanel({
                               black_score: Number(f.get('black')),
                             }
                           : { category: predictionCategory }),
-                        revision: data.mine?.revision || 0,
-                        approved_version: data.approved_version,
+                        revision: draftVersion?.revision ?? data.mine?.revision ?? 0,
+                        approved_version: draftVersion?.approved ?? data.approved_version,
                       }),
                     )
+                    setDraftVersion(null)
                   } catch (error) {
                     accept(await api<PredictionData>(`/matches/${m.id}/predictions`))
                     throw error
@@ -220,6 +231,26 @@ export function PredictionPanel({
                 }, 'Прогноз сохранён')
               }}
             >
+              {draftVersion &&
+                (draftVersion.revision !== (data.mine?.revision || 0) ||
+                  draftVersion.approved !== data.approved_version) && (
+                  <p className="alert" role="status">
+                    Прогноз или составы изменились. Ваш ввод сохранён. Проверьте команды перед
+                    отправкой.{' '}
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() =>
+                        setDraftVersion({
+                          revision: data.mine?.revision || 0,
+                          approved: data.approved_version,
+                        })
+                      }
+                    >
+                      Проверил, оставить мой ввод
+                    </button>
+                  </p>
+                )}
               <label>
                 Исход прогноза
                 <select

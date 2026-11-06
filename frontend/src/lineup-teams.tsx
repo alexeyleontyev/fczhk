@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent, CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, GripVertical } from 'lucide-react'
 import { PlayerName } from './player-name'
@@ -51,13 +51,21 @@ export function LineupTeams({
   disabled,
   onChange,
   color,
+  onExchange,
 }: {
   people: Person[]
   assignments: Assignments
   disabled: boolean
   onChange: (id: number, team: Team | null) => void
+  onExchange: (first: number, second: number) => void
   color: (p: Person) => CSSProperties
 }) {
+  const [exchanging, setExchanging] = useState(false)
+  const [first, setFirst] = useState<number | null>(null)
+  useEffect(() => {
+    setFirst(null)
+    setExchanging(false)
+  }, [disabled, assignments])
   const [ghost, setGhost] = useState<{ id: number; x: number; y: number } | null>(null)
   const [target, setTarget] = useState<Team | null>(null)
   const drag = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
@@ -97,14 +105,30 @@ export function LineupTeams({
   return (
     <>
       <div className="lineup-table-intro">
-        <p>
-          Перетаскивайте за значок или нажимайте стрелку.
-          <br />
-          Полевые — по силе сообщества, вратари — внизу.
-        </p>
+        <button
+          className="button secondary compact"
+          disabled={disabled}
+          aria-pressed={exchanging}
+          onClick={() => {
+            setExchanging(!exchanging)
+            setFirst(null)
+          }}
+        >
+          {exchanging ? 'Отменить обмен' : 'Обменять игроков'}
+        </button>
         <span className="lineup-strength-key">
           Ниже <i /> Выше
         </span>
+      </div>
+      {exchanging && (
+        <p className="lineup-exchange-hint" role="status">
+          {first === null
+            ? 'Выберите первого игрока.'
+            : `${people.find((p) => p.registration_id === first)?.alias}: выберите игрока другой команды.`}
+        </p>
+      )}
+      <div className="lineup-sticky-totals">
+        <LineupTotals people={people} assignments={assignments} />
       </div>
       <div className="lineup-team-tables">
         {(['white', 'black'] as Team[]).map((team) => {
@@ -118,22 +142,6 @@ export function LineupTeams({
               className={`lineup-team-table ${target === team ? 'drop-target' : ''}`}
               aria-label={team === 'white' ? 'Белая команда' : 'Чёрная команда'}
             >
-              <header>
-                <div>
-                  <h2>
-                    <i className={`lineup-team-dot ${team}`} />
-                    {team === 'white' ? 'Белые' : 'Чёрные'}
-                  </h2>
-                  <small>
-                    {members.filter((p) => p.position === 'field').length} полевых +{' '}
-                    {members.filter((p) => p.position === 'keeper').length} вр.
-                  </small>
-                </div>
-                <strong>
-                  <small>Σ </small>
-                  {totalLabel(total.total)}
-                </strong>
-              </header>
               <div className="lineup-table-columns">
                 <span>Игрок ↓ по силе</span>
                 <span>А</span>
@@ -153,10 +161,31 @@ export function LineupTeams({
                       <div className="lineup-keeper-divider">Вратари</div>
                     )}
                     <div
-                      className={`lineup-player-row ${p.position === 'keeper' ? 'keeper' : ''} ${ghost?.id === p.registration_id ? 'drag-origin' : ''}`}
+                      className={`lineup-player-row ${p.position === 'keeper' ? 'keeper' : ''} ${ghost?.id === p.registration_id ? 'drag-origin' : ''} ${first === p.registration_id ? 'exchange-selected' : ''}`}
                       style={color(p)}
                     >
-                      <div className="lineup-player-cell">
+                      {exchanging && (
+                        <button
+                          className="lineup-exchange-player"
+                          aria-label={`Выбрать для обмена: ${p.alias}`}
+                          aria-pressed={first === p.registration_id}
+                          disabled={
+                            first !== null &&
+                            first !== p.registration_id &&
+                            assignments[first] === team
+                          }
+                          onClick={() => {
+                            if (first === p.registration_id) setFirst(null)
+                            else if (first === null) setFirst(p.registration_id)
+                            else {
+                              onExchange(first, p.registration_id)
+                              setFirst(null)
+                              setExchanging(false)
+                            }
+                          }}
+                        />
+                      )}
+                      <div className="lineup-player-cell" data-name={p.alias} inert={exchanging}>
                         <button
                           className="lineup-drag-handle"
                           disabled={disabled}
@@ -199,7 +228,7 @@ export function LineupTeams({
                       </span>
                       <button
                         className="lineup-move-player"
-                        disabled={disabled}
+                        disabled={disabled || exchanging}
                         aria-label={`${p.alias}: перевести ${other === 'white' ? 'в белые' : 'в чёрные'}`}
                         onClick={() => onChange(p.registration_id, other)}
                       >
@@ -240,11 +269,15 @@ export function LineupTeams({
           ))}
         </section>
       )}
-      <p className="muted caption lineup-color-note">
-        Заливка — по общим оценкам сообщества внутри этого сбора: полевые — атака + защита, вратари
-        — защита по шкале 0–5. Нет оценки — серый цвет. Баллы выбранного варианта сохраняют его
-        источник оценок.
-      </p>
+      <details className="lineup-color-note compact-explanation">
+        <summary>Перенос игроков и цвета</summary>
+        <p className="muted caption">
+          Перетаскивайте за значок или нажимайте стрелку. Полевые отсортированы по силе, вратари —
+          внизу. Заливка — по общим оценкам сообщества внутри этого сбора: полевые — атака + защита,
+          вратари — защита по шкале 0–5. Нет оценки — серый цвет. Баллы выбранного варианта
+          сохраняют его источник оценок.
+        </p>
+      </details>
       {ghost && (
         <div className="tactics-drag-ghost" style={{ left: ghost.x, top: ghost.y }}>
           {people.find((p) => p.registration_id === ghost.id)?.alias}

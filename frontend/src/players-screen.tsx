@@ -66,15 +66,17 @@ export function PlayersScreen({
           { value: 'ratings', label: 'Рейтинги' },
         ]}
       >
-        {section !== 'ratings' && <SeasonSelect {...seasonFilter} />}
-        <input
-          className="search"
-          type="search"
-          placeholder="Найти игрока"
-          aria-label="Поиск игроков"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="filter-toolbar">
+          {section !== 'ratings' && <SeasonSelect {...seasonFilter} />}
+          <input
+            className="search"
+            type="search"
+            placeholder="Найти игрока"
+            aria-label="Поиск игроков"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         {section === 'results' && (
           <Leaderboards
             mode="results"
@@ -109,22 +111,24 @@ export function PlayersScreen({
         )}
         {section === 'catalog' && (
           <>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={ratedOnly}
-                onChange={(event) => setRatedOnly(event.target.checked)}
-              />
-              Только игроки с оценками
-            </label>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={previousOnly}
-                onChange={(event) => setPreviousOnly(event.target.checked)}
-              />
-              Только участники предыдущей игры
-            </label>
+            <div className="catalog-filters">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={ratedOnly}
+                  onChange={(event) => setRatedOnly(event.target.checked)}
+                />
+                Только игроки с оценками
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={previousOnly}
+                  onChange={(event) => setPreviousOnly(event.target.checked)}
+                />
+                Только участники предыдущей игры
+              </label>
+            </div>
             {previousOnly && (previous.error || !previous.match) && (
               <p className="muted caption" role="status">
                 {previous.loading

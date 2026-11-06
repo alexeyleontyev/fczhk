@@ -39,6 +39,7 @@ export function PlayerName({
   return (
     <button
       type="button"
+      title={alias}
       className={`player-name ${className}`.trim()}
       onClick={(event) => {
         event.preventDefault()

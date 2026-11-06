@@ -96,7 +96,9 @@ test('completed lineup shows missing ratings as dashes and keeps genuine zero sc
   await expect(white.locator('.total b')).toHaveText('0')
   await expect(white).not.toContainText('≥')
   await expect(white).not.toContainText('—')
-  await expect(page.getByLabel('Суммарные баллы команд')).toContainText('0')
+  await expect(
+    page.getByRole('region', { name: 'Расстановка на поле' }).getByLabel('Суммарные баллы команд'),
+  ).toContainText('0')
 
   players.push({
     ...players[0],
@@ -244,12 +246,15 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   await expect(token(player)).toHaveClass(/white/)
   expect(await y(player)).toBeCloseTo(72, 0)
   // Moving a token within its half preserves the team's score.
-  const scores = await page.locator('.lineup-team-totals').innerText()
+  const totals = page
+    .getByRole('region', { name: 'Расстановка на поле' })
+    .getByLabel('Суммарные баллы команд')
+  const scores = await totals.innerText()
   await token(player)
     .getByRole('button', { name: `На поле: ${player}`, exact: true })
     .focus()
   await page.keyboard.press('ArrowLeft')
-  expect(await page.locator('.lineup-team-totals').innerText()).toBe(scores)
+  expect(await totals.innerText()).toBe(scores)
   expect((await send(`/matches/${m.id}`)).registrations).toEqual(m.registrations)
   const adminContext = await browser.newContext()
   const admin = await adminContext.newPage()

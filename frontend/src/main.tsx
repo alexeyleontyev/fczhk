@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { api, setToken, uploadImage } from './api'
 import { RatingFlow } from './ratings'
+import { RatingDraftBar } from './rating-draft-controls'
 import { PlayerStats } from './results'
 import { PredictionStandings } from './predictions'
 import { BrowserLogin } from './browser-login'
@@ -53,6 +54,8 @@ function App() {
     demo,
     loading,
     loadError,
+    lastUpdated,
+    syncError,
     refresh,
     logout,
   } = useClubData()
@@ -96,7 +99,15 @@ function App() {
     setNotice(null)
     try {
       await work()
-      await refresh()
+      try {
+        await refresh()
+      } catch {
+        setNotice({
+          text: `${success || 'Действие выполнено'}. Не удалось обновить экран. Повторите обновление.`,
+          error: true,
+        })
+        return
+      }
       if (success) setNotice({ text: success, error: false })
     } catch (e) {
       setNotice({ text: (e as Error).message, error: true })
@@ -274,6 +285,7 @@ function App() {
         </Button>
       )}
       <main>
+        {!modal && <RatingDraftBar actor={me.id} refresh={() => refresh(true)} />}
         {notice && !modal && (
           <div
             role={notice.error ? 'alert' : 'status'}
@@ -283,6 +295,26 @@ function App() {
             <button aria-label="Скрыть сообщение" onClick={() => setNotice(null)}>
               <X size={16} />
             </button>
+          </div>
+        )}
+        {['game', 'lineup', 'field', 'prediction', 'auction'].includes(tab) && lastUpdated && (
+          <div
+            className={`sync-status ${syncError ? 'error' : ''}`}
+            aria-label="Состояние обновления игры"
+          >
+            <span>
+              {syncError ||
+                `Обновлено ${new Date(lastUpdated).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК`}
+            </span>
+            {syncError && (
+              <button
+                className="text-button"
+                disabled={busy}
+                onClick={() => void run(() => refresh(true))}
+              >
+                Повторить обновление
+              </button>
+            )}
           </div>
         )}
         {m &&
@@ -531,7 +563,14 @@ function App() {
       )}
       {modal === 'ratings' && (
         <Modal title="Оценки игроков" close={() => setModal(null)}>
-          <RatingFlow me={me} players={players} target={ratingTarget} run={run} busy={busy} />
+          <RatingFlow
+            me={me}
+            players={players}
+            target={ratingTarget}
+            run={run}
+            busy={busy}
+            refresh={() => refresh(true)}
+          />
         </Modal>
       )}
       {modal === 'create' && (

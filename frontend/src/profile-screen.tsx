@@ -36,12 +36,14 @@ export function ProfileScreen({
         <h1>Мой профиль</h1>
       </div>
       <section className="panel profile-panel">
-        <span className="avatar large">{initial(me.alias)}</span>
-        <h2>{me.alias}</h2>
-        <span className="tag">
-          {me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок клуба'}
-        </span>
-        <TelegramIdentity {...me} />
+        <div className="profile-identity">
+          <span className="avatar large">{initial(me.alias)}</span>
+          <h2>{me.alias}</h2>
+          <span className="tag">
+            {me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок клуба'}
+          </span>
+          <TelegramIdentity {...me} />
+        </div>
         <SectionTabs
           label="Разделы профиля"
           value={section}

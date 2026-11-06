@@ -28,7 +28,7 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
   await expect(page.getByText('Запись открыта', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Записаться полевым' }).click()
   await expect(page.getByText('Вы записаны полевым', { exact: true }).first()).toBeVisible()
-  await page.getByRole('tab', { name: 'Обзор', exact: true }).click()
+  await expect(page.getByRole('tablist', { name: 'Разделы игры', exact: true })).toBeHidden()
   await page.getByRole('button', { name: 'Подтвердить оплату: Алексей', exact: true }).click()
   await expect(
     page.getByRole('button', { name: 'Снять подтверждение: Алексей', exact: true }),
@@ -38,7 +38,7 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
   await page.getByRole('combobox', { name: 'Игрок', exact: true }).selectOption({ label: 'Михаил' })
   await page.getByRole('button', { name: 'Добавить в состав', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await page.getByRole('tab', { name: 'Обзор', exact: true }).click()
+  await expect(page.getByRole('tablist', { name: 'Разделы игры', exact: true })).toBeHidden()
   await page.getByRole('button', { name: 'Зафиксировать участников', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Да', exact: true }).click()
   await expect(page.getByText('Сбор завершен', { exact: true })).toBeVisible()

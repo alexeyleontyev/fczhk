@@ -53,6 +53,7 @@ export function MatchResult({
   const [editing, setEditing] = useState(initialEditing)
   const [error, setError] = useState('')
   useEffect(() => {
+    if (editing && data) return // Background updates must not replace a result being edited.
     let current = true
     api<Result>(`/matches/${m.id}/result`)
       .then((value) => {
@@ -67,7 +68,7 @@ export function MatchResult({
     return () => {
       current = false
     }
-  }, [m.id, m.version])
+  }, [m.id, m.version, editing])
   const [clock, setClock] = useState(Date.now())
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 1000)
@@ -638,7 +639,7 @@ export function PlayerStats({
   )
   return (
     <section className="statistics">
-      <div className="section-title statistics-heading">
+      <div className={showIdentity ? 'section-title statistics-heading' : 'sr-only'}>
         <h2>{data ? `Статистика: ${data.alias}` : 'Статистика'}</h2>
         {data && onRate && data.player_id !== viewerId && (
           <Button className="secondary compact" onClick={() => onRate(data.player_id)}>

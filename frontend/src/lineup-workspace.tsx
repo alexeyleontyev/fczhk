@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { Copy, Eraser, RefreshCw, Share2 } from 'lucide-react'
+import { Copy, Eraser, RefreshCw, Share2, Undo2, Redo2 } from 'lucide-react'
 import { api } from './api'
 import { Button } from './ui'
 import { PlayerName } from './player-name'
@@ -14,9 +14,9 @@ import { gameSummary, teamSummary } from './confirmation-summary'
 import type { Match, Player, Team, Run } from './types'
 import type { Draft, Lineup, Preview, Proposals } from './lineup-types'
 
-function saved(key: string): Draft | null {
+function parseDraft(value: string | null): Draft | null {
   try {
-    const d = JSON.parse(localStorage.getItem(key) || 'null')
+    const d = JSON.parse(value || 'null')
     if (
       !d ||
       !Number.isInteger(d.version) ||
@@ -66,6 +66,34 @@ function saved(key: string): Draft | null {
   }
 }
 
+function saved(key: string): Draft | null {
+  try {
+    return parseDraft(localStorage.getItem(key))
+  } catch {
+    return null
+  }
+}
+type DraftHistory = { past: Draft[]; future: Draft[] }
+function savedHistory(key: string): DraftHistory {
+  try {
+    const value = JSON.parse(localStorage.getItem(`${key}:history`) || 'null')
+    if (
+      value &&
+      JSON.stringify(value.current) === JSON.stringify(saved(key)) &&
+      [value.past, value.future].every(
+        (rows) =>
+          Array.isArray(rows) &&
+          rows.length <= 50 &&
+          rows.every((d) => parseDraft(JSON.stringify(d))),
+      )
+    )
+      return { past: value.past, future: value.future }
+  } catch {
+    /* History is optional; retain the draft if storage is unavailable. */
+  }
+  return { past: [], future: [] }
+}
+
 const proposalChoice = (id: number) => `proposal:${id}`
 const proposalDate = (value: string) =>
   new Date(value).toLocaleString('ru-RU', {
@@ -101,6 +129,7 @@ export function TacticsScreen({
     editable: false,
   })
   const [draft, setDraft] = useState<Draft | null>(() => saved(key))
+  const [history, setHistory] = useState<DraftHistory>(() => savedHistory(key))
   const [choice, setChoice] = useState('official')
   const [preview, setPreview] = useState<Preview | null>(null)
   const [candidate, setCandidate] = useState<Draft | null>(null)
@@ -143,7 +172,7 @@ export function TacticsScreen({
             initialized.current = true
             setChoice(next.official_players ? 'official' : 'draft')
           }
-          if (next.version !== m.version) void changed.current()
+          if (next.version !== m.version) void changed.current().catch(() => {})
         }
       } catch (e) {
         if (active) setError((e as Error).message)
@@ -163,10 +192,11 @@ export function TacticsScreen({
     try {
       if (draft) localStorage.setItem(key, JSON.stringify(draft))
       else localStorage.removeItem(key)
+      localStorage.setItem(`${key}:history`, JSON.stringify({ current: draft, ...history }))
     } catch {
       /* Embedded browsers may disable storage. */
     }
-  }, [draft, key])
+  }, [draft, key, history])
   useEffect(() => {
     if (data && !data.editable && !choice.startsWith('proposal:')) {
       setChoice('official')
@@ -227,10 +257,52 @@ export function TacticsScreen({
     assignments: { ...assignments },
     placements: { ...placements },
   })
-  function edit(next: Draft) {
+  function edit(next: Draft, record = true) {
+    if (record) setHistory((h) => ({ past: [...h.past, base()].slice(-50), future: [] }))
     setDraft({ ...next, source: next.source === 'proposal' ? 'manual' : next.source })
     setChoice('draft')
     setSelected(null)
+  }
+  const historyCompatible = (d: Draft | undefined) =>
+    d &&
+    d.version === data.version &&
+    d.roster_version === data.roster_version &&
+    d.fingerprint === data.fingerprint
+  const canUndo = ownDraft && !disabled && Boolean(historyCompatible(history.past.at(-1)))
+  const canRedo = ownDraft && !disabled && Boolean(historyCompatible(history.future.at(-1)))
+  function travel(direction: 'undo' | 'redo') {
+    if (!(direction === 'undo' ? canUndo : canRedo)) return
+    const from = direction === 'undo' ? history.past : history.future
+    const to = direction === 'undo' ? history.future : history.past
+    const next = from.at(-1)!
+    setHistory(
+      direction === 'undo'
+        ? { past: from.slice(0, -1), future: [...to, base()].slice(-50) }
+        : { future: from.slice(0, -1), past: [...to, base()].slice(-50) },
+    )
+    edit(next, false)
+  }
+  function exchangePlayers(first: number, second: number) {
+    if (
+      disabled ||
+      first === second ||
+      !assignments[first] ||
+      !assignments[second] ||
+      assignments[first] === assignments[second]
+    )
+      return
+    const d = base()
+    // Each player takes the other's position; missing manual positions use layout defaults.
+    const nextPlacements = { ...d.placements }
+    delete nextPlacements[first]
+    delete nextPlacements[second]
+    if (d.placements[second]) nextPlacements[first] = d.placements[second]
+    if (d.placements[first]) nextPlacements[second] = d.placements[first]
+    edit({
+      ...d,
+      assignments: { ...d.assignments, [first]: assignments[second], [second]: assignments[first] },
+      placements: nextPlacements,
+    })
   }
   function setTeam(id: number, team: Team | null) {
     if (disabled || assignments[id] === team) return
@@ -370,6 +442,7 @@ export function TacticsScreen({
     }
   }
   function refreshDraft() {
+    setHistory({ past: [], future: [] })
     const oldPlayers = new Map(people.map((p) => [p.player_id, p]))
     const next = Object.fromEntries(
       data!.players.map((p) => {
@@ -391,15 +464,18 @@ export function TacticsScreen({
           : []
       }),
     )
-    edit({
-      version: data!.version,
-      roster_version: data!.roster_version,
-      fingerprint: data!.fingerprint,
-      assignments: next,
-      placements: nextPlacements,
-      source: 'manual',
-      variant: 0,
-    })
+    edit(
+      {
+        version: data!.version,
+        roster_version: data!.roster_version,
+        fingerprint: data!.fingerprint,
+        assignments: next,
+        placements: nextPlacements,
+        source: 'manual',
+        variant: 0,
+      },
+      false,
+    )
     setPreview(null)
   }
   const counts = (team: Team, position: 'field' | 'keeper') =>
@@ -549,11 +625,27 @@ export function TacticsScreen({
               )}
               {missingProposal && <option value={choice}>Предложение отозвано</option>}
             </select>
-            <p className="muted caption lineup-variant-status">
-              {title}
-              {proposal && ` · обновлено ${proposalDate(proposal.updated_at)} МСК`}
-              {ownDraft && ' · видно только вам'}
-            </p>
+            <div className="lineup-variant-status">
+              <span
+                className={`lineup-status-badge ${official ? 'official' : ownDraft ? 'private' : 'proposal'}`}
+              >
+                {official
+                  ? data.official_players
+                    ? 'Утверждён'
+                    : 'Не утверждён'
+                  : ownDraft
+                    ? 'Личный'
+                    : proposal
+                      ? 'Предложение'
+                      : 'Автоподбор'}
+              </span>
+              {ownDraft && <small>Видно только вам</small>}
+              {proposal && (
+                <small>
+                  {proposal.author} · {proposalDate(proposal.updated_at)} МСК
+                </small>
+              )}
+            </div>
           </div>
           {data.editable && (
             <div className="lineup-proposal-buttons">
@@ -576,10 +668,25 @@ export function TacticsScreen({
           )}
         </div>
         {data.editable && (
-          <div className="lineup-variant-actions">
+          <div className="lineup-variant-actions" role="group" aria-label="Изменения прикидки">
+            <Button
+              className="ghost compact"
+              title="Отменить"
+              disabled={!canUndo}
+              onClick={() => travel('undo')}
+            >
+              <Undo2 size={16} /> <span className="lineup-history-label">Отменить</span>
+            </Button>
+            <Button
+              className="ghost compact"
+              title="Вернуть"
+              disabled={!canRedo}
+              onClick={() => travel('redo')}
+            >
+              <Redo2 size={16} /> <span className="lineup-history-label">Вернуть</span>
+            </Button>
             <Button className="ghost compact" disabled={disabled} onClick={swapTeams}>
-              <RefreshCw size={14} />
-              Поменять цвета команд
+              <RefreshCw size={14} /> Поменять цвета команд
             </Button>
           </div>
         )}
@@ -599,14 +706,19 @@ export function TacticsScreen({
             ))}
           </div>
         )}
-        {data.editable && (
-          <p className="muted caption lineup-proposal-note">
-            {proposals.editable
-              ? 'Перенос игрока создаёт личную прикидку. Нажмите «Предложить состав», чтобы её увидело сообщество.'
-              : 'Приём и изменение предложений закрыты: игра уже началась.'}
+        <details className="lineup-help compact-explanation">
+          <summary>Как работать с составами</summary>
+          <p className="muted caption">
+            {title}. Перенос игрока создаёт личную прикидку. Нажмите «Предложить состав», чтобы её
+            увидело сообщество. Отмена и возврат меняют только вашу прикидку.
           </p>
-        )}
-        <CommunityRatingExplanation savedLineups />
+          {!proposals.editable && data.editable && (
+            <p className="muted caption">
+              Приём и изменение предложений закрыты: игра уже началась.
+            </p>
+          )}
+          <CommunityRatingExplanation savedLineups />
+        </details>
       </section>
       {stale && (
         <div role="alert" className="alert">
@@ -628,6 +740,7 @@ export function TacticsScreen({
           assignments={assignments}
           disabled={disabled}
           onChange={setTeam}
+          onExchange={exchangePlayers}
           color={color}
         />
         {data.editable && !complete && (

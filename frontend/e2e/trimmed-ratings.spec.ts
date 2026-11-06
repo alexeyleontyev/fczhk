@@ -69,10 +69,14 @@ test('community rule and per-score inclusion are visible in catalog, profiles an
   await profile.getByRole('button', { name: 'Закрыть', exact: true }).click()
   await page.locator('.catalog-person').getByRole('button', { name: alias, exact: true }).click()
   await profile.getByText('Как оценили другие игроки', { exact: true }).click()
-  await expect(profile.getByLabel('Атака 5: не учтена', { exact: true })).toBeVisible()
+  await expect(
+    profile.getByLabel('Атака 5: не участвует в среднем по правилу усечения', { exact: true }),
+  ).toBeVisible()
   await expect(profile.getByLabel('Защита 3: учтена', { exact: true })).toBeVisible()
   await expect(profile.getByLabel('Атака 1: частично: 75%', { exact: true })).toBeVisible()
-  await expect(profile.getByLabel('Защита 0: не учтена', { exact: true })).toBeVisible()
+  await expect(
+    profile.getByLabel('Защита 0: не участвует в среднем по правилу усечения', { exact: true }),
+  ).toBeVisible()
   await expect(profile.getByLabel('Защита 5: учтена', { exact: true })).toBeVisible()
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 1000 })

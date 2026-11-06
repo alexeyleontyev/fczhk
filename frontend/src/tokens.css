@@ -1,0 +1,23 @@
+/* Shared UI scale. Component CSS should use these tokens for typography,
+   spacing and controls; geometric pitch/table sizes remain component-specific. */
+:root {
+  --font-micro: 9px;
+  --font-caption: 10px;
+  --font-small: 11px;
+  --font-body: 12px;
+  --font-control: 13px;
+  --font-label: 14px;
+  --font-heading: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-small: 6px;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --control-height: 40px;
+  --control-compact: 36px;
+  --touch-target: 44px;
+}
