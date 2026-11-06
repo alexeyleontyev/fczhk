@@ -388,7 +388,7 @@
 .lineup-workspace .tactics-pitch {
   height: 580px;
 }
-.lineup-colored-token {
+.tactics-token.lineup-colored-token {
   background: var(--strength-fill);
   border: 1px solid var(--strength-border);
   border-radius: 8px;
@@ -629,7 +629,7 @@
   .lineup-workspace .tactics-pitch {
     height: 560px;
   }
-  .lineup-colored-token {
+  .tactics-token.lineup-colored-token {
     width: 98px;
     max-width: 28%;
     padding: 5px;
