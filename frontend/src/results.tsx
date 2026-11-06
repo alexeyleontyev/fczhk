@@ -7,6 +7,7 @@ import { TelegramIdentity } from './telegram-identity'
 import { PlayerName } from './player-name'
 import { RatingAverages } from './ratings'
 import { PlayerReviews } from './player-reviews'
+import { RatingHistory } from './rating-history'
 import { Button } from './ui'
 import { gameSummary } from './confirmation-summary'
 import type { Match, Player, Position, Run, Team, TelegramProfile } from './types'
@@ -727,6 +728,7 @@ export function PlayerStats({
                 <div className="profile-ratings">
                   <h3>Оценки игрока</h3>
                   <RatingAverages player={player} />
+                  <RatingHistory key={playerId} playerId={playerId} />
                   {viewerAdmin && onRate && (
                     <Button className="ghost compact" onClick={() => onRate(data.player_id)}>
                       История оценок

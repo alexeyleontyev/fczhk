@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from .. import game_ratings as gr
 from .. import profile_claims
+from .. import rating_history as rh
 from .. import ratings as rt
 from .. import results as res
 from .. import schemas as S
@@ -102,6 +103,14 @@ def router(ctx):
         db: Session = Depends(db_dep, scope="function"),
     ):
         return rt.review_data(db, p.id, player_id, position, has_admin_access(p, cfg))
+
+    @app.get("/api/players/{player_id}/rating-history")
+    def rating_history(
+        player_id: int,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        return rh.daily_history(db, player_id, has_admin_access(p, cfg))
 
     @app.get("/api/players/{player_id}/reviews")
     def player_reviews(
