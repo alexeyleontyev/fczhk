@@ -264,7 +264,9 @@ test('collection overview separates 16 field players and 2 keepers from the rese
   await expect(main).toContainText('Подтверждено')
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true)
     await page.screenshot({ path: `test-results/collection-statuses-${width}.png`, fullPage: true })
   }
 })

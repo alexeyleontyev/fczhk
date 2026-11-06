@@ -46,7 +46,9 @@ test('admin expands a full game to 18+2 and both previews keep two subs per team
   await form.getByLabel('Полевых в сборе · обе команды', { exact: true }).fill('18')
   for (const width of [320, 768]) {
     await page.setViewportSize({ width, height: 1000 })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true)
   }
   await answerConfirmation(
     form.getByRole('button', { name: 'Сохранить параметры', exact: true }),
