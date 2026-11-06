@@ -50,6 +50,7 @@ def data(db, match, cfg):
     regs = selected(db, match)
     people, canonical = results.identities(db)
     effective = ratings.effective(db, regs)
+    community = ratings.public_averages(db, list({canonical[r.player_id] for r in regs}))
     skills = game_ratings.replay(db, before_day=match.game_day)["players"]
     inputs = []
     for r in sorted(regs, key=lambda row: row.id):
@@ -61,6 +62,8 @@ def data(db, match, cfg):
                 "game_mu": skill.get("mu", 25.0),
                 "game_sigma": skill.get("sigma", 25.0 / 3),
                 "game_count": skill.get("games", 0),
+                "community_attack": community[canonical[r.player_id]][r.position]["attack"],
+                "community_defense": community[canonical[r.player_id]][r.position]["defense"],
             }
         )
     frozen = None
@@ -127,6 +130,8 @@ def data(db, match, cfg):
                     game_mu=None,
                     game_sigma=None,
                     game_count=0,
+                    community_attack=current[pid][r.position]["attack"],
+                    community_defense=current[pid][r.position]["defense"],
                 )
             )
         assignments = {-r.player_id: r.team for r in actual}
@@ -149,6 +154,7 @@ def data(db, match, cfg):
         players=inputs,
         assignments=assignments,
         official_players=frozen,
+        official_assignments=assignments if frozen is not None else None,
         placements=placements,
         auction=public_auction,
         min_field_players=cfg.min_field_players,
@@ -328,6 +334,11 @@ def confirm(db, actor, match, body, cfg):
         raise DomainError("Сначала финализируйте список", 409)
     ratings.lock_ratings(db)
     current = data(db, match, cfg)
+    origin = {}
+    if body.proposal_id is not None:
+        from .lineup_proposals import for_confirmation
+
+        origin = for_confirmation(db, match, body, current)
     if body.roster_version != match.roster_version or body.fingerprint != current["fingerprint"]:
         raise DomainError("Список или оценки изменились. Обновите доску перед подтверждением.", 409)
     if set(body.assignments) != {p["registration_id"] for p in current["players"]}:
@@ -361,5 +372,6 @@ def confirm(db, actor, match, body, cfg):
         source=body.source,
         variant=body.variant,
         fingerprint=body.fingerprint,
+        **origin,
     )
     return services.match_data(db, match)

@@ -65,7 +65,7 @@ test('No preserves the collection, payments and publications; Yes performs the r
     await answerConfirmation(open, false, 'Пост будет отправлен в канал сборов')
     expect(matchState(await send(`/matches/${id}`))).toEqual(matchState(original))
     await answerConfirmation(open, true, 'Открыть сбор?')
-    await expect(page.getByRole('button', { name: 'Утвердить составы', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Зафиксировать участников', exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: 'Изменить параметры', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Параметры игры', exact: true })

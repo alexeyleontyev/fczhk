@@ -237,7 +237,7 @@ test('collection overview separates 16 field players and 2 keepers from the rese
   await expect(main.locator('time').first()).toContainText('МСК')
   const controls = page.getByRole('region', { name: 'Управление игрой', exact: true })
   for (const name of [
-    'Утвердить составы',
+    'Зафиксировать участников',
     'Изменить параметры',
     'История изменений',
     'Новая игра',
@@ -322,8 +322,8 @@ test('confirmation names reserve replacements, No leaves the collection open and
   })
   await page.addInitScript((value) => sessionStorage.setItem('fczhk-session', value), token)
   await page.goto(`/?game=${match.id}`)
-  await page.getByRole('button', { name: 'Утвердить составы', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Утвердить составы?', exact: true })
+  await page.getByRole('button', { name: 'Зафиксировать участников', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Зафиксировать участников?', exact: true })
   const fields = dialog.getByRole('region', { name: 'Изменения: Полевые', exact: true })
   const keepers = dialog.getByRole('region', { name: 'Изменения: Вратари', exact: true })
   await expect(fields).toContainText(`Не войдут в сбор: ${unpaid.alias}`)
@@ -348,7 +348,7 @@ test('confirmation names reserve replacements, No leaves the collection open and
   await expect(main.getByRole('button', { name: unpaid.alias, exact: true })).toBeVisible()
 
   // A concurrent payment change requires another explicit decision on the updated list.
-  await page.getByRole('button', { name: 'Утвердить составы', exact: true }).click()
+  await page.getByRole('button', { name: 'Зафиксировать участников', exact: true }).click()
   const shownVersion = match.version
   match = { ...match, version: match.version + 1 }
   await dialog.getByRole('button', { name: 'Да', exact: true }).click()
@@ -384,8 +384,8 @@ test('confirmation explains a shortfall when reserve payments are unconfirmed', 
   await page.route(`**/api/matches/${match.id}`, (route) => route.fulfill({ json: match }))
   await page.addInitScript((value) => sessionStorage.setItem('fczhk-session', value), token)
   await page.goto(`/?game=${match.id}`)
-  await page.getByRole('button', { name: 'Утвердить составы', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Утвердить составы?', exact: true })
+  await page.getByRole('button', { name: 'Зафиксировать участников', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Зафиксировать участников?', exact: true })
   await expect(dialog).toContainText('В сборе будет 0 / 16 полевых и 0 / 2 вратарей')
   await expect(
     dialog.getByText('В резерве нет игроков этого амплуа с подтверждённой оплатой.'),

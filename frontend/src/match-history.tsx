@@ -20,6 +20,8 @@ const titles: Record<string, string> = {
   'teams.approved': 'Утверждены составы',
   'match.approved': 'Утверждены составы',
   'lineup.confirmed': 'Утверждены составы',
+  'lineup.proposed': 'Предложен вариант состава',
+  'lineup.proposal_withdrawn': 'Отозван вариант состава',
   'lineup.shared': 'Опубликован вариант состава',
   'auction.started': 'Начат аукцион',
   'auction.completed': 'Завершён аукцион',

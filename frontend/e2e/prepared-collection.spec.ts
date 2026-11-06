@@ -90,7 +90,7 @@ test('admin prepares a hidden collection and early players keep their queue when
       true,
       'Открыть сбор?',
     )
-    await expect(page.getByRole('button', { name: 'Утвердить составы', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Зафиксировать участников', exact: true })).toBeVisible()
     const joined = await request.post(`/api/matches/${id}/join`, {
       headers: memberHeaders,
       data: { position: 'field' },

@@ -40,7 +40,7 @@ export function GameControls({
         )}
         {m.status === 'open' && (
           <Button disabled={busy} onClick={() => setModal('finalize')}>
-            Утвердить составы <Flag size={16} />
+            Зафиксировать участников <Flag size={16} />
           </Button>
         )}
         {m.status === 'finalized' && !auctionRunning && (

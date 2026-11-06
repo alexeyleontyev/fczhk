@@ -68,6 +68,7 @@ function App() {
     openGame,
     openAuction,
     openLineup,
+    openField,
     back,
     canBack,
     nativeBack,
@@ -113,9 +114,9 @@ function App() {
   const archived = isArchivedMatch(m)
   const gameHome = selectedId === null && (!m || archived)
   const activeNavigation =
-    archived && !gameHome && ['game', 'lineup', 'prediction'].includes(tab)
+    archived && !gameHome && ['game', 'lineup', 'field', 'prediction'].includes(tab)
       ? 'archive'
-      : ['auction', 'lineup', 'prediction'].includes(tab)
+      : ['auction', 'lineup', 'field', 'prediction'].includes(tab)
         ? 'game'
         : tab
 
@@ -286,8 +287,8 @@ function App() {
         )}
         {m &&
           !gameHome &&
-          ['game', 'lineup', 'prediction'].includes(tab) &&
-          (!archived || tab === 'lineup') && (
+          ['game', 'lineup', 'field', 'prediction'].includes(tab) &&
+          (!archived || ['lineup', 'field'].includes(tab)) && (
             <div className="match-tabs" role="tablist" aria-label="Экраны игры">
               <button
                 role="tab"
@@ -297,14 +298,18 @@ function App() {
                 {archived ? 'Итог' : 'Игра'}
               </button>
               <button role="tab" aria-selected={tab === 'lineup'} onClick={() => openLineup(m.id)}>
-                {archived ? 'Поле' : 'Составы'}
+                Команды
+              </button>
+              <button role="tab" aria-selected={tab === 'field'} onClick={() => openField(m.id)}>
+                Поле
               </button>
             </div>
           )}
-        {tab === 'lineup' && m && (
+        {['lineup', 'field'].includes(tab) && m && (
           <TacticsScreen
             key={`${m.id}:${me.id}`}
             match={m}
+            view={tab === 'field' ? 'field' : 'teams'}
             me={me}
             busy={busy}
             run={run}

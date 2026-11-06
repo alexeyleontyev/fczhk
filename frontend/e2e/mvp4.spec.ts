@@ -158,7 +158,7 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
     page.off('dialog', rejectBidDialog)
     other.off('dialog', rejectBidDialog)
     await panel.getByRole('button', { name: 'К составам', exact: true }).click()
-    await expect(page.locator('.tactics-pitch')).toBeVisible()
+    await expect(page.locator('.lineup-team-tables')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Утвердить состав', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Утвердить состав', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Состав утверждён' })).toBeVisible()

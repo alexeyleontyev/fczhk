@@ -353,7 +353,7 @@ test('player names open profiles from registrations, forecasts, auctions, pitch,
     page.locator('.auction-history').getByRole('button', { name: person.alias, exact: true }),
     person.alias,
   )
-  await page.goto(`/?game=${match.id}&screen=lineup`)
+  await page.goto(`/?game=${match.id}&screen=field`)
   const piece = page.locator('.tactics-token').filter({ hasText: person.alias })
   const before = await piece.getAttribute('style')
   await openProfile(
@@ -362,11 +362,12 @@ test('player names open profiles from registrations, forecasts, auctions, pitch,
     person.alias,
   )
   await expect(piece).toHaveAttribute('style', before!)
-  if ((await page.locator('.tactics-roster').getAttribute('open')) === null)
-    await page.locator('.tactics-roster summary').click()
+  await page.getByRole('tab', { name: 'Команды', exact: true }).click()
   await openProfile(
     page,
-    page.locator('.tactics-roster').getByRole('button', { name: person.alias, exact: true }),
+    page
+      .locator('.lineup-player-row, .lineup-unassigned-row')
+      .getByRole('button', { name: person.alias, exact: true }),
     person.alias,
   )
   current = {

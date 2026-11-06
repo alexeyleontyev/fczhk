@@ -294,7 +294,7 @@ export function ArchivedGameScreen({
               <div className="section-title">
                 <h2>Составы и голы</h2>
                 <Button className="ghost compact" onClick={() => openLineup(m.id)}>
-                  На поле
+                  Команды
                 </Button>
               </div>
               {error && (

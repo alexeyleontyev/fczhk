@@ -63,11 +63,11 @@ test('admin expands a full game to 18+2 and both previews keep two subs per team
     await include.getByRole('button', { name: 'Добавить в состав', exact: true }).click()
     await expect(include).toHaveCount(0)
   }
-  await page.getByRole('button', { name: 'Утвердить составы', exact: true }).click()
+  await page.getByRole('button', { name: 'Зафиксировать участников', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Да', exact: true }).click()
-  await page.getByRole('tab', { name: 'Составы', exact: true }).click()
-  for (const name of ['По оценкам', 'OpenSkill']) {
-    await page.getByRole('button', { name, exact: true }).click()
+  await page.getByRole('tab', { name: 'Команды', exact: true }).click()
+  for (const method of ['community', 'game']) {
+    await page.getByLabel('Вариант состава').selectOption(method)
     await expect(page.locator('.tactics-token')).toHaveCount(20)
     for (const team of ['white', 'black']) {
       const tokens = page.locator(`.tactics-token.${team}`)

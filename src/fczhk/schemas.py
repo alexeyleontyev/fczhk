@@ -262,8 +262,30 @@ class LineupConfirm(Version):
     fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     assignments: dict[int, Team | None]
     placements: dict[int, LineupPoint] = Field(default_factory=dict)
-    source: Literal["manual", "community", "game", "auction"] = "manual"
+    source: Literal["manual", "community", "game", "auction", "proposal"] = "manual"
     variant: int = Field(default=0, ge=0, le=2)
+    proposal_id: int | None = Field(default=None, gt=0)
+    proposal_revision: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def proposal_reference(self):
+        if (self.proposal_id is None) != (self.proposal_revision is None):
+            raise ValueError("Укажите предложение и его ревизию")
+        if self.source == "proposal" and self.proposal_id is None:
+            raise ValueError("Укажите предложение")
+        return self
+
+
+class LineupProposalWrite(Payload):
+    roster_version: int = Field(ge=0)
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    assignments: dict[int, Team | None]
+    placements: dict[int, LineupPoint] = Field(default_factory=dict)
+    revision: int = Field(ge=0)
+
+
+class LineupProposalRevision(Payload):
+    revision: int = Field(ge=1)
 
 
 class LineupShare(Version):

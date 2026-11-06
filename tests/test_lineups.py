@@ -472,6 +472,10 @@ def test_completed_board_keeps_frozen_ratings_and_positions_after_profile_link(
     after = call("GET", path + "/lineup", role="player")
     expected = copy.deepcopy(before["players"])
     next(p for p in expected if p["player_id"] == reg["player_id"])["player_id"] = target
+    linked = next(p for p in expected if p["player_id"] == target)
+    # Color follows current community strength; the approved game's A/Z remain frozen.
+    linked["community_attack"] = None if position == "keeper" else 5.0
+    linked["community_defense"] = 5.0
     assert after["players"] == after["official_players"] == expected
     linked = next(p for p in after["players"] if p["player_id"] == target)
     assert linked["defense"] == 0 and linked["source"] == "snapshot"

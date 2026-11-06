@@ -29,6 +29,56 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def test_parallel_proposals_keep_one_revision_and_do_not_change_official_teams(pg):
+    from fczhk import lineup_proposals, lineups
+    from fczhk.models import LineupProposal
+    from fczhk.schemas import LineupProposalWrite
+
+    factory, pid = pg
+    cfg = Settings(_env_file=None, env="test")
+    with factory() as db, db.begin():
+        match = Match(
+            game_day="2099-10-02",
+            starts_at=datetime(2099, 10, 2, 20, tzinfo=MOSCOW),
+            location="Предложения",
+            status="finalized",
+        )
+        other = Player(alias="Соперник")
+        db.add_all([match, other])
+        db.flush()
+        db.add_all(
+            Registration(match_id=match.id, player_id=p, position="field", selected=True)
+            for p in (pid, other.id)
+        )
+        db.flush()
+        current = lineups.data(db, match, cfg)
+        regs = current["players"]
+        body = LineupProposalWrite(
+            roster_version=current["roster_version"],
+            fingerprint=current["fingerprint"],
+            assignments={regs[0]["registration_id"]: "white", regs[1]["registration_id"]: "black"},
+            revision=0,
+        )
+        mid, version = match.id, match.version
+
+    def propose(_):
+        try:
+            with factory() as db, db.begin():
+                lineup_proposals.save(db, pid, get_match(db, mid, lock=True), body, cfg)
+            return "ok"
+        except DomainError as exc:
+            assert exc.status == 409
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(propose, range(2))) == ["conflict", "ok"]
+    with factory() as db:
+        proposals = list(db.scalars(select(LineupProposal)))
+        assert len(proposals) == 1 and proposals[0].revision == 1
+        assert db.get(Match, mid).version == version
+        assert all(r.team is None for r in db.scalars(select(Registration)))
+
+
 def test_parallel_lineup_confirmation_creates_one_snapshot(pg):
     from fczhk import lineups
     from fczhk.models import TeamSnapshot

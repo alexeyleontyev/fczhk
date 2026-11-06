@@ -93,7 +93,7 @@ test('admin saves a private opening photo before any player joins, replaces and 
       true,
       'Пост с картинкой',
     )
-    await expect(page.getByRole('button', { name: 'Утвердить составы', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Зафиксировать участников', exact: true })).toBeVisible()
     await expect(input).toHaveCount(0)
     const opened = await (await request.get(`/api/matches/${id}`, { headers })).json()
     expect(opened.publications).toHaveLength(1)

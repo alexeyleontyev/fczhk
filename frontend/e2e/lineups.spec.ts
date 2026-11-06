@@ -62,6 +62,7 @@ test('completed lineup shows missing ratings as dashes and keeps genuine zero sc
         players,
         official_players: players,
         assignments,
+        official_assignments: assignments,
         placements: {},
         editable: false,
         min_field_players: 2,
@@ -70,7 +71,7 @@ test('completed lineup shows missing ratings as dashes and keeps genuine zero sc
       },
     }),
   )
-  await page.goto(`/?game=${m.id}&screen=lineup`)
+  await page.goto(`/?game=${m.id}&screen=field`)
   await expect(page.getByRole('button', { name: 'На поле: Исторический полевой' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'На поле: Исторический вратарь' })).toBeVisible()
   const scores = page.getByLabel('Баллы команд', { exact: true })
@@ -95,9 +96,7 @@ test('completed lineup shows missing ratings as dashes and keeps genuine zero sc
   await expect(white.locator('.total b')).toHaveText('0')
   await expect(white).not.toContainText('≥')
   await expect(white).not.toContainText('—')
-  await expect(page.locator('.tactics-screen')).not.toContainText(
-    /Текущие оценки|Оценки сообщества/i,
-  )
+  await expect(page.getByLabel('Суммарные баллы команд')).toContainText('0')
 
   players.push({
     ...players[0],
@@ -191,7 +190,7 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
     ),
   })
   await page.setViewportSize({ width: 1440, height: 1600 })
-  await page.goto(`/?game=${m.id}&screen=lineup`)
+  await page.goto(`/?game=${m.id}&screen=field`)
   await page.getByRole('button', { name: 'Войти игроком', exact: true }).click()
   await expect(page.locator('.tactics-token')).toHaveCount(18)
   await expect(page.getByRole('button', { name: 'Утвердить состав', exact: true })).toHaveCount(0)
@@ -229,7 +228,7 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.setViewportSize({ width: 1440, height: 1600 })
   const player = names.black_defender
-  const handle = page.getByRole('button', { name: `Перетащить: ${player}`, exact: true })
+  const handle = token(player).getByRole('button', { name: `На поле: ${player}`, exact: true })
   const from = await handle.boundingBox(),
     pitch = await page.locator('.tactics-pitch').boundingBox()
   expect(from && pitch).toBeTruthy()
@@ -245,27 +244,29 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   await expect(token(player)).toHaveClass(/white/)
   expect(await y(player)).toBeCloseTo(72, 0)
   // Moving a token within its half preserves the team's score.
-  const scores = await page.locator('.tactics-scores').innerText()
+  const scores = await page.locator('.lineup-team-totals').innerText()
   await token(player)
     .getByRole('button', { name: `На поле: ${player}`, exact: true })
     .focus()
   await page.keyboard.press('ArrowLeft')
-  expect(await page.locator('.tactics-scores').innerText()).toBe(scores)
+  expect(await page.locator('.lineup-team-totals').innerText()).toBe(scores)
   expect((await send(`/matches/${m.id}`)).registrations).toEqual(m.registrations)
   const adminContext = await browser.newContext()
   const admin = await adminContext.newPage()
   try {
-    await admin.goto(`/?game=${m.id}&screen=lineup`)
+    await admin.goto(`/?game=${m.id}&screen=field`)
     await admin.getByRole('button', { name: 'Войти администратором' }).click()
     await expect(
       admin.locator('.tactics-token').filter({
         has: admin.getByRole('button', { name: `На поле: ${player}`, exact: true }),
       }),
     ).toHaveClass(/black/)
+    await admin.getByRole('tab', { name: 'Команды', exact: true }).click()
     await admin.getByRole('button', { name: 'Утвердить состав', exact: true }).click()
     await expect(admin.getByRole('status').filter({ hasText: 'Состав утверждён' })).toBeVisible()
     await admin.getByRole('button', { name: 'Скрыть сообщение', exact: true }).click()
     const beforeConfirmation = await send(`/matches/${m.id}`)
+    await admin.getByRole('button', { name: 'Взять за основу', exact: true }).click()
     await answerConfirmation(
       admin.getByRole('button', { name: 'Утвердить состав', exact: true }),
       false,
@@ -281,18 +282,23 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
     )
     await expect(admin.getByRole('status').filter({ hasText: 'Состав утверждён' })).toBeVisible()
     await page.reload()
+    await expect(page.getByLabel('Вариант состава')).toHaveValue('official')
+    await page.getByLabel('Вариант состава').selectOption('draft')
     await expect(
-      page.getByRole('alert').filter({ hasText: 'Список или оценки изменились' }),
+      page
+        .getByRole('alert')
+        .filter({ hasText: 'Список, оценки или утверждённый состав изменились' }),
     ).toBeVisible()
   } finally {
     await adminContext.close()
   }
-  await page.getByText('Действия и подробности', { exact: true }).click()
-  await page.getByRole('button', { name: 'Вернуть общий состав', exact: true }).click()
+  await page.getByLabel('Вариант состава').selectOption('official')
   await expect(token(player)).toHaveClass(/black/)
   await page.setViewportSize({ width: 390, height: 844 })
   // Tap-to-place is available without a drag gesture on a narrow screen.
-  await page.getByRole('button', { name: `Перетащить: ${player}`, exact: true }).click()
+  await token(player)
+    .getByRole('button', { name: `На поле: ${player}`, exact: true })
+    .click()
   await expect(
     page.getByRole('status').filter({ hasText: `Куда поставить ${player}?` }),
   ).toBeVisible()
@@ -312,7 +318,14 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
       extended_chat_id: '-1001247505259',
     })
     await page.reload()
-    const share = page.getByRole('button', { name: 'Поделиться в чат', exact: true })
+    await page.getByLabel('Вариант состава').selectOption('draft')
+    await page.getByRole('tab', { name: 'Команды', exact: true }).click()
+    await page.getByText('Действия и подробности', { exact: true }).click()
+    const share = page.getByRole('button', {
+      name: 'Поделиться в чат',
+      exact: true,
+      includeHidden: true,
+    })
     await expect(share).toBeEnabled()
     const beforeShare = await send(`/matches/${m.id}`)
     await answerConfirmation(share, false, 'в чат для составов?')
@@ -332,13 +345,15 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
     expect(
       beforeClear.publications.filter((p: { kind: string }) => p.kind === 'lineup_share'),
     ).toHaveLength(1)
-    await page.getByRole('button', { name: 'Очистить доску', exact: true }).click()
+    await page.getByRole('button', { name: 'Очистить команды', exact: true }).click()
     await expect(page.locator('.tactics-token')).toHaveCount(0)
+    await page.getByRole('tab', { name: 'Поле', exact: true }).click()
     await expect(
-      page.getByText('Выберите вариант или добавьте игроков из списка', { exact: true }),
+      page.getByText('Сформируйте команды на вкладке «Команды»', { exact: true }),
     ).toBeVisible()
     await expect(share).toBeDisabled()
     await page.reload()
+    await page.getByLabel('Вариант состава').selectOption('draft')
     await expect(page.locator('.tactics-empty')).toBeVisible()
     await expect(page.locator('.tactics-token')).toHaveCount(0)
     const afterClear = await send(`/matches/${m.id}`)

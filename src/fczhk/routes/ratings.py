@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import lineups
+from .. import lineup_proposals, lineups
 from .. import ratings as rt
 from .. import schemas as S
 from .. import services as svc
@@ -67,6 +67,32 @@ def router(ctx):
     ):
         m = visible(db, match_id, p, body.version, lock=True)
         return lineups.share(db, p, m, body, ctx.cfg)
+
+    @app.get("/api/matches/{match_id}/lineup/proposals")
+    def lineup_proposal_list(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        return lineup_proposals.listing(db, p.id, visible(db, match_id, p), ctx.cfg)
+
+    @app.put("/api/matches/{match_id}/lineup/proposals/mine")
+    def lineup_proposal_save(
+        match_id: int,
+        body: S.LineupProposalWrite,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        return lineup_proposals.save(db, p.id, visible(db, match_id, p, lock=True), body, ctx.cfg)
+
+    @app.post("/api/matches/{match_id}/lineup/proposals/mine/withdraw")
+    def lineup_proposal_withdraw(
+        match_id: int,
+        body: S.LineupProposalRevision,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        return lineup_proposals.withdraw(
+            db, p.id, visible(db, match_id, p, lock=True), body.revision
+        )
 
     @app.put("/api/matches/{match_id}/registrations/{reg_id}/rating")
     def temporary_rating(

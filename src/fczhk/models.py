@@ -169,6 +169,23 @@ class TeamSnapshot(Base):
     __table_args__ = (UniqueConstraint("match_id", "version"),)
 
 
+class LineupProposal(Base):
+    __tablename__ = "lineup_proposals"
+    __table_args__ = (
+        UniqueConstraint("match_id", "author_id", name="uq_lineup_proposal_author"),
+        CheckConstraint("revision >= 1", name="ck_lineup_proposal_revision"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    revision: Mapped[int] = mapped_column(default=1)
+    roster_version: Mapped[int] = mapped_column()
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    data: Mapped[dict] = mapped_column(JSON)
+    published: Mapped[bool] = mapped_column(default=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
 class PostImage(Base):
     __tablename__ = "post_images"
     __table_args__ = (CheckConstraint("size > 0 AND size <= 10000000"),)

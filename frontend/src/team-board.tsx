@@ -33,19 +33,26 @@ export function TeamDots({
 }
 
 export function LineupEntry({ match, onOpen }: { match: Match; onOpen: () => void }) {
-  const rows = match.result?.participants ?? match.registrations.filter((r) => r.selected)
+  const approved = Boolean(match.team_ratings.frozen || match.result)
+  const rows =
+    match.result?.participants ?? match.registrations.filter((r) => r.selected && approved)
   return (
     <section className="panel lineup-entry">
       <div>
         <h2>Составы команд</h2>
         <span className="muted caption">
-          ⚪ {rows.filter((r) => r.team === 'white').length} · ⚫{' '}
-          {rows.filter((r) => r.team === 'black').length}
-          {match.team_ratings.frozen ? ' · Утверждены' : ''}
+          {approved ? (
+            <>
+              ⚪ {rows.filter((r) => r.team === 'white').length} · ⚫{' '}
+              {rows.filter((r) => r.team === 'black').length} · Утверждены
+            </>
+          ) : (
+            'Состав ещё не утверждён'
+          )}
         </span>
       </div>
       <Button className="secondary compact" onClick={onOpen}>
-        Открыть составы <ArrowUpRight size={16} />
+        {approved ? 'Открыть команды' : 'Сформировать команды'} <ArrowUpRight size={16} />
       </Button>
     </section>
   )

@@ -39,7 +39,7 @@ export function FinalizeCollection({
   const replacements = changes.some(({ promoted }) => promoted.length > 0)
   const selected = m.registrations.filter((entry) => entry.selected)
   return (
-    <Modal title="Утвердить составы?" close={close}>
+    <Modal title="Зафиксировать участников?" close={close}>
       <p>
         Пройдут первые {m.field_limit} полевых и {m.keeper_limit} вратаря с оплатой, подтверждённой
         администратором, по времени записи. Закреплённые места сохранятся.
