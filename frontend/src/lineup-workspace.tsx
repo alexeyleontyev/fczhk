@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { Copy, Eraser, Share2 } from 'lucide-react'
+import { Copy, Eraser, RefreshCw, Share2 } from 'lucide-react'
 import { api } from './api'
 import { Button } from './ui'
 import { PlayerName } from './player-name'
@@ -220,12 +220,7 @@ export function TacticsScreen({
   const colorByPlayer = new Map(data.players.map((p) => [p.player_id, p]))
   const scale = strengthScale(data.players)
   const color = (p: (typeof people)[number]) => scale(colorByPlayer.get(p.player_id) ?? p)
-  const positions = tacticalLayout(people, assignments)
-  for (const p of people) {
-    const point = placements[p.registration_id]
-    if (point && point.y >= 0.5 === (assignments[p.registration_id] === 'white'))
-      positions[p.registration_id] = point
-  }
+  const positions = tacticalLayout(people, assignments, placements)
   const base = (): Draft => ({
     ...selectedDraft,
     assignments: { ...assignments },
@@ -242,6 +237,21 @@ export function TacticsScreen({
       next = { ...d.placements }
     delete next[id]
     edit({ ...d, assignments: { ...d.assignments, [id]: team }, placements: next })
+  }
+  function swapTeams() {
+    const d = base()
+    edit({
+      ...d,
+      assignments: Object.fromEntries(
+        Object.entries(assignments).map(([id, team]) => [
+          id,
+          team === 'white' ? 'black' : team === 'black' ? 'white' : null,
+        ]),
+      ),
+      placements: Object.fromEntries(
+        Object.entries(placements).map(([id, p]) => [id, { x: 1 - p.x, y: 1 - p.y }]),
+      ),
+    })
   }
   function place(id: number, point: Point) {
     if (disabled) return
@@ -553,6 +563,14 @@ export function TacticsScreen({
             </div>
           )}
         </div>
+        {data.editable && (
+          <div className="lineup-variant-actions">
+            <Button className="ghost compact" disabled={disabled} onClick={swapTeams}>
+              <RefreshCw size={14} />
+              Поменять цвета команд
+            </Button>
+          </div>
+        )}
         {preview && ['community', 'game'].includes(choice) && (
           <div className="tactics-variants" role="group" aria-label="Варианты составов">
             <span className="muted caption">Вариант</span>
@@ -695,30 +713,6 @@ export function TacticsScreen({
                 >
                   <Eraser size={15} />
                   Очистить команды
-                </Button>
-                <Button
-                  className="ghost compact"
-                  disabled={disabled}
-                  onClick={() => {
-                    const d = base()
-                    edit({
-                      ...d,
-                      assignments: Object.fromEntries(
-                        Object.entries(assignments).map(([id, team]) => [
-                          id,
-                          team === 'white' ? 'black' : team === 'black' ? 'white' : null,
-                        ]),
-                      ),
-                      placements: Object.fromEntries(
-                        Object.entries(placements).map(([id, p]) => [
-                          id,
-                          { x: 1 - p.x, y: 1 - p.y },
-                        ]),
-                      ),
-                    })
-                  }}
-                >
-                  Поменять цвета команд
                 </Button>
                 {mine && proposals.editable && (
                   <Button

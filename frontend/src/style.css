@@ -35,9 +35,9 @@
 .lineup-workspace > section {
   min-width: 0;
 }
-.lineup-variant-picker {
+.panel.lineup-variant-picker {
   margin: 0;
-  padding: 18px;
+  padding: 16px;
 }
 .lineup-variant-controls {
   display: grid;
@@ -76,10 +76,22 @@
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
 }
-.lineup-proposal-buttons .button {
+.lineup-proposal-buttons .button.compact {
   font-size: 12px;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.lineup-proposal-buttons .button svg {
+  flex-shrink: 0;
+}
+.lineup-variant-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 .lineup-proposal-note {
   margin: 12px 0 0;
@@ -392,10 +404,10 @@
   background: var(--strength-fill);
   border: 1px solid var(--strength-border);
   border-radius: 8px;
-  padding: 6px 7px;
-  width: 120px;
-  max-width: 27%;
-  gap: 4px;
+  padding: 4px 5px;
+  width: 104px;
+  max-width: 26%;
+  gap: 3px;
   color: #294334;
   box-shadow: 0 2px 5px #314d2f12;
 }
@@ -440,7 +452,7 @@
   margin-top: 14px;
 }
 @media (max-width: 700px) {
-  .lineup-variant-picker {
+  .panel.lineup-variant-picker {
     padding: 13px;
   }
   .lineup-variant-controls {
@@ -452,12 +464,13 @@
   }
   .lineup-proposal-buttons {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
   }
-  .lineup-proposal-buttons .button {
+  .lineup-proposal-buttons .button.compact {
     font-size: 11px;
-    padding: 10px 7px;
+    padding: 9px 7px;
+    min-height: 42px;
     justify-content: center;
   }
   .lineup-proposal-note,
@@ -630,10 +643,10 @@
     height: 560px;
   }
   .tactics-token.lineup-colored-token {
-    width: 98px;
-    max-width: 28%;
-    padding: 5px;
-    gap: 3px;
+    width: 80px;
+    max-width: 26%;
+    padding: 4px;
+    gap: 2px;
   }
   .lineup-colored-token .tactics-alias {
     font-size: 9px;
@@ -672,7 +685,7 @@
     padding: 8px;
     font-size: 7px;
   }
-  .lineup-proposal-buttons .button {
+  .lineup-proposal-buttons .button.compact {
     font-size: 10px;
     padding: 10px 4px;
     gap: 4px;

@@ -84,3 +84,27 @@ test('both teams are placed independently and extra field players remain visible
   for (const p of black) expect(positions[p.registration_id].y).toBeLessThan(0.5)
   for (const p of white) expect(positions[p.registration_id].y).toBeGreaterThan(0.5)
 })
+
+for (const team of ['black', 'white'] as Team[]) {
+  test(`${team}: automatic positions avoid saved cards after a team transfer`, () => {
+    const people = squad()
+    const assignments = assignment(people, team)
+    const original = tacticalLayout(people, assignments)
+    // Another player has a manually saved position where the incoming forward
+    // would otherwise be automatically placed.
+    const saved = { 4: original[7], 9: original[9] }
+    const positions = tacticalLayout(people, assignments, saved)
+    expect(positions[4]).toEqual(saved[4])
+    expect(positions[9]).toEqual(saved[9])
+    expect(positions[7]).not.toEqual(positions[4])
+    for (const p of people) {
+      const a = positions[p.registration_id]
+      expect(a.y >= 0.5).toBe(team === 'white')
+      for (const other of people.filter((q) => q.registration_id !== p.registration_id)) {
+        const b = positions[other.registration_id]
+        expect(Math.abs(a.x - b.x) >= 0.27 || Math.abs(a.y - b.y) >= 0.095).toBe(true)
+      }
+    }
+    expect(tacticalLayout([...people].reverse(), assignments, saved)).toEqual(positions)
+  })
+}

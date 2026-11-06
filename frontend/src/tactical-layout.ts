@@ -17,6 +17,7 @@ const stable = (a: TacticalPlayer, b: TacticalPlayer) => a.registration_id - b.r
 export function tacticalLayout(
   people: TacticalPlayer[],
   assignments: Record<string, Team | null>,
+  placements: Record<string, Point> = {},
 ): Record<string, Point> {
   const result: Record<string, Point> = {}
   for (const team of ['black', 'white'] as Team[]) {
@@ -64,6 +65,45 @@ export function tacticalLayout(
       .filter((p) => p.position === 'keeper')
       .sort(stable)
       .forEach((p, i, keepers) => place(p, (i + 1) / (keepers.length + 1), 0.065))
+  }
+  // Saved positions stay in place. A player moved between teams gets an automatic
+  // position, which must not end up underneath one of those saved cards.
+  const pinned = new Set<number>()
+  for (const p of people) {
+    const point = placements[p.registration_id]
+    if (
+      result[p.registration_id] &&
+      point &&
+      point.y >= 0.5 === (assignments[p.registration_id] === 'white')
+    ) {
+      result[p.registration_id] = point
+      pinned.add(p.registration_id)
+    }
+  }
+  if (!pinned.size) return result
+  const occupied = [...pinned].map((id) => result[id])
+  const overlaps = (a: Point, b: Point) => Math.abs(a.x - b.x) < 0.27 && Math.abs(a.y - b.y) < 0.095
+  for (const p of [...people].sort(stable)) {
+    const preferred = result[p.registration_id]
+    if (!preferred || pinned.has(p.registration_id)) continue
+    if (occupied.some((point) => overlaps(preferred, point))) {
+      const candidates = [preferred]
+      for (let i = 0; i <= 20; i++) {
+        const depth = 0.06 + i * 0.02
+        for (const x of [preferred.x, 0.14, 0.2, 0.5, 0.8, 0.86]) {
+          candidates.push({ x, y: assignments[p.registration_id] === 'black' ? depth : 1 - depth })
+        }
+      }
+      candidates.sort(
+        (a, b) =>
+          (a.x - preferred.x) ** 2 +
+          (a.y - preferred.y) ** 2 -
+          ((b.x - preferred.x) ** 2 + (b.y - preferred.y) ** 2),
+      )
+      result[p.registration_id] =
+        candidates.find((point) => occupied.every((other) => !overlaps(point, other))) ?? preferred
+    }
+    occupied.push(result[p.registration_id])
   }
   return result
 }
