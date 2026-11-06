@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { api } from './api'
 import { PlayerName } from './player-name'
-import { RatingPair } from './rating-mark'
+import { ReviewRatings, type ReviewScores } from './review-ratings'
 
-type Review = { author_id: number; author: string; attack: number | null; defense: number }
+type Review = ReviewScores & { author_id: number; author: string }
 type Reviews = Record<'field' | 'keeper', Review[]>
 
 export function PlayerReviews({ playerId }: { playerId: number }) {
@@ -29,6 +29,12 @@ export function PlayerReviews({ playerId }: { playerId: number }) {
       }}
     >
       <summary>Как оценили другие игроки</summary>
+      {data && (
+        <p className="muted caption review-inclusion-note">
+          Статус показывает участие каждой оценки в текущем общем рейтинге. При совпадении оценок на
+          границе усечения их сохранённый вес делится поровну между авторами.
+        </p>
+      )}
       {loading && <p role="status">Загружаем оценки…</p>}
       {error && (
         <p className="alert error" role="alert">
@@ -46,11 +52,7 @@ export function PlayerReviews({ playerId }: { playerId: number }) {
             {data[position].map((review) => (
               <div className="profile-review" key={review.author_id}>
                 <PlayerName playerId={review.author_id} alias={review.author} />
-                <RatingPair
-                  attack={review.attack}
-                  defense={review.defense}
-                  keeper={position === 'keeper'}
-                />
+                <ReviewRatings review={review} keeper={position === 'keeper'} />
               </div>
             ))}
           </div>

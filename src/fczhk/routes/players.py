@@ -111,7 +111,13 @@ def router(ctx):
     ):
         return {
             position: [
-                {key: row[key] for key in ("author_id", "author", "attack", "defense", "at")}
+                {
+                    key: row[key]
+                    for key in (
+                        "author_id", "author", "attack", "defense", "at",
+                        "attack_weight", "defense_weight",
+                    )
+                }
                 for row in rt.review_data(db, p.id, player_id, position, True)["reviews"]
                 if row["author_id"] != player_id
             ]

@@ -150,7 +150,12 @@ def data(db, match, cfg):
     return dict(
         version=match.version,
         roster_version=match.roster_version,
-        fingerprint=hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest(),
+        fingerprint=hashlib.sha256(
+            json.dumps(
+                {"community_rating_method": ratings.COMMUNITY_RATING_METHOD, "players": inputs},
+                sort_keys=True,
+            ).encode()
+        ).hexdigest(),
         players=inputs,
         assignments=assignments,
         official_players=frozen,

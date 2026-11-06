@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections import Counter
 from fractions import Fraction
 
 from sqlalchemy import select
@@ -23,6 +24,28 @@ from .models import (
 )
 from .schemas import BalanceSettings, RatingValues
 from .services import DomainError, audit, entries
+
+COMMUNITY_RATING_METHOD = "trimmed_mean_20_percent"
+
+
+def trimmed_values(values: list[int]) -> list[int]:
+    cut = len(values) // 5
+    return sorted(values)[cut : len(values) - cut]
+
+
+def trimmed_average(values: list[int]) -> Fraction | None:
+    """Average thousandth-unit votes after dropping floor(n / 5) from each tail."""
+    if not values:
+        return None
+    middle = trimmed_values(values)
+    return Fraction(sum(middle), len(middle) * 1000)
+
+
+def trimmed_vote_weights(values: list[int]) -> dict[int, Fraction]:
+    """Share retained weight fairly between identical boundary values."""
+    counts = Counter(values)
+    retained = Counter(trimmed_values(values))
+    return {value: Fraction(retained[value], count) for value, count in counts.items()}
 
 
 def lock_ratings(db: Session):
@@ -122,20 +145,20 @@ def aggregate(db: Session, ids: list[int]) -> dict:
         key = (canonical[row.author_id], canonical[row.player_id], row.position)
         if key[0] != key[1]:
             votes[key] = (row.attack * 100 if row.attack is not None else None, row.defense * 100)
-    totals = {}
+    grouped = {}
     for (_, pid, pos), (attack, defense) in votes.items():
-        values = totals.setdefault((pid, pos), [0, 0, 0])
+        attacks, defenses = grouped.setdefault((pid, pos), ([], []))
         if attack is not None:
-            values[0] += attack
-        values[1] += defense
-        values[2] += 1
+            attacks.append(attack)
+        defenses.append(defense)
     return {
         key: (
-            Fraction(attack, count * 1000) if key[1] == "field" else None,
-            Fraction(defense, count * 1000),
-            count,
+            trimmed_average(attacks) if key[1] == "field" else None,
+            trimmed_average(defenses),
+            # Count submitted authors, including voices trimmed in one metric.
+            len(defenses),
         )
-        for key, (attack, defense, count) in totals.items()
+        for key, (attacks, defenses) in grouped.items()
     }
 
 
@@ -192,7 +215,7 @@ def field_opinions(db: Session, ids: list[int]) -> list[dict]:
 
 
 def community_leaderboards(db: Session) -> dict:
-    """Current mean community scores, excluding unrated positions."""
+    """Current trimmed community scores, excluding unrated positions."""
     people = [
         p
         for p in db.scalars(select(Player).where(Player.merged_into.is_(None)))
@@ -329,12 +352,21 @@ def review_data(db: Session, actor: int, target: int, position: str, admin: bool
                 )
             )
             author_id = canonical[author.id]
+            if author_id == target:
+                continue
             reviews[author_id] = dict(
                 author_id=author_id,
                 author=people[author_id].alias,
                 **rating_data(rating),
                 history=[rating_data(h) for h in history],
             )
+        for kind in ("attack", "defense"):
+            values = [round(row[kind] * 1000) for row in reviews.values() if row[kind] is not None]
+            weights = trimmed_vote_weights(values)
+            for row in reviews.values():
+                row[f"{kind}_weight"] = (
+                    float(weights[round(row[kind] * 1000)]) if row[kind] is not None else None
+                )
         result["reviews"] = sorted(
             reviews.values(), key=lambda row: (row["author"], row["author_id"])
         )
@@ -473,7 +505,12 @@ def inputs_for(db: Session, match: Match) -> tuple[list[dict], str]:
     field = [r for r in entries(db, match.id) if r.selected and r.position == "field"]
     ratings = effective(db, field)
     inputs = [ratings[r.id] for r in sorted(field, key=lambda r: r.id)]
-    fingerprint = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"community_rating_method": COMMUNITY_RATING_METHOD, "players": inputs},
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
     # Names are display-only; changing an alias doesn't silently invalidate a rating snapshot.
     for row in inputs:
         row["alias"] = db.get(Player, row["player_id"]).alias
@@ -495,6 +532,7 @@ def game_inputs_for(db: Session, match: Match) -> tuple[list[dict], str]:
     ]
     key = {
         "model": game_ratings.MODEL_VERSION,
+        "community_rating_method": COMMUNITY_RATING_METHOD,
         "margin": 0.0,
         "game_day": match.game_day,
         "prior": prior,
@@ -705,6 +743,7 @@ def team_rating_data(db: Session, match: Match, approval=False) -> dict:
     )
     return dict(
         inputs=inputs,
+        community_rating_method=COMMUNITY_RATING_METHOD,
         fingerprint=run.fingerprint if run else fingerprint,
         roster_version=match.roster_version,
         method=("auto-game-edited" if draft.edited else "auto-game")

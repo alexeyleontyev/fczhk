@@ -173,6 +173,25 @@ test('transferred guests remain clickable; compact controls fit and team colors 
   await page.getByRole('tab', { name: 'Поле', exact: true }).click()
   await expect(tokenCard).toHaveClass(/white/)
   await guest.click({ trial: true })
+  // A formula change invalidates the saved draft, but refreshing its scores
+  // must preserve the user's teams and valid manual positions.
+  const stored = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith('fczhk-lineup-v1:'))!
+    const draft = JSON.parse(localStorage.getItem(key)!)
+    draft.fingerprint = 'b'.repeat(64)
+    draft.placements['901'] = { x: 0.8, y: 0.74 }
+    localStorage.setItem(key, JSON.stringify(draft))
+    return { key, assignments: draft.assignments, placements: draft.placements }
+  })
+  await page.reload()
+  await page.getByLabel('Вариант состава').selectOption('draft')
+  await expect(page.getByRole('button', { name: 'Обновить прикидку', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Обновить прикидку', exact: true }).click()
+  const refreshed = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), stored.key)
+  expect(refreshed.assignments).toEqual(stored.assignments)
+  expect(refreshed.placements).toEqual(stored.placements)
+  await expect(tokenCard).toHaveClass(/white/)
+  await guest.click({ trial: true })
   expect((await (await request.get(`/api/matches/${m.id}`, { headers })).json()).version).toBe(
     m.version,
   )

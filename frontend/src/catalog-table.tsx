@@ -3,6 +3,7 @@ import { ArrowUpRight, Check } from 'lucide-react'
 import { api, ApiError } from './api'
 import { PlayerName } from './player-name'
 import { RatingMark, ratingNumber } from './rating-mark'
+import { CommunityRatingExplanation } from './community-rating-explanation'
 import type { OwnRating, Player, Position } from './types'
 
 type Draft = { attack: string; defense: string; revision: number }
@@ -191,6 +192,7 @@ export function CatalogTable({
         <h2>Каталог игроков</h2>
         <span className="muted">{players.length}</span>
       </div>
+      <CommunityRatingExplanation />
       <div className="table-scroll" tabIndex={0} role="region" aria-label="Таблица оценок игроков">
         <table className={`catalog-table ${keeper ? 'keeper-catalog' : ''}`}>
           <colgroup>

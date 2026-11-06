@@ -35,6 +35,10 @@
 .lineup-workspace > section {
   min-width: 0;
 }
+.rating-averages > .community-rating-explanation {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+}
 .panel.lineup-variant-picker {
   margin: 0;
   padding: 16px;
@@ -769,15 +773,55 @@ a {
   margin-top: 16px;
 }
 .profile-review {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
   padding: 8px 0;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
 .profile-review .rating-pair {
   flex-shrink: 0;
+}
+.review-inclusion-note {
+  margin: 8px 0 12px;
+}
+.review-rating-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 150px;
+  width: max-content;
+  max-width: 100%;
+}
+.review-rating-pair.keeper {
+  grid-template-columns: 1fr;
+  min-width: 70px;
+}
+.review-score {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+.review-score-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+.review-score small {
+  font-size: 9px;
+  color: #607969;
+  white-space: nowrap;
+}
+.review-score.excluded .review-score-value {
+  color: #8c7569;
+  text-decoration: line-through;
+}
+.review-score.excluded small,
+.review-score.partial small {
+  color: #92633c;
 }
 .recent-form {
   margin-top: 16px;

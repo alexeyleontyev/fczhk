@@ -4,6 +4,7 @@ import { seasonQuery } from './seasons'
 import { ResultsTable } from './results-table'
 import { DEFAULT_MIN_GAMES, filterPlayerNames, filterPlayers } from './player-list-filters'
 import { RatingPair, RatingMark } from './rating-mark'
+import { CommunityRatingExplanation } from './community-rating-explanation'
 
 type ResultMetric = 'points' | 'win_rate' | 'goals' | 'assists' | 'goal_assist'
 type CommunityMetric = 'field_total' | 'field_attack' | 'field_defense' | 'keeper_defense'
@@ -222,14 +223,11 @@ export function Leaderboards({
               <h2>Рейтинг сообщества</h2>
             </div>
           </div>
-          <details className="compact-explanation">
-            <summary>Оценки общие для всех сезонов</summary>
-            <p className="muted caption">
-              Оценки сообщества общие для всех сезонов. Средние оценки за полевую игру или игру в
-              воротах. В общем зачёте складываются средние оценки атаки и защиты; игроки без оценок
-              по выбранному показателю не показаны.
-            </p>
-          </details>
+          <CommunityRatingExplanation />
+          <p className="muted caption">
+            Оценки сообщества общие для всех сезонов. Σ — атака + защита. Игроки без оценок по
+            выбранному показателю не показаны.
+          </p>
           <Filters
             options={communityOptions}
             selected={communityMetric}

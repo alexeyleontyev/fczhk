@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import { PlayerName } from './player-name'
 import { DEFAULT_MIN_GAMES, filterPlayers } from './player-list-filters'
+import { CommunityRatingExplanation } from './community-rating-explanation'
+import { ReviewRatings } from './review-ratings'
 import type {
   Average,
   BalanceRun,
@@ -157,6 +159,7 @@ export function RatingAverages({ player }: { player: Player }) {
           Оценивших: полевой {player.ratings.field.count}, вратарь {player.ratings.keeper.count}
         </small>
       )}
+      <CommunityRatingExplanation />
     </div>
   )
 }
@@ -212,7 +215,13 @@ function ScoreInputs({
   )
 }
 
-type Review = Average & { revision: number; at: string; source?: 'sheet' }
+type Review = Average & {
+  revision: number
+  at: string
+  source?: 'sheet'
+  attack_weight?: number | null
+  defense_weight?: number | null
+}
 type ReviewData = {
   own: Review | null
   imported_own?: Average
@@ -446,13 +455,18 @@ export function RatingFlow({
                     <PlayerName playerId={review.author_id} alias={review.author} />
                     {review.source === 'sheet' ? ' · из таблицы' : ''}
                   </strong>
-                  <span>
+                  {review.defense !== null ? (
+                    <ReviewRatings
+                      review={{ ...review, defense: review.defense }}
+                      keeper={position === 'keeper'}
+                    />
+                  ) : (
                     <RatingPair
                       attack={review.attack ?? null}
                       defense={review.defense ?? null}
                       keeper={position === 'keeper'}
                     />
-                  </span>
+                  )}
                   {review.source !== 'sheet' && (
                     <details>
                       <summary>История изменений</summary>

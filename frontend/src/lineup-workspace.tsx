@@ -7,6 +7,7 @@ import { PlayerName } from './player-name'
 import { ratingNumber } from './rating-mark'
 import { LineupRatings } from './lineup-ratings'
 import { LineupTeams, LineupTotals } from './lineup-teams'
+import { CommunityRatingExplanation } from './community-rating-explanation'
 import { strengthScale } from './lineup-strength'
 import { tacticalLayout, type Point } from './tactical-layout'
 import { gameSummary, teamSummary } from './confirmation-summary'
@@ -379,12 +380,23 @@ export function TacticsScreen({
         ]
       }),
     )
+    const nextPlacements = Object.fromEntries(
+      data!.players.flatMap((p) => {
+        const old = oldPlayers.get(p.player_id)
+        const point = old && old.position === p.position ? placements[old.registration_id] : null
+        return point &&
+          next[p.registration_id] &&
+          point.y >= 0.5 === (next[p.registration_id] === 'white')
+          ? [[p.registration_id, point]]
+          : []
+      }),
+    )
     edit({
       version: data!.version,
       roster_version: data!.roster_version,
       fingerprint: data!.fingerprint,
       assignments: next,
-      placements: {},
+      placements: nextPlacements,
       source: 'manual',
       variant: 0,
     })
@@ -594,6 +606,7 @@ export function TacticsScreen({
               : 'Приём и изменение предложений закрыты: игра уже началась.'}
           </p>
         )}
+        <CommunityRatingExplanation savedLineups />
       </section>
       {stale && (
         <div role="alert" className="alert">
