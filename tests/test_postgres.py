@@ -400,13 +400,18 @@ def test_prediction_history_migration_preserves_merged_names_and_new_predictions
     from fczhk.db import Base, now
     from fczhk.models import Prediction, PredictionBaseline
     from fczhk.predictions import standings
-    from fczhk.services import audit, merge_guest
+    from fczhk.services import audit
 
     factory, pid = pg
     with factory() as db, db.begin():
         source = db.scalar(select(Player).where(Player.alias == "Виталя пьяный"))
         source_id = source.id
-        merge_guest(db, pid, source_id, pid)
+        # Build the historical link without querying later rating columns.
+        source_alias, target_alias = source.alias, db.get(Player, pid).alias
+        source.alias, source.merged_into = f"Архив {source_id}", pid
+        db.flush()
+        audit(db, pid, "guest.linked", guest_id=source_id, target_id=pid,
+              guest_alias=source_alias, previous_target_alias=target_alias)
         db.get(Player, pid).alias = "Виталя Легенда 17"
         audit(db, pid, "player.renamed", old="Виталя пьяный", new="Виталя Легенда 17")
         # The fixture predates columns introduced by later Match migrations.
