@@ -41,6 +41,8 @@ import { AdministratorsPanel } from './administrators'
 import { defaultSeason } from './seasons'
 import type { Match, Template, History, Run } from './types'
 import './style.css'
+import './protocol.css'
+import './atlas.css'
 
 function App() {
   const {
@@ -121,6 +123,20 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    if (!demo || !me) return
+    const url = new URL(location.href)
+    const view = url.searchParams.get('view')
+    if (!view || !['archive', 'players', 'predictions', 'profile', 'settings'].includes(view)) return
+    url.searchParams.delete('view')
+    window.history.replaceState(window.history.state, '', url)
+    if (view === 'settings') {
+      if (me.is_admin) void run(async () => {
+        setTemplate(await api<Template>('/template'))
+        setTab(view)
+      })
+    } else setTab(view)
+  }, [demo, me?.id])
   const isAdmin = Boolean(me?.is_admin)
   const archived = isArchivedMatch(m)
   const gameHome = selectedId === null && (!m || archived)
@@ -177,7 +193,7 @@ function App() {
   if (!me)
     return (
       <div className="welcome">
-        <div className="eyebrow">ФУТБОЛЬНОЕ СООБЩЕСТВО</div>
+        <img src="/assets/club/crest.svg" className="login-crest" alt="Жёлтый Колобок" />
         <h1>
           Пятница.
           <br />
@@ -212,112 +228,7 @@ function App() {
       </div>
     )
 
-  const content = (
-    <div className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="/" aria-label="ФКЖК главная">
-          <span className="brand-ball">Ф</span>
-          <span>
-            ФКЖК<span className="brand-caption">ПЯТНИЧНЫЙ ФУТБОЛ</span>
-          </span>
-        </a>
-        <div className="user-chip">
-          <span className="avatar small">{initial(me.alias)}</span>
-          <div>
-            <PlayerName playerId={me.id} alias={me.alias} />
-            <small>{me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок'}</small>
-          </div>
-        </div>
-      </header>
-      {demo && (
-        <div className="demo-banner">
-          <span>Демо · без реальных платежей и публикаций</span>
-          <button
-            disabled={busy}
-            onClick={() => {
-              void run(logout)
-            }}
-          >
-            Сменить роль
-          </button>
-        </div>
-      )}
-      <nav className="navigation" aria-label="Главная навигация" hidden={tab === 'auction'}>
-        {[
-          ['game', CalendarDays, 'Игра'],
-          ['archive', Clock3, 'Архив'],
-          ['players', Users, 'Игроки'],
-          ['profile', CircleUserRound, 'Профиль'],
-          ['predictions', Trophy, 'Прогнозы'],
-        ].map(([id, Icon, label]) => {
-          const I = Icon as typeof Users
-          return (
-            <button
-              key={id as string}
-              className={activeNavigation === id ? 'active' : ''}
-              onClick={() => setTab(id as string)}
-            >
-              <I size={18} />
-              <span>{label as string}</span>
-            </button>
-          )
-        })}
-        {isAdmin && (
-          <button
-            className={tab === 'settings' ? 'active' : ''}
-            aria-label="Настройки"
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                setTemplate(await api<Template>('/template'))
-                setTab('settings')
-              })
-            }
-          >
-            <Settings2 size={18} />
-            <span>Управление</span>
-          </button>
-        )}
-      </nav>
-      {canBack && !nativeBack && !modal && (
-        <Button className="ghost compact back-navigation" onClick={back}>
-          <ArrowLeft size={18} /> Назад
-        </Button>
-      )}
-      <main>
-        {!modal && <RatingDraftBar actor={me.id} refresh={() => refresh(true)} />}
-        {notice && !modal && (
-          <div
-            role={notice.error ? 'alert' : 'status'}
-            className={`alert ${notice.error ? 'error' : 'success'}`}
-          >
-            <span>{notice.text}</span>
-            <button aria-label="Скрыть сообщение" onClick={() => setNotice(null)}>
-              <X size={16} />
-            </button>
-          </div>
-        )}
-        {['game', 'lineup', 'field', 'prediction', 'auction'].includes(tab) && lastUpdated && (
-          <div
-            className={`sync-status ${syncError ? 'error' : ''}`}
-            aria-label="Состояние обновления игры"
-          >
-            <span>
-              {syncError ||
-                `Обновлено ${new Date(lastUpdated).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК`}
-            </span>
-            {syncError && (
-              <button
-                className="text-button"
-                disabled={busy}
-                onClick={() => void run(() => refresh(true))}
-              >
-                Повторить обновление
-              </button>
-            )}
-          </div>
-        )}
-        {m &&
+  const matchTabs = m &&
           !gameHome &&
           ['game', 'lineup', 'field', 'prediction'].includes(tab) &&
           (!archived || ['lineup', 'field'].includes(tab)) && (
@@ -336,7 +247,37 @@ function App() {
                 Поле
               </button>
             </div>
-          )}
+          )
+
+  const content = (
+    <div className="app-shell" data-view={tab}>
+      <header className="topbar mast">
+        <a className="brand" href="/" aria-label="ФКЖК главная">
+          <span className="word">{tab === 'game' && !archived ? 'ФКЖК' : 'Жёлтый Колобок'}</span>
+        </a>
+        <div className="mast-tools">
+          {tab !== 'game' || archived ? <span className="fine">ФКЖК · с 2019</span> : null}
+      {canBack && !nativeBack && !modal && (
+        <Button className="ghost compact back-navigation" onClick={back}>
+          <ArrowLeft size={18} /> Назад
+        </Button>
+      )}
+        </div>
+      </header>
+      <main>
+        {!modal && <RatingDraftBar actor={me.id} refresh={() => refresh(true)} />}
+        {notice && !modal && (
+          <div
+            role={notice.error ? 'alert' : 'status'}
+            className={`alert ${notice.error ? 'error' : 'success'}`}
+          >
+            <span>{notice.text}</span>
+            <button aria-label="Скрыть сообщение" onClick={() => setNotice(null)}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        {['lineup', 'field'].includes(tab) && matchTabs}
         {['lineup', 'field'].includes(tab) && m && (
           <TacticsScreen
             key={`${m.id}:${me.id}`}
@@ -389,6 +330,8 @@ function App() {
         )}
         {['game', 'prediction'].includes(tab) && !gameHome && (
           <GameScreen
+            matchTabs={matchTabs}
+            openPrevious={openGame}
             focusPrediction={tab === 'prediction'}
             saveImage={async (file) => {
               let saved = false
@@ -473,7 +416,8 @@ function App() {
         )}
         {tab === 'settings' && isAdmin && template && (
           <>
-            <div className="page-heading">
+            <div className="page-heading"><div>
+              <div className="eyebrow">Управление клубом</div>
               <h1>
                 {managementTab === 'schedule'
                   ? 'Расписание и шаблон'
@@ -483,6 +427,7 @@ function App() {
                       ? 'Администраторы'
                       : 'Диагностика'}
               </h1>
+              <p className="folio-meta">Доступ администратора</p></div>
             </div>
             <SectionTabs
               label="Разделы управления"
@@ -531,11 +476,87 @@ function App() {
           </>
         )}
       </main>
-      <footer>
-        <span>ФКЖК</span>
-        <span>Пятница объединяет.</span>
-        <span>Время — московское</span>
+      <footer className="club-utilities">
+        <div className="user-chip">
+          <span className="avatar small">{initial(me.alias)}</span>
+          <div>
+            <PlayerName playerId={me.id} alias={me.alias} />
+            <small>{me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок'}</small>
+          </div>
+        </div>
+        {['game', 'lineup', 'field', 'prediction', 'auction'].includes(tab) && lastUpdated && (
+          <div
+            className={`sync-status ${syncError ? 'error' : ''}`}
+            aria-label="Состояние обновления игры"
+          >
+            <span>
+              {syncError ||
+                `Обновлено ${new Date(lastUpdated).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК`}
+            </span>
+            {syncError && (
+              <button
+                className="text-button"
+                disabled={busy}
+                onClick={() => void run(() => refresh(true))}
+              >
+                Повторить обновление
+              </button>
+            )}
+          </div>
+        )}
+      {demo && (
+        <div className="demo-banner">
+          <span><a href="/assets/club/screens.html">Демо</a> · без реальных платежей и публикаций</span>
+          <button
+            disabled={busy}
+            onClick={() => {
+              void run(logout)
+            }}
+          >
+            Сменить роль
+          </button>
+        </div>
+      )}
       </footer>
+      <nav className="navigation" aria-label="Главная навигация" hidden={tab === 'auction'}>
+        {[
+          ['game', CalendarDays, 'Игра'],
+          ['archive', Clock3, 'Архив'],
+          ['players', Users, 'Игроки'],
+          ['profile', CircleUserRound, 'Профиль'],
+          ['predictions', Trophy, 'Прогнозы'],
+        ].map(([id, Icon, label]) => {
+          const I = Icon as typeof Users
+          return (
+            <button
+              key={id as string}
+              aria-current={activeNavigation === id ? 'page' : undefined}
+              className={activeNavigation === id ? 'active' : ''}
+              onClick={() => setTab(id as string)}
+            >
+              <I size={18} />
+              <span>{label as string}</span>
+            </button>
+          )
+        })}
+        {isAdmin && (
+          <button
+            className={tab === 'settings' ? 'active' : ''}
+            aria-label="Настройки"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                setTemplate(await api<Template>('/template'))
+                setTab('settings')
+              })
+            }
+          >
+            <Settings2 size={18} />
+            <span>Управление</span>
+          </button>
+        )}
+      </nav>
+
       {notice && modal && (
         <div
           role={notice.error ? 'alert' : 'status'}

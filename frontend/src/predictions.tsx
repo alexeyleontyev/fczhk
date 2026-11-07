@@ -386,7 +386,7 @@ export function PredictionStandings({
       <div className="page-heading">
         <div>
           <div className="eyebrow">КОНКУРС ПРОГНОЗОВ</div>
-          <h1>{seasonFilter.season ? `Зачёт сезона ${seasonFilter.season}` : 'Общий зачёт'}</h1>
+          <h1>Прогнозы</h1><h2 className="folio-meta">{seasonFilter.season ? `Зачёт сезона ${seasonFilter.season}` : 'Общий зачёт'}</h2>
         </div>
         <button
           className="button secondary compact"

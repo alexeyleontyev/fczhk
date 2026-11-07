@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useLastCompleted } from './use-last-completed'
 import { SectionTabs } from './section-tabs'
-import { ArrowUpRight, Check, MapPin, Plus, RefreshCw } from 'lucide-react'
+import { ArrowUpRight, Check, Plus, RefreshCw } from 'lucide-react'
 import { api } from './api'
 import { Button, Empty } from './ui'
 import { date, time, money, status } from './format'
@@ -17,8 +18,19 @@ import { CollectionImageEditor } from './collection-image'
 import { ArchivedGameScreen, isArchivedMatch } from './archived-game-screen'
 import type { Match, Player, Position, Run, History } from './types'
 
+function PreviousGameRow({ revision, open }: { revision: number; open: (id: number) => void }) {
+  const { match } = useLastCompleted(revision)
+  if (!match?.result) return null
+  return <button className="previous-row" onClick={() => open(match.id)}>
+    <span><strong>Прошлая игра</strong><small>{date(match.starts_at)} · Белые — Чёрные</small></span>
+    <b>{match.result.score.white} : {match.result.score.black} ›</b>
+  </button>
+}
+
 export function GameScreen({
   m,
+  matchTabs,
+  openPrevious,
   isAdmin,
   busy,
   run,
@@ -37,6 +49,8 @@ export function GameScreen({
   removeImage,
 }: {
   m: Match | null
+  matchTabs: ReactNode
+  openPrevious: (id: number) => void
   isAdmin: boolean
   busy: boolean
   run: Run
@@ -62,7 +76,7 @@ export function GameScreen({
       return () => cancelAnimationFrame(frame)
     }
   }, [focusPrediction, m?.id, m?.status])
-  const [section, setSection] = useState('overview')
+  const [section, setSection] = useState(() => new URLSearchParams(location.search).get('section') === 'result' ? 'result' : 'overview')
   const activeSection =
     section === 'result' && !['approved', 'completed'].includes(m?.status || '')
       ? 'overview'
@@ -89,169 +103,9 @@ export function GameScreen({
         openLineup={openLineup}
       />
     )
-  return (
-    <>
-      <div className="page-heading">
-        <div>
-          <div className="eyebrow">НАШ КЛУБ · КАЖДУЮ ПЯТНИЦУ</div>
-          <h1>
-            Выходим на поле<span className="orange">.</span>
-          </h1>
-        </div>
-        <div className="inline">
-          <button
-            className="icon-button"
-            aria-label="Обновить игру"
-            disabled={busy}
-            onClick={() => void run(refresh)}
-          >
-            <RefreshCw size={18} />
-          </button>
-          {isAdmin && !m && (
-            <Button className="secondary compact" onClick={() => setModal('create')}>
-              <Plus size={17} /> Новая игра
-            </Button>
-          )}
-        </div>
-      </div>
-      <CollectionCountdown refresh={refresh} currentGame={m} />
-      {!m ? (
-        <Empty
-          title="Скоро новая игра"
-          text="Когда администратор откроет сбор, здесь появится запись."
-        />
-      ) : (
-        <>
-          <section className="match-hero">
-            <div className="hero-copy">
-              <span className={`status-pill ${m.status}`}>
-                <span />
-                {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
-                  ? 'Запланирована'
-                  : status[m.status]}
-              </span>
-              <h2>
-                {date(m.starts_at)}
-                <span>
-                  {m.historical ? (
-                    'Время неизвестно'
-                  ) : (
-                    <>
-                      {time(m.starts_at)} <small>МСК</small>
-                    </>
-                  )}
-                </span>
-              </h2>
-              {!m.historical && (
-                <>
-                  <p>
-                    <MapPin size={17} />
-                    {m.location}
-                  </p>
-                  <div className="hero-bottom">
-                    <span>
-                      {money(m.cost)} <small>за игру</small>
-                    </span>
-                    <span>
-                      8 + 1 <small>в команде</small>
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="pitch" aria-hidden="true">
-              <div className="pitch-middle" />
-              <div className="pitch-box left" />
-              <div className="pitch-box right" />
-              <span className="pitch-dot one" />
-              <span className="pitch-dot two" />
-              <span className="pitch-dot three" />
-              <span className="pitch-dot four" />
-              <span className="pitch-dot five" />
-            </div>
-          </section>
-          {m.status === 'cancelled' && (
-            <p className="alert" role="status">
-              Игра отменена: {m.cancellation_reason || 'Обратитесь к организатору'}. История оплат
-              сохранена. Возврат или перенос оплаты согласуйте с организатором.
-            </p>
-          )}
-          <SectionTabs
-            label="Разделы игры"
-            value={activeSection}
-            onChange={setSection}
-            options={[
-              { value: 'overview', label: 'Обзор' },
-              ...(['approved', 'completed'].includes(m.status)
-                ? [{ value: 'result', label: 'Итог' }]
-                : []),
-            ]}
-          >
-            <div hidden={activeSection !== 'overview'}>
-              {isAdmin && (
-                <GameControls
-                  match={m}
-                  busy={busy}
-                  run={run}
-                  action={action}
-                  setModal={setModal}
-                  setHistory={setHistory}
-                  openLineup={openLineup}
-                />
-              )}
-              {isAdmin && m.status === 'draft' && (
-                <section className="panel">
-                  <CollectionImageEditor
-                    match={m}
-                    busy={busy}
-                    save={saveImage}
-                    remove={removeImage}
-                  />
-                </section>
-              )}
-              {['finalized', 'approved'].includes(m.status) && (
-                <div className="game-prediction-top" id="prediction">
-                  {prediction}
-                </div>
-              )}
-            </div>
-            <div className="content-grid compact-game">
-              <div className="primary-column">
-                {!['finalized', 'approved'].includes(m.status) && prediction && (
-                  <details
-                    className="compact-explanation panel"
-                    hidden={activeSection !== 'overview'}
-                  >
-                    <summary>Прогноз на игру</summary>
-                    {prediction}
-                  </details>
-                )}
-                {(m.auction_status ||
-                  (!m.result && ['finalized', 'approved'].includes(m.status))) && (
-                  <div hidden={activeSection !== 'overview'}>
-                    <AuctionEntry
-                      key={`auction-${m.id}`}
-                      match={m}
-                      admin={isAdmin}
-                      busy={busy}
-                      onOpen={() => openAuction(m.id)}
-                      onStatusChange={() => void run(refresh)}
-                    />
-                  </div>
-                )}
-                {['approved', 'completed'].includes(m.status) && (
-                  <div hidden={activeSection !== 'result'}>
-                    <MatchResult
-                      key={`result-${m.id}`}
-                      match={m}
-                      players={players}
-                      admin={isAdmin}
-                      busy={busy}
-                      run={run}
-                    />
-                  </div>
-                )}
-                <section className="panel" hidden={activeSection !== 'overview'}>
+  const poster = m && activeSection === 'overview' && !focusPrediction && ['open', 'draft'].includes(m.status)
+  const registrationPanel = m && (
+<section className={`panel game-registration ${poster ? 'posterbody' : ''}`} hidden={activeSection !== 'overview'}>
                   <div className="section-title">
                     <h2>
                       {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
@@ -301,13 +155,14 @@ export function GameScreen({
                               <small> / {limit}</small>
                             </strong>
                           </div>
-                          <div className="meter">
-                            <span style={{ width: `${Math.min(100, (amount / limit) * 100)}%` }} />
+                          <div className="slots" aria-hidden="true">
+                            {Array.from({ length: limit }, (_, i) => <i key={i} className={i < amount ? 'occupied' : undefined} />)}
                           </div>
                         </div>
                       )
                     })}
                   </div>
+                  <details className="registration-help"><summary>Порядок записи и оплаты</summary>
                   <p className="muted caption">
                     {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
                       ? 'Этот список виден только администраторам. При открытии сбора игроки займут первые места в очереди. Оплату подтверждает администратор.'
@@ -315,6 +170,7 @@ export function GameScreen({
                         ? 'В основном списке — первые записавшиеся полевые и вратари. При утверждении пройдут игроки с оплатой, подтверждённой администратором, по времени записи.'
                         : 'Самостоятельная запись закрыта. Изменения вносит администратор.'}
                   </p>
+                  </details>
                   {m.status === 'open' && (
                     <div className="join-box">
                       {mine ? (
@@ -416,6 +272,161 @@ export function GameScreen({
                     </div>
                   )}
                 </section>
+  )
+  return (
+    <>
+      <div className={m ? "game-refresh" : "page-heading"}>
+        <div>
+          <div className="eyebrow">НАШ КЛУБ · КАЖДУЮ ПЯТНИЦУ</div>
+          {!m && <h1>Выходим на поле.</h1>}
+        </div>
+        <div className="inline">
+          <button
+            className="icon-button"
+            aria-label="Обновить игру"
+            disabled={busy}
+            onClick={() => void run(refresh)}
+          >
+            <RefreshCw size={18} />
+          </button>
+          {isAdmin && !m && (
+            <Button className="secondary compact" onClick={() => setModal('create')}>
+              <Plus size={17} /> Новая игра
+            </Button>
+          )}
+        </div>
+      </div>
+      <CollectionCountdown refresh={refresh} currentGame={m} />
+      {!m ? (
+        <Empty
+          title="Скоро новая игра"
+          text="Когда администратор откроет сбор, здесь появится запись."
+        />
+      ) : (
+        <>
+          <section className={`match-hero ${activeSection === 'result' || focusPrediction || !['open', 'draft'].includes(m.status) ? 'protocol-match' : ''}`} aria-label="Карточка матча">
+            <img className="poster-crest" src="/assets/club/crest.webp" alt="" />
+            <div className="hero-copy">
+              <h1 className="poster-kicker" aria-label="Выходим на поле.">{poster ? 'Следующая игра' : 'Игра клуба'}</h1>
+              <span className={`status-pill ${m.status}`}>
+                <span />
+                {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
+                  ? 'Запланирована'
+                  : status[m.status]}
+              </span>
+              <h2>
+                <strong className="poster-date">{date(m.starts_at).split(' ').map((part) => <span key={part}>{part}</span>)}</strong>
+              </h2>
+              <p className="poster-when">
+                <span>{m.historical ? 'Время неизвестно' : new Intl.DateTimeFormat('ru-RU', {weekday:'short', timeZone:'Europe/Moscow'}).format(new Date(m.starts_at))+' · '+time(m.starts_at)}</span>
+                {!m.historical && <span>{m.location}</span>}
+              </p>
+              {!m.historical && (
+                <>
+                  <div className="hero-bottom">
+                    <span>
+                      {money(m.cost)} <small>за игру</small>
+                    </span>
+
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="pitch" aria-hidden="true">
+              <div className="pitch-middle" />
+              <div className="pitch-box left" />
+              <div className="pitch-box right" />
+              <span className="pitch-dot one" />
+              <span className="pitch-dot two" />
+              <span className="pitch-dot three" />
+              <span className="pitch-dot four" />
+              <span className="pitch-dot five" />
+            </div>
+          </section>
+          {m.status !== 'open' && matchTabs}
+          {m.status === 'cancelled' && (
+            <p className="alert" role="status">
+              Игра отменена: {m.cancellation_reason || 'Обратитесь к организатору'}. История оплат
+              сохранена. Возврат или перенос оплаты согласуйте с организатором.
+            </p>
+          )}
+          <SectionTabs
+            label="Разделы игры"
+            value={activeSection}
+            onChange={setSection}
+            options={[
+              { value: 'overview', label: 'Обзор' },
+              ...(['approved', 'completed'].includes(m.status)
+                ? [{ value: 'result', label: 'Итог' }]
+                : []),
+            ]}
+          >
+            {m.status === 'open' && <>{registrationPanel}{matchTabs}<PreviousGameRow revision={revision} open={openPrevious} /></>}
+            <div hidden={activeSection !== 'overview'}>
+              {isAdmin && (
+                <GameControls
+                  match={m}
+                  busy={busy}
+                  run={run}
+                  action={action}
+                  setModal={setModal}
+                  setHistory={setHistory}
+                  openLineup={openLineup}
+                />
+              )}
+              {isAdmin && m.status === 'draft' && (
+                <section className="panel">
+                  <CollectionImageEditor
+                    match={m}
+                    busy={busy}
+                    save={saveImage}
+                    remove={removeImage}
+                  />
+                </section>
+              )}
+              {['finalized', 'approved'].includes(m.status) && (
+                <div className="game-prediction-top" id="prediction">
+                  {prediction}
+                </div>
+              )}
+            </div>
+            <div className="content-grid compact-game">
+              <div className="primary-column">
+                {!['finalized', 'approved'].includes(m.status) && prediction && (
+                  <details
+                    className="compact-explanation panel"
+                    hidden={activeSection !== 'overview'}
+                  >
+                    <summary>Прогноз на игру</summary>
+                    {prediction}
+                  </details>
+                )}
+                {(m.auction_status ||
+                  (!m.result && ['finalized', 'approved'].includes(m.status))) && (
+                  <div hidden={activeSection !== 'overview'}>
+                    <AuctionEntry
+                      key={`auction-${m.id}`}
+                      match={m}
+                      admin={isAdmin}
+                      busy={busy}
+                      onOpen={() => openAuction(m.id)}
+                      onStatusChange={() => void run(refresh)}
+                    />
+                  </div>
+                )}
+                {['approved', 'completed'].includes(m.status) && (
+                  <div hidden={activeSection !== 'result'}>
+                    <MatchResult
+                      key={`result-${m.id}`}
+                      match={m}
+                      players={players}
+                      admin={isAdmin}
+                      busy={busy}
+                      run={run}
+                    />
+                  </div>
+                )}
+                {m.status !== 'open' && registrationPanel}
                 {mine &&
                   m.status !== 'open' &&
                   !mine.paid &&

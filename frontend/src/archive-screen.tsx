@@ -57,8 +57,8 @@ export function ArchiveScreen({
   return (
     <>
       <div className="page-heading">
-        <div className="eyebrow">НАША ИСТОРИЯ</div>
-        <h1>Все игры</h1>
+        <div><div className="eyebrow">Клубный протокол</div>
+        <h1 aria-label="Все игры">Архив игр</h1><p className="folio-meta">Белые и чёрные · результаты встреч</p></div>
       </div>
       <SeasonSelect {...seasonFilter} />
       <p className="muted caption archive-legend">Счёт: белые : чёрные</p>

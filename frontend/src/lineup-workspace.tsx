@@ -139,7 +139,7 @@ export function TacticsScreen({
   const [ghost, setGhost] = useState<{ id: number; x: number; y: number } | null>(null)
   const initialized = useRef(false)
   const board = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
+  const drag = useRef<{ id: number; x: number; y: number; moved: boolean; pointer: number; offset: Point } | null>(null)
   const suppressClick = useRef(false)
   const changed = useRef(onChanged)
   changed.current = onChanged
@@ -344,18 +344,25 @@ export function TacticsScreen({
       : null
   }
   function pointerDown(e: ReactPointerEvent<HTMLElement>, id: number) {
-    if (disabled || e.button !== 0) return
-    drag.current = { id, x: e.clientX, y: e.clientY, moved: false }
+    if (disabled || e.button !== 0 || drag.current) return
+    const token = e.currentTarget.closest('.tactics-token')
+    const rect = board.current?.getBoundingClientRect()
+    const pos = positions[id]
+    const offset = token && rect && pos
+      ? { x: e.clientX - rect.left - pos.x * rect.width, y: e.clientY - rect.top - pos.y * rect.height }
+      : { x: 0, y: 0 }
+    drag.current = { id, x: e.clientX, y: e.clientY, moved: false, pointer: e.pointerId, offset }
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   function pointerMove(e: ReactPointerEvent<HTMLElement>) {
     const d = drag.current
-    if (!d) return
+    if (!d || d.pointer !== e.pointerId) return
     if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) d.moved = true
-    if (d.moved) setGhost({ id: d.id, x: e.clientX, y: e.clientY })
+    if (d.moved) setGhost({ id: d.id, x: e.clientX - d.offset.x, y: e.clientY - d.offset.y })
   }
   function pointerUp(e: ReactPointerEvent<HTMLElement>) {
     const d = drag.current
+    if (!d || d.pointer !== e.pointerId) return
     drag.current = null
     setGhost(null)
     if (d?.moved) {
@@ -363,7 +370,7 @@ export function TacticsScreen({
       setTimeout(() => {
         suppressClick.current = false
       }, 0)
-      const p = pointAt(e.clientX, e.clientY)
+      const p = pointAt(e.clientX - d.offset.x, e.clientY - d.offset.y)
       if (p) place(d.id, p)
     }
   }
@@ -885,11 +892,12 @@ export function TacticsScreen({
           {people
             .filter((p) => assignments[p.registration_id])
             .map((p) => {
-              const point = positions[p.registration_id]
+              const dragging = ghost?.id === p.registration_id
+              const point = dragging && ghost ? pointAt(ghost.x, ghost.y) ?? positions[p.registration_id] : positions[p.registration_id]
               return (
                 <div
                   key={p.registration_id}
-                  className={`tactics-token lineup-colored-token ${assignments[p.registration_id]} ${selected === p.registration_id ? 'selected' : ''}`}
+                  className={`tactics-token lineup-colored-token ${dragging ? 'is-dragging' : ''} ${assignments[p.registration_id]} ${selected === p.registration_id ? 'selected' : ''}`}
                   style={{ ...color(p), left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
                 >
                   <button
@@ -942,7 +950,7 @@ export function TacticsScreen({
         </p>
         <LineupTotals people={people} assignments={assignments} />
       </section>
-      {ghost && (
+      {ghost && !assignments[ghost.id] && (
         <div className="tactics-drag-ghost" style={{ left: ghost.x, top: ghost.y }}>
           {people.find((p) => p.registration_id === ghost.id)?.alias}
         </div>

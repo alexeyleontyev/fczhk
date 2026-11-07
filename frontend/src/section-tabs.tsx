@@ -1,5 +1,7 @@
 import { useId, type ReactNode } from 'react'
 
+import { useSectionIndicator } from './section-indicator'
+
 export function SectionTabs<T extends string>({
   label,
   value,
@@ -14,10 +16,11 @@ export function SectionTabs<T extends string>({
   children?: ReactNode
 }) {
   const id = useId()
+  const indicator = useSectionIndicator(value)
   const selected = options.find((o) => o.value === value) ?? options[0]
   return (
     <div className="section-workspace">
-      <nav className="section-tabs" role="tablist" aria-label={label} hidden={options.length < 2}>
+      <nav ref={indicator.nav} className="section-tabs" role="tablist" aria-label={label} hidden={options.length < 2}>
         {options.map((o, i) => (
           <button
             key={o.value}
@@ -49,6 +52,7 @@ export function SectionTabs<T extends string>({
             {o.label}
           </button>
         ))}
+        <span ref={indicator.line} className="section-indicator" aria-hidden="true" />
       </nav>
       <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${selected.value}`}>
         {children}

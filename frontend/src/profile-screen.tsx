@@ -32,16 +32,12 @@ export function ProfileScreen({
   return (
     <>
       <div className="page-heading">
-        <div className="eyebrow">ЛИЧНЫЙ КАБИНЕТ</div>
-        <h1>Мой профиль</h1>
+        <div><div className="eyebrow">Мой профиль</div>
+        <h1>{me.alias}</h1><p className="folio-meta">{me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок клуба'}</p></div>
       </div>
       <section className="panel profile-panel">
         <div className="profile-identity">
           <span className="avatar large">{initial(me.alias)}</span>
-          <h2>{me.alias}</h2>
-          <span className="tag">
-            {me.is_owner ? 'Владелец' : isAdmin ? 'Администратор' : 'Игрок клуба'}
-          </span>
           <TelegramIdentity {...me} />
         </div>
         <SectionTabs

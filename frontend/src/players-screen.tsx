@@ -43,10 +43,11 @@ export function PlayersScreen({
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">СВОИ НА ПОЛЕ</div>
+          <div className="eyebrow">Статистика клуба</div>
           <h1>
-            Игроки <span className="muted">{players.length}</span>
+            Игроки
           </h1>
+          <p className="folio-meta">Каталог клуба · {players.length}</p>
         </div>
         <div className="inline wrap">
           {isAdmin && (
