@@ -7,7 +7,7 @@ type Point = {
   date: string
   at: string
   attack: number | null
-  defense: number
+  defense: number | null
   count?: number
   changes?: number
 }
@@ -64,6 +64,15 @@ function smoothPath(points: Coordinate[]) {
   return path
 }
 
+function segmentedPath(points: (Coordinate | null)[]) {
+  const segments: Coordinate[][] = [[]]
+  for (const point of points) {
+    if (point) segments.at(-1)!.push(point)
+    else if (segments.at(-1)!.length) segments.push([])
+  }
+  return segments.map(smoothPath).join(' ')
+}
+
 export function RatingHistory({ playerId }: { playerId: number }) {
   const [data, setData] = useState<History | null>(null)
   const [error, setError] = useState('')
@@ -99,7 +108,11 @@ export function RatingHistory({ playerId }: { playerId: number }) {
 
   useEffect(() => {
     const changed = (event: Event) => {
-      if ((event as CustomEvent<{ path: string }>).detail?.path === `/players/${playerId}/ratings`)
+      const path = (event as CustomEvent<{ path: string }>).detail?.path
+      if (
+        path === `/players/${playerId}/ratings` ||
+        path?.startsWith(`/players/${playerId}/ratings/`)
+      )
         setRevision((value) => value + 1)
     }
     window.addEventListener(DATA_CHANGED, changed)
@@ -323,13 +336,19 @@ export function RatingHistory({ playerId }: { playerId: number }) {
           {metrics.map((metric) => (
             <g className={`rating-history-series ${metric}`} key={metric}>
               <path
-                d={smoothPath(plotted.map((p) => ({ x: x(dayValue(p.date)), y: y(p[metric]!) })))}
+                d={segmentedPath(
+                  plotted.map((p) =>
+                    p[metric] === null ? null : { x: x(dayValue(p.date)), y: y(p[metric]!) },
+                  ),
+                )}
                 clipPath={`url(#${chartId})`}
               />
               {showDots &&
-                visible.map((p) => (
-                  <circle key={p.date} cx={x(dayValue(p.date))} cy={y(p[metric]!)} r={3} />
-                ))}
+                visible
+                  .filter((p) => p[metric] !== null)
+                  .map((p) => (
+                    <circle key={p.date} cx={x(dayValue(p.date))} cy={y(p[metric]!)} r={3} />
+                  ))}
             </g>
           ))}
           {!noChanges && (
@@ -340,15 +359,17 @@ export function RatingHistory({ playerId }: { playerId: number }) {
                 y1={top}
                 y2={bottom}
               />
-              {metrics.map((metric) => (
-                <circle
-                  key={metric}
-                  className={metric}
-                  cx={x(dayValue(chosen.date))}
-                  cy={y(chosen[metric]!)}
-                  r={5}
-                />
-              ))}
+              {metrics
+                .filter((metric) => chosen[metric] !== null)
+                .map((metric) => (
+                  <circle
+                    key={metric}
+                    className={metric}
+                    cx={x(dayValue(chosen.date))}
+                    cy={y(chosen[metric]!)}
+                    r={5}
+                  />
+                ))}
             </g>
           )}
         </svg>

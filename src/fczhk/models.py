@@ -246,6 +246,7 @@ class Rating(Base):
     attack: Mapped[int | None] = mapped_column()
     defense: Mapped[int] = mapped_column()
     revision: Mapped[int] = mapped_column(default=1)
+    withdrawn: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text('false'))
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 
 
@@ -255,6 +256,7 @@ class RatingHistory(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     rating_id: Mapped[int] = mapped_column(ForeignKey("ratings.id"), index=True)
     revision: Mapped[int] = mapped_column()
+    withdrawn: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text('false'))
     attack: Mapped[int | None] = mapped_column()
     defense: Mapped[int] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)

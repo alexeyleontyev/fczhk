@@ -128,7 +128,7 @@ def router(ctx):
                     )
                 }
                 for row in rt.review_data(db, p.id, player_id, position, True)["reviews"]
-                if row["author_id"] != player_id
+                if row["author_id"] != player_id and not row.get("withdrawn")
             ]
             for position in ("field", "keeper")
         }
@@ -151,6 +151,14 @@ def router(ctx):
     ):
         rt.save_rating(db, p.id, player_id, body)
         return rt.review_data(db, p.id, player_id, body.position, has_admin_access(p, cfg))
+
+    @app.delete("/api/players/{player_id}/ratings/{position}")
+    def withdraw_rating(
+        player_id: int, position: S.Position, body: S.RatingRemoval,
+        p: Player = Depends(current), db: Session = Depends(db_dep, scope="function"),
+    ):
+        rt.withdraw_rating(db, p.id, player_id, position, body.revision)
+        return rt.review_data(db, p.id, player_id, position, has_admin_access(p, cfg))
 
     @app.post("/api/players/guests", status_code=201)
     def guest(

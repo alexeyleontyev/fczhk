@@ -220,6 +220,10 @@ class RatingEdit(RatingValues):
     revision: int = Field(ge=0)
 
 
+class RatingRemoval(Payload):
+    revision: int = Field(ge=0)
+
+
 class MatchRatingEdit(RatingValues, Version):
     pass
 

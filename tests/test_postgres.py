@@ -29,6 +29,68 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.mark.parametrize("pg", ["c8e4a1b2906d"], indirect=True)
+def test_rating_withdrawal_migration_preserves_votes_and_blocks_history_loss(pg):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from fczhk.db import Base
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        target = db.execute(text("INSERT INTO players (alias, created_at) VALUES ('Удаление', now()) RETURNING id")).scalar_one()
+        rid = db.execute(text("INSERT INTO ratings (author_id, player_id, position, attack, defense, revision, updated_at) VALUES (:a, :p, 'field', 0, 40, 1, now()) RETURNING id"), {"a": actor, "p": target}).scalar_one()
+        db.execute(text("INSERT INTO rating_history (rating_id, revision, attack, defense, created_at) VALUES (:r, 1, 0, 40, now())"), {"r": rid})
+    config = Config("alembic.ini")
+    with factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
+        command.upgrade(config, "head")
+        assert compare_metadata(MigrationContext.configure(conn), Base.metadata) == []
+    from fczhk.ratings import withdraw_rating
+
+    with factory() as db, db.begin():
+        row = db.get(Rating, rid)
+        assert (row.attack, row.defense, row.revision, row.withdrawn) == (0, 40, 1, False)
+        withdraw_rating(db, actor, target, "field", 1)
+    with pytest.raises(RuntimeError, match="историю удаления"), factory.kw["bind"].begin() as conn:
+        config.attributes["connection"] = conn
+        command.downgrade(config, "c8e4a1b2906d")
+    with factory() as db:
+        assert db.get(Rating, rid).withdrawn
+
+
+def test_concurrent_rating_withdrawal_and_edit_are_serialized(pg):
+    from fczhk.ratings import save_rating, withdraw_rating
+    from fczhk.schemas import RatingEdit
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        target = Player(alias="Конкурирующее удаление")
+        db.add(target)
+        db.flush()
+        pid = target.id
+        save_rating(db, actor, pid, RatingEdit(position="field", attack=1, defense=2, revision=0))
+
+    def change(remove):
+        try:
+            with factory() as db, db.begin():
+                if remove:
+                    withdraw_rating(db, actor, pid, "field", 1)
+                else:
+                    save_rating(db, actor, pid, RatingEdit(position="field", attack=5, defense=4, revision=1))
+            return "ok"
+        except DomainError as exc:
+            assert exc.status == 409
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(change, [False, True])) == ["conflict", "ok"]
+    with factory() as db:
+        assert db.scalar(select(Rating)).revision == 2
+        assert len(list(db.scalars(select(RatingHistory)))) == 2
+
+
 def test_parallel_proposals_keep_one_revision_and_do_not_change_official_teams(pg):
     from fczhk import lineup_proposals, lineups
     from fczhk.models import LineupProposal

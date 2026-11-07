@@ -3,8 +3,9 @@ export type Team = 'white' | 'black'
 export type Average = { attack: number | null; defense: number | null; count?: number }
 export type OwnRating = {
   attack: number | null
-  defense: number
+  defense: number | null
   revision: number
+  withdrawn?: boolean
   source?: 'sheet' | 'app'
 }
 export type TelegramProfile = {

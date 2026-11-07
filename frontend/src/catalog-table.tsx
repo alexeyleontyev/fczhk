@@ -9,6 +9,7 @@ import {
 } from './rating-drafts'
 import { RatingDraftFeedback } from './rating-draft-controls'
 import { PlayerName } from './player-name'
+import { RatingDelete } from './rating-delete'
 import { RatingMark, ratingNumber } from './rating-mark'
 import { CommunityRatingExplanation } from './community-rating-explanation'
 import type { Player, Position } from './types'
@@ -81,6 +82,16 @@ function CatalogRow({
           <PlayerName playerId={p.id} alias={p.alias} />
           {p.id === me.id && <small className="muted">Это вы</small>}
           {p.shared_keeper && <small className="muted">Общая карточка</small>}
+          {editable && current && !current.withdrawn && (
+            <RatingDelete
+              actor={me.id}
+              player={p.id}
+              alias={p.alias}
+              position={position}
+              revision={current.revision}
+              refresh={refresh}
+            />
+          )}
           {me.is_admin && p.guest && !p.shared_keeper && (
             <button
               className="catalog-link-guest"
@@ -116,11 +127,14 @@ function CatalogRow({
           )}
         </td>
       </tr>
-      {(entry.error || saved || refreshError) && (
+      {(entry.error || saved || refreshError || (current?.withdrawn && !draft)) && (
         <tr className="catalog-feedback">
           <td colSpan={columns}>
             <RatingDraftFeedback actor={me.id} player={p.id} position={position} />
-            {saved && !draft && <span role="status">Оценки сохранены: {p.alias}</span>}
+            {saved && !draft && !current?.withdrawn && (
+              <span role="status">Оценки сохранены: {p.alias}</span>
+            )}
+            {current?.withdrawn && !draft && <span role="status">Оценка удалена: {p.alias}</span>}
             {refreshError && <span role="status">{refreshError}</span>}
           </td>
         </tr>

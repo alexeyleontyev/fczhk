@@ -51,17 +51,18 @@ def daily_history(db: Session, target: int, admin: bool = False) -> dict:
             latest = revision.revision == row.revision
             events.append((
                 revision.created_at, 1, row.id, revision.revision, author, row.position,
-                revision.attack * 100 if revision.attack is not None else None,
-                revision.defense * 100, row.updated_at if latest else revision.created_at,
+                revision.attack * 100 if revision.attack is not None and not revision.withdrawn else None,
+                revision.defense * 100 if not revision.withdrawn else None,
+                row.updated_at if latest else revision.created_at,
             ))
         if not history or (
-            history[-1].revision, history[-1].attack, history[-1].defense
-        ) != (row.revision, row.attack, row.defense):
+            history[-1].revision, history[-1].attack, history[-1].defense, history[-1].withdrawn
+        ) != (row.revision, row.attack, row.defense, row.withdrawn):
             # Older imports/fixtures may only have a current vote. Do not invent its past.
             events.append((
                 row.updated_at, 1, row.id, row.revision, author, row.position,
-                row.attack * 100 if row.attack is not None else None,
-                row.defense * 100, row.updated_at,
+                row.attack * 100 if row.attack is not None and not row.withdrawn else None,
+                row.defense * 100 if not row.withdrawn else None, row.updated_at,
             ))
 
     imported, application = {}, {}
@@ -80,6 +81,7 @@ def daily_history(db: Session, target: int, admin: bool = False) -> dict:
                 application[key] = rank, attack, defense
         votes = {k: value[1:] for k, value in imported.items() if k[1] == position}
         votes.update({k: value[1:] for k, value in application.items() if k[1] == position})
+        votes = {k: v for k, v in votes.items() if v[1] is not None}
         attacks = [value[0] for value in votes.values() if value[0] is not None]
         defenses = [value[1] for value in votes.values()]
         a = trimmed_average(attacks) if position == "field" else None

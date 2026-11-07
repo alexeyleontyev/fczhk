@@ -158,3 +158,36 @@ export async function saveRatingDraft(
     return false
   }
 }
+
+export async function removeRating(
+  actor: number,
+  player: number,
+  position: Position,
+  revision: number,
+  refresh: () => Promise<void>,
+) {
+  const id = key(player, position),
+    entry = state(actor)[id] ?? {}
+  if (entry.saving) return false
+  update(actor, id, { ...entry, saving: true, error: undefined })
+  try {
+    const result = await api<{ own: OwnRating | null }>(
+      `/players/${player}/ratings/${position}`,
+      'DELETE',
+      { revision },
+    )
+    update(actor, id, { confirmed: result.own ?? undefined })
+    try {
+      await refresh()
+    } catch {
+      update(actor, id, {
+        ...state(actor)[id],
+        error: 'Оценка удалена. Обновить общие баллы пока не удалось.',
+      })
+    }
+    return true
+  } catch (e) {
+    update(actor, id, { ...entry, error: (e as Error).message })
+    return false
+  }
+}

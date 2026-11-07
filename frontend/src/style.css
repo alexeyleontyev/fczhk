@@ -4329,6 +4329,15 @@ footer > span:first-child {
   color: var(--muted);
   font-size: var(--font-micro);
 }
+.rating-delete {
+  display: block;
+  max-width: 100%;
+  min-height: var(--touch-target);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  font-size: var(--font-small);
+}
 .catalog-average {
   color: #6d7e65;
   font-size: var(--font-small);

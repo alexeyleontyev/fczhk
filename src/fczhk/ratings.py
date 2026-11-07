@@ -112,6 +112,7 @@ def reconcile_linked_ratings(db: Session, target_ids: list[int]):
                 revision=latest.revision,
                 attack=latest.attack,
                 defense=latest.defense,
+                withdrawn=latest.withdrawn,
             )
         )
 
@@ -144,7 +145,10 @@ def aggregate(db: Session, ids: list[int]) -> dict:
     for row in current:
         key = (canonical[row.author_id], canonical[row.player_id], row.position)
         if key[0] != key[1]:
-            votes[key] = (row.attack * 100 if row.attack is not None else None, row.defense * 100)
+            if row.withdrawn:
+                votes.pop(key, None)
+            else:
+                votes[key] = (row.attack * 100 if row.attack is not None else None, row.defense * 100)
     grouped = {}
     for (_, pid, pos), (attack, defense) in votes.items():
         attacks, defenses = grouped.setdefault((pid, pos), ([], []))
@@ -201,9 +205,11 @@ def field_opinions(db: Session, ids: list[int]) -> list[dict]:
         .where(Rating.player_id.in_(relevant), Rating.position == "field")
         .order_by(Rating.updated_at, Rating.id)
     ):
-        votes[canonical[row.author_id], canonical[row.player_id]] = dict(
-            attack=row.attack / 10, defense=row.defense / 10
-        )
+        key = canonical[row.author_id], canonical[row.player_id]
+        if row.withdrawn:
+            votes.pop(key, None)
+        else:
+            votes[key] = dict(attack=row.attack / 10, defense=row.defense / 10)
     authors = {}
     for (author, target), score in votes.items():
         if author != target and not people[author].shared_keeper:
@@ -259,12 +265,15 @@ def community_leaderboards(db: Session) -> dict:
 def rating_data(row: Rating | RatingHistory | None) -> dict | None:
     if row is None:
         return None
-    return dict(
+    data = dict(
         attack=row.attack / 10 if row.attack is not None else None,
         defense=row.defense / 10,
         revision=row.revision,
         at=row.updated_at if isinstance(row, Rating) else row.created_at,
     )
+    if row.withdrawn:
+        data.update(attack=None, defense=None, withdrawn=True)
+    return data
 
 
 def catalog_own_ratings(db: Session, actor: int, ids: list[int]) -> dict:
@@ -383,7 +392,7 @@ def save_rating(db: Session, actor: int, target: int, body):
     row = own_rating(db, actor, target_ids, body.position)
     if body.revision != (row.revision if row else 0):
         raise DomainError("Ваша оценка уже изменена. Откройте карточку заново.", 409)
-    if row and row.attack == body.attack and row.defense == body.defense:
+    if row and not row.withdrawn and row.attack == body.attack and row.defense == body.defense:
         return
     if row is None:
         row = Rating(
@@ -399,6 +408,7 @@ def save_rating(db: Session, actor: int, target: int, body):
         row.attack, row.defense = body.attack, body.defense
         row.revision += 1
     row.updated_at = now()
+    row.withdrawn = False
     db.flush()
     db.add(
         RatingHistory(
@@ -408,6 +418,40 @@ def save_rating(db: Session, actor: int, target: int, body):
     audit(
         db, actor, "rating.saved", player_id=target, position=body.position, revision=row.revision
     )
+    db.flush()
+
+
+def withdraw_rating(db: Session, actor: int, target: int, position: str, revision: int):
+    lock_ratings(db)
+    registered_player(db, actor)
+    catalog_player(db, target)
+    if actor == target:
+        raise DomainError("Нельзя удалять оценку самого себя")
+    target_ids = [target, *db.scalars(select(Player.id).where(Player.merged_into == target))]
+    row = own_rating(db, actor, target_ids, position)
+    if row and row.withdrawn and revision in (row.revision, row.revision - 1):
+        return  # An acknowledged or lost-response retry of the same removal.
+    if revision != (row.revision if row else 0):
+        raise DomainError("Ваша оценка уже изменена. Обновите данные перед удалением.", 409)
+    if row is None:
+        canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
+        imported = any(canonical[r.author_id] == actor for r in db.scalars(
+            select(ImportedRating).where(ImportedRating.player_id.in_(target_ids),
+                                         ImportedRating.position == position)))
+        if not imported:
+            return
+        # A tombstone has no public score; preserve the original precise sheet vote separately.
+        row = Rating(author_id=actor, player_id=target, position=position,
+                     attack=0 if position == "field" else None, defense=0, revision=1)
+        db.add(row)
+    else:
+        row.revision += 1
+    row.withdrawn, row.updated_at = True, now()
+    db.flush()
+    db.add(RatingHistory(rating_id=row.id, revision=row.revision, attack=row.attack,
+                         defense=row.defense, withdrawn=True))
+    audit(db, actor, "rating.withdrawn", player_id=target, position=position,
+          revision=row.revision)
     db.flush()
 
 

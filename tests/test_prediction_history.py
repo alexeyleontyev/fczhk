@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from fczhk.db import Base, database, now
 from fczhk.models import Match, MatchResult, Player, Prediction, PredictionBaseline, ResultGoal
 from fczhk.predictions import standings
-from fczhk.services import audit, merge_guest
+from fczhk.services import audit
 
 
 def test_sheet_refresh_preserves_links_and_new_forecasts_and_is_idempotent(tmp_path):
@@ -26,7 +26,14 @@ def test_sheet_refresh_preserves_links_and_new_forecasts_and_is_idempotent(tmp_p
         db.add(target)
         db.flush()
         mid_source, target_id = source.id, target.id
-        merge_guest(db, target.id, source.id, target.id)
+        # Reproduce the historical link before later rating columns exist. The
+        # current merge service intentionally requires the current schema.
+        source_alias, target_alias = source.alias, target.alias
+        source.alias, source.merged_into = f"Архив {source.id}", target.id
+        db.flush()
+        target.alias = source_alias
+        audit(db, target.id, "guest.linked", guest_id=source.id, target_id=target.id,
+              guest_alias=source_alias, previous_target_alias=target_alias)
         target.alias = "Виталя Легенда 17"
         audit(
             db,

@@ -1,4 +1,5 @@
 import { RatingMark, RatingPair } from './rating-mark'
+import { RatingDelete } from './rating-delete'
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { PlayerName } from './player-name'
@@ -224,6 +225,7 @@ function ScoreInputs({
 }
 
 type Review = Average & {
+  withdrawn?: boolean
   revision: number
   at: string
   source?: 'sheet'
@@ -425,7 +427,7 @@ export function RatingFlow({
                 setDefense={setDefense}
                 disabled={busy}
               />
-              {data.own && (
+              {current && !current.withdrawn && (
                 <p className="muted caption">
                   Ваша предыдущая оценка будет заменена, а не добавлена второй раз.
                 </p>
@@ -462,6 +464,24 @@ export function RatingFlow({
                   Обновить
                 </button>
               </div>
+              {((current && !current.withdrawn) || (!current && data.imported_own)) && (
+                <RatingDelete
+                  actor={me.id}
+                  player={person.id}
+                  alias={person.alias}
+                  position={position}
+                  revision={current?.revision ?? 0}
+                  refresh={async () => {
+                    setReload((x) => x + 1)
+                    await refresh()
+                  }}
+                />
+              )}
+              {current?.withdrawn && (
+                <p role="status" className="muted caption">
+                  Ваша оценка удалена. Можно оценить заново.
+                </p>
+              )}
             </form>
           )}
           {person.id === me.id && <p>Вы можете посмотреть оценки, но не оценивать себя.</p>}
@@ -475,7 +495,9 @@ export function RatingFlow({
                     <PlayerName playerId={review.author_id} alias={review.author} />
                     {review.source === 'sheet' ? ' · из таблицы' : ''}
                   </strong>
-                  {review.defense !== null ? (
+                  {review.withdrawn ? (
+                    <p className="muted caption">Оценка удалена автором</p>
+                  ) : review.defense !== null ? (
                     <ReviewRatings
                       review={{ ...review, defense: review.defense }}
                       keeper={position === 'keeper'}
@@ -495,11 +517,15 @@ export function RatingFlow({
                           #{h.revision} ·{' '}
                           {new Date(h.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}{' '}
                           МСК ·{' '}
-                          <RatingPair
-                            attack={h.attack ?? null}
-                            defense={h.defense ?? null}
-                            keeper={position === 'keeper'}
-                          />
+                          {h.withdrawn ? (
+                            'Оценка удалена автором'
+                          ) : (
+                            <RatingPair
+                              attack={h.attack ?? null}
+                              defense={h.defense ?? null}
+                              keeper={position === 'keeper'}
+                            />
+                          )}
                         </p>
                       ))}
                     </details>
