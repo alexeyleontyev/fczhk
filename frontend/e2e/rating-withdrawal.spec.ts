@@ -94,7 +94,14 @@ test('remove field and keeper votes, cancel, re-rate, preserve drafts on conflic
   expect((await read('keeper')).own.defense).toBe(4)
   await page.getByLabel(`Моя атака: ${guest.alias}`, { exact: true }).fill('2')
   await page.getByLabel(`Моя защита: ${guest.alias}`, { exact: true }).fill('1')
+  const catalogRefresh = page.waitForResponse(
+    (r) => r.url().endsWith('/api/players') && r.request().method() === 'GET',
+  )
   await page.getByRole('button', { name: `Сохранить оценки: ${guest.alias}`, exact: true }).click()
+  const refreshed = await catalogRefresh
+  await refreshed.finished()
+  const catalog = await refreshed.json()
+  expect(catalog.find((p: { id: number }) => p.id === guest.id).my_ratings.field.revision).toBe(3)
   await expect(page.getByRole('status').filter({ hasText: 'Оценки сохранены:' })).toBeVisible()
   expect((await read('field')).own.revision).toBe(3)
   // An outside edit prevents deleting a version that has not been reviewed.
