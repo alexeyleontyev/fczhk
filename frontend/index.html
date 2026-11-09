@@ -10,10 +10,86 @@
     />
     <title>ФКЖК — футбол по пятницам</title>
     <link rel="icon" href="/assets/club/crest.svg" type="image/svg+xml" />
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      .club-launch {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        justify-items: center;
+        align-content: center;
+        gap: 16px;
+        overflow: auto;
+        padding: 16px;
+        background: #f7f4eb;
+        color: #302d22;
+        text-align: center;
+        font:
+          600 18px/1.35 system-ui,
+          sans-serif;
+      }
+      .club-launch img {
+        display: block;
+        width: min(72vw, 390px, 60vh);
+        height: auto;
+      }
+      .club-launch p {
+        margin: 0;
+      }
+      .club-launch[hidden] {
+        display: none;
+      }
+      .club-launch button {
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        padding: 8px 16px;
+        border: 1px solid currentColor;
+        border-radius: 8px;
+      }
+    </style>
   </head>
   <body>
+    <div class="club-launch" id="club-launch">
+      <img src="/assets/club/vitaliy-drone-transparent.webp" width="700" height="572" alt="" />
+      <p id="launch-message" role="status">Открываем клуб…</p>
+      <button type="button" id="launch-retry" hidden>Повторить</button>
+      <noscript>Для запуска приложения включите JavaScript.</noscript>
+    </div>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Keep recovery available even if the application bundle fails to load.
+      ;(() => {
+        const splash = document.getElementById('club-launch')
+        const message = document.getElementById('launch-message')
+        const retry = document.getElementById('launch-retry')
+        retry.onclick = () => location.reload()
+        const show = (text) => {
+          splash.hidden = false
+          message.textContent = text
+          retry.hidden = false
+        }
+        const timer = setTimeout(() => show('Загрузка занимает больше времени…'), 5000)
+        window.clubLaunch = {
+          fail(text) {
+            clearTimeout(timer)
+            show(text)
+          },
+          finish() {
+            clearTimeout(timer)
+            splash.hidden = true
+          },
+        }
+        window.addEventListener(
+          'error',
+          (event) => {
+            if (event.target instanceof HTMLScriptElement && event.target.type === 'module')
+              window.clubLaunch.fail('Не удалось загрузить приложение. Проверьте подключение.')
+          },
+          true,
+        )
+      })()
+    </script>
+    <script type="module" src="/src/startup.ts"></script>
   </body>
 </html>

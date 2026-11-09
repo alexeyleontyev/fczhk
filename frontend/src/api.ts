@@ -1,10 +1,19 @@
-let token = sessionStorage.getItem('fczhk-session') || ''
+let token = ''
+try {
+  token = sessionStorage.getItem('fczhk-session') || ''
+} catch {
+  // Some embedded browsers disable storage; keep the session in memory instead.
+}
 let generation = 0
 export const sessionVersion = () => generation
 export function setToken(value: string) {
   if (token !== value) generation++
   token = value
-  sessionStorage.setItem('fczhk-session', value)
+  try {
+    sessionStorage.setItem('fczhk-session', value)
+  } catch {
+    // Authentication still works for the lifetime of this page.
+  }
 }
 export function hasToken() {
   return Boolean(token)

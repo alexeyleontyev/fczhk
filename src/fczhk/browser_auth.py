@@ -8,6 +8,7 @@ import secrets
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
+import httpx
 import jwt
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError, PyJWTError
@@ -19,10 +20,31 @@ ISSUER = "https://oauth.telegram.org"
 logger = logging.getLogger(__name__)
 
 
+class TelegramJWKClient(PyJWKClient):
+    def fetch_data(self):
+        # Telegram may send gzip even without Accept-Encoding. urllib's JSON
+        # reader does not decompress it; HTTPX handles content encodings.
+        try:
+            response = httpx.get(
+                self.uri,
+                timeout=self.timeout,
+                follow_redirects=False,
+                headers={"Accept": "application/json", "Accept-Encoding": "gzip, deflate"},
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, dict) or not isinstance(data.get("keys"), list):
+                raise ValueError("Invalid key set")
+            return data
+        except (httpx.HTTPError, ValueError) as exc:
+            # A failed key download is an upstream outage, not a bad user login.
+            raise PyJWKClientConnectionError("Telegram signing keys unavailable") from exc
+
+
 class BrowserAuth:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.keys = PyJWKClient(f"{ISSUER}/.well-known/jwks.json", timeout=5, lifespan=300)
+        self.keys = TelegramJWKClient(f"{ISSUER}/.well-known/jwks.json", timeout=5, lifespan=300)
         self.cookie_key = hashlib.sha256(b"fczhk-browser-login:" + cfg.bot_token.encode()).digest()
         self.cookie_name = "__Host-fczhk-login" if cfg.env == "production" else "fczhk-login"
 

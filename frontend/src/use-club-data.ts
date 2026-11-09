@@ -139,11 +139,9 @@ export function useClubData() {
   useEffect(() => {
     initial.current ??= (async () => {
       try {
+        const tg = window.Telegram?.WebApp
         const health = await api<{ demo: boolean }>('/health')
         setDemo(health.demo)
-        const tg = window.Telegram?.WebApp
-        tg?.ready()
-        tg?.expand()
         const { id } = requestedGame()
         if (id) setSelectedId(id)
         if (hasToken()) {
@@ -161,10 +159,10 @@ export function useClubData() {
         }
         await refresh(true)
       } catch (error) {
-        setLoadError((error as Error).message)
-      } finally {
-        setLoading(false)
+        window.clubLaunch.fail((error as Error).message)
+        return
       }
+      setLoading(false)
     })()
   }, [])
 

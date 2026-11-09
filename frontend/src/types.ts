@@ -190,6 +190,7 @@ export type TelegramLoginResult = { id_token?: string; error?: string }
 
 declare global {
   interface Window {
+    clubLaunch: { finish(): void; fail(message: string): void }
     Telegram?: {
       WebApp?: {
         initData: string

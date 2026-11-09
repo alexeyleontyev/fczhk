@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode, useEffect, useLayoutEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   ArrowUpRight,
@@ -183,13 +183,10 @@ function App() {
     )
   }
 
-  if (loading)
-    return (
-      <div className="welcome">
-        <div className="brand-ball">Ф</div>
-        <p>Открываем клуб…</p>
-      </div>
-    )
+  useLayoutEffect(() => {
+    if (!loading) window.clubLaunch.finish()
+  }, [loading])
+  if (loading) return null
   if (!me)
     return (
       <div className="welcome">
@@ -758,8 +755,15 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+export function mount() {
+  createRoot(document.getElementById('root')!, {
+    onUncaughtError(error) {
+      console.error(error)
+      window.clubLaunch.fail('Не удалось открыть приложение. Попробуйте ещё раз.')
+    },
+  }).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}

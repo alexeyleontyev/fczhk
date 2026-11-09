@@ -1,13 +1,16 @@
+import gzip
+import json
 from unittest.mock import AsyncMock
 
+import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
-from jwt import PyJWKClient
 from sqlalchemy import func, select
 
 from fczhk.api import create_app
+from fczhk.browser_auth import TelegramJWKClient
 from fczhk.db import now
 from fczhk.models import LoginSession, Player
 from fczhk.services import DomainError
@@ -28,7 +31,15 @@ def browser(env, monkeypatch, signing_key):
     cfg.bot_username = "football_test_bot"
     jwk = jwt.algorithms.RSAAlgorithm.to_jwk(signing_key.public_key(), as_dict=True)
     jwk.update(kid="test-key", use="sig", alg="RS256")
-    monkeypatch.setattr(PyJWKClient, "fetch_data", lambda self: {"keys": [jwk]})
+    def compressed_keys(url, **kwargs):
+        return httpx.Response(
+            200,
+            request=httpx.Request("GET", url),
+            headers={"Content-Encoding": "gzip"},
+            content=gzip.compress(json.dumps({"keys": [jwk]}).encode()),
+        )
+
+    monkeypatch.setattr("fczhk.browser_auth.httpx.get", compressed_keys)
     member = AsyncMock()
     monkeypatch.setattr("fczhk.auth.check_member", member)
     with TestClient(create_app(cfg, factory), headers={"Origin": cfg.public_url}) as client:
@@ -302,10 +313,42 @@ def test_jwks_outage_fails_closed(browser, env, monkeypatch, signing_key):
     def unavailable(self):
         raise jwt.PyJWKClientConnectionError("offline")
 
-    monkeypatch.setattr(PyJWKClient, "fetch_data", unavailable)
+    monkeypatch.setattr(TelegramJWKClient, "fetch_data", unavailable)
     response = finish(client, signing_key, start(client))
     assert response.status_code == 503
     member.assert_not_awaited()
+
+
+@pytest.mark.parametrize("body", [b"not json", b"\xff\xfe\xff", b"[]", b'{"keys":null}'])
+def test_invalid_key_response_is_an_upstream_failure(browser, monkeypatch, signing_key, body):
+    client, member = browser
+    monkeypatch.setattr(
+        "fczhk.browser_auth.httpx.get",
+        lambda url, **kwargs: httpx.Response(200, request=httpx.Request("GET", url), content=body),
+    )
+    response = finish(client, signing_key, start(client))
+    assert response.status_code == 503
+    member.assert_not_awaited()
+
+
+def test_compressed_keys_are_cached_and_refreshed(browser, env, monkeypatch, signing_key):
+    client, _ = browser
+    get = httpx.get
+    calls = []
+
+    def tracked(url, **kwargs):
+        calls.append(url)
+        assert kwargs["follow_redirects"] is False
+        return get(url, **kwargs)
+
+    monkeypatch.setattr("fczhk.browser_auth.httpx.get", tracked)
+    auth = client.app.state.context.browser_auth
+    encoded = token(signing_key, "nonce")
+    assert auth.keys.get_signing_key_from_jwt(encoded).key_id == "test-key"
+    assert auth.keys.get_signing_key_from_jwt(encoded).key_id == "test-key"
+    assert len(calls) == 1
+    auth.keys.get_jwk_set(refresh=True)
+    assert len(calls) == 2
 
 
 def test_mini_app_login_still_uses_init_data(browser, env):
