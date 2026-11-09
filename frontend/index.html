@@ -27,10 +27,68 @@
           600 18px/1.35 system-ui,
           sans-serif;
       }
+      .club-launch-flight {
+        position: relative;
+        width: min(72vw, 390px, 60vh);
+        padding: 20px 0 38px;
+      }
+      .club-launch-drift {
+        position: relative;
+        z-index: 1;
+        animation: club-launch-drift 4.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+      }
       .club-launch img {
         display: block;
-        width: min(72vw, 390px, 60vh);
+        width: 100%;
         height: auto;
+        animation: club-launch-bob 2.4s ease-in-out infinite;
+      }
+      .club-launch-shadow {
+        position: absolute;
+        bottom: 9px;
+        left: calc(50% - 43px);
+        width: 86px;
+        height: 9px;
+        border-radius: 50%;
+        background: #302d2226;
+        filter: blur(5px);
+        animation: club-launch-shadow 2.4s ease-in-out infinite;
+      }
+      @keyframes club-launch-drift {
+        0%,
+        100% {
+          transform: translateX(-15px) rotate(-3deg);
+        }
+        50% {
+          transform: translateX(15px) rotate(3deg);
+        }
+      }
+      @keyframes club-launch-bob {
+        0%,
+        100% {
+          transform: translateY(12px);
+        }
+        50% {
+          transform: translateY(-12px);
+        }
+      }
+      @keyframes club-launch-shadow {
+        0%,
+        100% {
+          transform: scaleX(1.12);
+          opacity: 0.65;
+        }
+        50% {
+          transform: scaleX(0.78);
+          opacity: 0.3;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .club-launch-drift,
+        .club-launch img,
+        .club-launch-shadow {
+          animation: none;
+        }
       }
       .club-launch p {
         margin: 0;
@@ -51,7 +109,12 @@
   </head>
   <body>
     <div class="club-launch" id="club-launch">
-      <img src="/assets/club/vitaliy-drone-transparent.webp" width="700" height="572" alt="" />
+      <div class="club-launch-flight" aria-hidden="true">
+        <div class="club-launch-drift">
+          <img src="/assets/club/vitaliy-drone-transparent.webp" width="700" height="572" alt="" />
+        </div>
+        <div class="club-launch-shadow"></div>
+      </div>
       <p id="launch-message" role="status">Открываем клуб…</p>
       <button type="button" id="launch-retry" hidden>Повторить</button>
       <noscript>Для запуска приложения включите JavaScript.</noscript>
