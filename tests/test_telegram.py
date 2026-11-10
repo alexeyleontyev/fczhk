@@ -279,12 +279,19 @@ async def test_start_uses_saved_schedule_instead_of_fixed_days(env, monkeypatch,
     ) in message.text
 
 
-async def test_help_is_a_short_command_guide_and_paid_command_is_removed(env, monkeypatch):
+async def test_help_describes_player_workflow_and_paid_command_is_removed(env, monkeypatch):
     replies = await command_replies(env, monkeypatch, "/help")
+    assert len(replies) == 1
     text = replies[0].text
-    assert len(text) < 500
+    assert len(text.encode("utf-16-le")) // 2 <= 4096
+    assert replies[0].parse_mode is None
+    assert replies[0].reply_markup is not None
     assert all(f"/{name} —" in text for name in ("start", "game", "lastgame", "profile", "help"))
-    assert "«Я оплатил» в /game" in text and "администратор" in text
+    assert all(section in text for section in (
+        "1. Начало работы", "2. Запись на игру", "3. Оплата и место в составе",
+        "4. Команды и прогноз", "5. После игры",
+    ))
+    assert "«Я оплатил» в ответе на /game" in text and "подтверждает администратор" in text
     assert "/paid" not in text
     assert await command_replies(env, monkeypatch, "/paid") == []
 
