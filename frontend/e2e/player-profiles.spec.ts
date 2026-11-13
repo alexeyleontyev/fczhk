@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from './app-test'
 import type { Match, Player } from '../src/types'
 
 for (const games of [0, 1, 3, 5, 7]) {

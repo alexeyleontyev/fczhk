@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page } from './app-test'
 
 async function setup(page: Page, request: APIRequestContext, role = 'admin') {
   const auth = await (await request.post(`/api/auth/demo/${role}`)).json()

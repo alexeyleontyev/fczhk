@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 import { defaultSeason } from '../src/seasons'
 
 test('season filter follows statistics, player profile, archive and predictions', async ({

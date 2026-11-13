@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { autoEnterClub, test, expect } from './app-test'
 
 test('teams precede field, edits are private, proposals are shared and approval keeps authorship', async ({
   page,
@@ -169,6 +169,7 @@ test('teams precede field, edits are private, proposals are shared and approval 
       adminAuth.token,
     )
     const admin = await adminContext.newPage()
+    await autoEnterClub(admin)
     await admin.goto(`/?game=${match.id}&screen=lineup`)
     await admin.getByLabel('Вариант состава').selectOption(`proposal:${proposal.id}`)
     await admin.getByRole('button', { name: 'Утвердить состав', exact: true }).click()

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 import { answerConfirmation } from './confirmation-helpers'
 
 test('an empty rating day creates a gap, while a later real zero remains visible', async ({

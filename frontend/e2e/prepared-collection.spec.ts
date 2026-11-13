@@ -1,5 +1,5 @@
 import { answerConfirmation } from './confirmation-helpers'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 test('admin prepares a hidden collection and early players keep their queue when it opens', async ({
   page,

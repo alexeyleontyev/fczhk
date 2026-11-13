@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" class="club-launching">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -11,124 +11,429 @@
     <title>ФКЖК — футбол по пятницам</title>
     <link rel="icon" href="/assets/club/crest.svg" type="image/svg+xml" />
     <style>
+      html.club-launching {
+        overflow: hidden;
+      }
+      #root[inert] {
+        visibility: hidden;
+      }
       .club-launch {
+        /* Match protocol.css + atlas.css before the application CSS arrives. */
+        --launch-paper: var(--paper, #f7f4eb);
+        --launch-ink: var(--ink, #1d211c);
+        --launch-sun: var(--sun, #ffd900);
+        --launch-muted: var(--muted, #53594f);
+        --launch-line: var(--line, #b4b6a8);
         position: fixed;
         inset: 0;
+        z-index: 100;
         display: grid;
         justify-items: center;
         align-content: center;
         gap: 16px;
         overflow: auto;
-        padding: 16px;
-        background: #f7f4eb;
-        color: #302d22;
+        padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+        background: var(--launch-paper);
+        color: var(--launch-ink);
         text-align: center;
         font:
           600 18px/1.35 system-ui,
           sans-serif;
+        font-optical-sizing: auto;
       }
       .club-launch-flight {
-        position: relative;
-        width: min(72vw, 390px, 60vh);
-        padding: 20px 0 38px;
+        width: min(100%, 520px, calc((100svh - 160px) * 0.945));
       }
-      .club-launch-drift {
-        position: relative;
-        z-index: 1;
-        animation: club-launch-drift 4.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-      }
-      .club-launch img {
+      .club-launch-scene,
+      .club-launch-beer {
         display: block;
         width: 100%;
         height: auto;
-        animation: club-launch-bob 2.4s ease-in-out infinite;
       }
-      .club-launch-shadow {
-        position: absolute;
-        bottom: 9px;
-        left: calc(50% - 43px);
-        width: 86px;
-        height: 9px;
-        border-radius: 50%;
-        background: #302d2226;
-        filter: blur(5px);
-        animation: club-launch-shadow 2.4s ease-in-out infinite;
+      .club-launch-beer-entrance {
+        opacity: 0;
+        visibility: hidden;
       }
-      @keyframes club-launch-drift {
-        0%,
-        100% {
-          transform: translateX(-15px) rotate(-3deg);
-        }
-        50% {
-          transform: translateX(15px) rotate(3deg);
-        }
+      .club-launch-beer {
+        transform: scale(0.85);
+        transform-origin: 50% 100%;
+        overflow: visible;
       }
-      @keyframes club-launch-bob {
-        0%,
-        100% {
-          transform: translateY(12px);
-        }
-        50% {
-          transform: translateY(-12px);
-        }
+      .club-launch-confetti-scene {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 1;
       }
-      @keyframes club-launch-shadow {
-        0%,
-        100% {
-          transform: scaleX(1.12);
-          opacity: 0.65;
-        }
-        50% {
-          transform: scaleX(0.78);
-          opacity: 0.3;
-        }
+      .club-launch-drone {
+        transform-origin: 140px 180px;
       }
-      @media (prefers-reduced-motion: reduce) {
-        .club-launch-drift,
-        .club-launch img,
-        .club-launch-shadow {
-          animation: none;
-        }
+      .club-launch-ball {
+        transform: translate(206px, 232px);
+      }
+      .club-launch-goal {
+        opacity: 0;
+      }
+      .club-launch-bottle-foam,
+      .club-launch-bottle-halo,
+      .club-launch-confetti {
+        opacity: 0;
       }
       .club-launch p {
         margin: 0;
+        color: var(--launch-muted);
+        font-size: 15px;
+        font-weight: 500;
       }
-      .club-launch[hidden] {
+      .club-launch[hidden],
+      .club-launch [hidden] {
         display: none;
+      }
+      .club-launch-actions {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        place-items: center;
+        min-height: 54px;
       }
       .club-launch button {
         cursor: pointer;
         font: inherit;
-        color: inherit;
-        background: transparent;
-        padding: 8px 16px;
-        border: 1px solid currentColor;
-        border-radius: 8px;
+        color: var(--launch-ink);
+        background: var(--launch-paper);
+        min-height: 54px;
+        padding: 12px 28px;
+        border: 1px solid var(--launch-line);
+        border-radius: var(--radius-control, 0.4rem);
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        transition:
+          transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+          background-color 120ms ease-out;
+      }
+      .club-launch .club-launch-open {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        min-width: 184px;
+        border-color: var(--launch-ink);
+        color: var(--launch-ink);
+        background: var(--launch-sun);
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+        animation: launch-open-appear 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+      }
+      .club-launch .club-launch-open[hidden] {
+        display: none;
+      }
+      .club-launch button:not(:disabled):active {
+        scale: 1;
+        filter: none;
+        transform: scale(0.97);
+        transition-duration: 80ms;
+      }
+      .club-launch button:focus-visible {
+        outline: 2px solid var(--launch-ink);
+        outline-offset: 4px;
+      }
+      @media (hover: hover) {
+        .club-launch-open:hover {
+          background: #f3ce00;
+        }
+      }
+      .club-launch .club-launch-open:active {
+        background: #e8c500;
+      }
+      @keyframes launch-open-appear {
+        from {
+          opacity: 0;
+          translate: 0 5px;
+        }
+        to {
+          opacity: 1;
+          translate: 0 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .club-launch button,
+        .club-launch .club-launch-open {
+          animation: none;
+          transition: none;
+        }
+        .club-launch button:not(:disabled):active {
+          transform: none;
+        }
       }
     </style>
   </head>
   <body>
     <div class="club-launch" id="club-launch">
+      <svg
+        class="club-launch-confetti-scene"
+        aria-hidden="true"
+        xmlns="http://www.w3.org/2000/svg"
+      ></svg>
       <div class="club-launch-flight" aria-hidden="true">
-        <div class="club-launch-drift">
-          <img src="/assets/club/vitaliy-drone-transparent.webp" width="700" height="572" alt="" />
+        <div class="club-launch-beer-entrance">
+          <svg
+            class="club-launch-beer"
+            viewBox="0 0 520 270"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <defs>
+              <!-- Original bottle image supplied by the user; separate SVG clips let its cap open. -->
+              <image
+                id="launch-bottle-photo"
+                href="/assets/club/lowenbrau-strong-1_5l.png"
+                x="152.5"
+                y="35"
+                width="215"
+                height="215"
+              />
+              <clipPath id="launch-bottle-body-crop">
+                <rect x="152.5" y="49.5" width="215" height="201" />
+              </clipPath>
+              <clipPath id="launch-bottle-cap-crop">
+                <rect x="152.5" y="35" width="215" height="14.5" />
+              </clipPath>
+              <radialGradient id="launch-beer-glow">
+                <stop stop-color="#f6df93" stop-opacity=".65" />
+                <stop offset="1" stop-color="#f6df93" stop-opacity="0" />
+              </radialGradient>
+            </defs>
+            <ellipse
+              class="club-launch-bottle-halo"
+              cx="260"
+              cy="145"
+              rx="135"
+              ry="120"
+              fill="url(#launch-beer-glow)"
+            />
+            <g class="club-launch-bottle">
+              <ellipse cx="260" cy="251" rx="34" ry="4" fill="#6d4d27" opacity=".1" />
+              <use href="#launch-bottle-photo" clip-path="url(#launch-bottle-body-crop)" />
+              <ellipse
+                cx="260"
+                cy="50"
+                rx="8.4"
+                ry="2.4"
+                fill="#5c301a"
+                stroke="#b88740"
+                stroke-width="1.2"
+              />
+              <g class="club-launch-bottle-cap">
+                <use href="#launch-bottle-photo" clip-path="url(#launch-bottle-cap-crop)" />
+                <path
+                  class="club-launch-cap-turn-mark"
+                  d="M260 38V46"
+                  stroke="#6f4b20"
+                  stroke-width="1.2"
+                  stroke-linecap="round"
+                  opacity=".4"
+                />
+              </g>
+              <g class="club-launch-bottle-foam">
+                <path
+                  d="M251 52C249 42 246 38 249 31C243 28 247 21 253 23C251 13 260 9 264 17C271 12 278 21 271 27C279 31 276 39 270 40L269 52Z"
+                  fill="#fffdf0"
+                  stroke="#e6d9b2"
+                  stroke-width="1"
+                />
+                <path
+                  d="M253 47C249 54 251 65 254 65C257 64 256 54 259 49M263 49C263 58 269 64 270 59L268 47"
+                  fill="#fffdf0"
+                />
+                <circle cx="244" cy="27" r="2.5" fill="#fffdf0" />
+                <circle cx="276" cy="17" r="2" fill="#fffdf0" />
+                <circle cx="260" cy="5" r="1.8" fill="#fffdf0" />
+              </g>
+            </g>
+          </svg>
         </div>
-        <div class="club-launch-shadow"></div>
+        <svg
+          class="club-launch-scene"
+          viewBox="0 0 520 280"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <linearGradient id="launch-net-shade" x1="0" y1="0" x2="0" y2="1">
+              <stop stop-color="#fdfef8" stop-opacity=".1" />
+              <stop offset="1" stop-color="#bcc9ac" stop-opacity=".24" />
+            </linearGradient>
+            <path id="launch-goal-frame" d="M250 244V110Q250 104 256 104H454Q460 104 460 110V244" />
+            <clipPath id="launch-ball-crop">
+              <circle r="18" />
+            </clipPath>
+          </defs>
+          <ellipse cx="264" cy="244" rx="237" ry="18" fill="#e8e8d8" />
+          <path
+            d="M219 224H235V252H219M73 245H460"
+            stroke="var(--launch-line)"
+            stroke-width="1.5"
+          />
+          <ellipse
+            class="club-launch-shadow"
+            cx="128"
+            cy="242"
+            rx="71"
+            ry="7"
+            fill="var(--launch-ink)"
+            opacity=".14"
+          />
+          <!-- A short roof and a sloping back give the net a real goal footprint. -->
+          <path d="M248 246L280 227H494L462 247Z" fill="#a6b495" opacity=".16" />
+          <path
+            d="M250 244L282 228H492L460 244"
+            stroke="#b3bdab"
+            stroke-width="3"
+            stroke-linejoin="round"
+          />
+          <g class="club-launch-net">
+            <path d="M250 104H460L474 97H264Z" fill="#fffef6" opacity=".55" />
+            <path d="M264 97H474L492 228H282Z" fill="url(#launch-net-shade)" />
+            <path d="M460 104L474 97L492 228L460 244Z" fill="#bdcbb1" opacity=".18" />
+            <g stroke="#8b8d7f" stroke-width=".85" opacity=".55">
+              <path
+                d="M264 97Q273.75 162.5 282 228 M275.67 97Q285.42 162.5 293.67 228 M287.33 97Q297.08 162.5 305.33 228 M299 97Q308.75 162.5 317 228 M310.67 97Q320.42 162.5 328.67 228 M322.33 97Q332.08 162.5 340.33 228 M334 97Q343.75 162.5 352 228 M345.67 97Q355.42 162.5 363.67 228 M357.33 97Q367.08 162.5 375.33 228 M369 97Q378.75 162.5 387 228 M380.67 97Q390.42 162.5 398.67 228 M392.33 97Q402.08 162.5 410.33 228 M404 97Q413.75 162.5 422 228 M415.67 97Q425.42 162.5 433.67 228 M427.33 97Q437.08 162.5 445.33 228 M439 97Q448.75 162.5 457 228 M450.67 97Q460.42 162.5 468.67 228 M462.33 97Q472.08 162.5 480.33 228 M474 97Q483.75 162.5 492 228 M264 97Q369 97 474 97 M265.64 108.91Q370.64 109.61 475.64 108.91 M267.27 120.82Q372.27 122.17 477.27 120.82 M268.91 132.73Q373.91 134.62 478.91 132.73 M270.55 144.64Q375.55 146.91 480.55 144.64 M272.18 156.55Q377.18 159.02 482.18 156.55 M273.82 168.45Q378.82 170.93 483.82 168.45 M275.45 180.36Q380.45 182.64 485.45 180.36 M277.09 192.27Q382.09 194.16 487.09 192.27 M278.73 204.18Q383.73 205.53 488.73 204.18 M280.36 216.09Q385.36 216.8 490.36 216.09 M282 228Q387 228 492 228"
+              />
+              <path
+                d="M250 104Q257 100.5 264 97 M261.67 104Q268.67 100.5 275.67 97 M273.33 104Q280.33 100.5 287.33 97 M285 104Q292 100.5 299 97 M296.67 104Q303.67 100.5 310.67 97 M308.33 104Q315.33 100.5 322.33 97 M320 104Q327 100.5 334 97 M331.67 104Q338.67 100.5 345.67 97 M343.33 104Q350.33 100.5 357.33 97 M355 104Q362 100.5 369 97 M366.67 104Q373.67 100.5 380.67 97 M378.33 104Q385.33 100.5 392.33 97 M390 104Q397 100.5 404 97 M401.67 104Q408.67 100.5 415.67 97 M413.33 104Q420.33 100.5 427.33 97 M425 104Q432 100.5 439 97 M436.67 104Q443.67 100.5 450.67 97 M448.33 104Q455.33 100.5 462.33 97 M460 104Q467 100.5 474 97 M250 104Q355 104 460 104 M257 100.5Q362 100.5 467 100.5 M264 97Q369 97 474 97"
+              />
+              <path
+                d="M460 104Q460.3 174 460 244 M464.67 101.67Q467.97 170.17 470.67 238.67 M469.33 99.33Q475.63 166.33 481.33 233.33 M474 97Q483.3 162.5 492 228 M460 104Q467 100.5 474 97 M460 116.73Q467.82 113.1 475.64 108.91 M460 129.45Q468.64 125.68 477.27 120.82 M460 142.18Q469.45 138.21 478.91 132.73 M460 154.91Q470.27 150.68 480.55 144.64 M460 167.64Q471.09 163.08 482.18 156.55 M460 180.36Q471.91 175.4 483.82 168.45 M460 193.09Q472.73 187.64 485.45 180.36 M460 205.82Q473.55 199.8 487.09 192.27 M460 218.55Q474.36 211.9 488.73 204.18 M460 231.27Q475.18 223.96 490.36 216.09 M460 244Q476 236 492 228"
+              />
+              <path
+                d="M250 104Q250.3 174 250 244 M254.67 101.67Q257.97 170.17 260.67 238.67 M259.33 99.33Q265.63 166.33 271.33 233.33 M264 97Q273.3 162.5 282 228 M250 104Q257 100.5 264 97 M250 116.73Q257.82 113.1 265.64 108.91 M250 129.45Q258.64 125.68 267.27 120.82 M250 142.18Q259.45 138.21 268.91 132.73 M250 154.91Q260.27 150.68 270.55 144.64 M250 167.64Q261.09 163.08 272.18 156.55 M250 180.36Q261.91 175.4 273.82 168.45 M250 193.09Q262.73 187.64 275.45 180.36 M250 205.82Q263.55 199.8 277.09 192.27 M250 218.55Q264.36 211.9 278.73 204.18 M250 231.27Q265.18 223.96 280.36 216.09 M250 244Q266 236 282 228"
+                opacity=".45"
+              />
+            </g>
+            <path
+              d="M250 104L264 97H474L460 104M264 97Q270 164 282 228H492Q487 165 474 97"
+              stroke="#aab5a2"
+              stroke-width="1.4"
+            />
+          </g>
+          <path
+            d="M460 108L474 101L492 228"
+            stroke="#c1c8ba"
+            stroke-width="2.5"
+            stroke-linejoin="round"
+          />
+          <g stroke-linecap="round" stroke-linejoin="round">
+            <use href="#launch-goal-frame" stroke="#939e8b" stroke-width="9" />
+            <use href="#launch-goal-frame" stroke="#fffef8" stroke-width="6.5" />
+            <path
+              d="M252 240V111Q252 106 257 106H453"
+              stroke="#fff"
+              stroke-width="1"
+              opacity=".8"
+            />
+          </g>
+          <ellipse cx="250" cy="245" rx="7" ry="2" fill="#89947d" opacity=".3" />
+          <ellipse cx="460" cy="245" rx="7" ry="2" fill="#89947d" opacity=".3" />
+          <ellipse
+            class="club-launch-ball-shadow"
+            transform="translate(206 248)"
+            cx="0"
+            cy="0"
+            rx="16"
+            ry="3.5"
+            fill="#596348"
+            opacity=".16"
+          />
+          <g class="club-launch-drone">
+            <image
+              href="/assets/club/vitaliy-drone-transparent.webp"
+              x="20"
+              y="78"
+              width="190"
+              height="155.26"
+            />
+          </g>
+          <g class="club-launch-ball">
+            <!-- Official adidas UCL 26/27 Pro product photo (KE9757).
+                 Source: https://www.adidas.com.au/uefa-champions-league-26-27-pro-ball/KE9757.html -->
+            <g class="club-launch-ball-spin">
+              <image
+                href="/assets/club/ucl-pro-26-27.jpg"
+                x="-24.2"
+                y="-24.2"
+                width="48.4"
+                height="48.4"
+                clip-path="url(#launch-ball-crop)"
+              />
+            </g>
+          </g>
+          <g class="club-launch-goal">
+            <path
+              d="M285 65L278 61M288 52L283 46M425 65L432 61M422 52L427 46"
+              stroke="var(--launch-sun)"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+            <text
+              x="355"
+              y="69"
+              text-anchor="middle"
+              fill="var(--launch-ink)"
+              font-size="21"
+              font-weight="800"
+            >
+              ГООООЛ!
+            </text>
+          </g>
+        </svg>
       </div>
       <p id="launch-message" role="status">Открываем клуб…</p>
-      <button type="button" id="launch-retry" hidden>Повторить</button>
+      <div class="club-launch-actions">
+        <button type="button" class="club-launch-open" id="launch-open" hidden>
+          Открыть
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <path
+              d="M3 9H15M10 4L15 9L10 14"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+        <button type="button" id="launch-retry" hidden>Повторить</button>
+      </div>
       <noscript>Для запуска приложения включите JavaScript.</noscript>
     </div>
-    <div id="root"></div>
+    <div id="root" inert aria-hidden="true" tabindex="-1"></div>
     <script>
       // Keep recovery available even if the application bundle fails to load.
       ;(() => {
         const splash = document.getElementById('club-launch')
         const message = document.getElementById('launch-message')
         const retry = document.getElementById('launch-retry')
+        const open = document.getElementById('launch-open')
+        const root = document.getElementById('root')
+        let state = 'loading'
         retry.onclick = () => location.reload()
+        open.onclick = () => {
+          if (state !== 'ready') return
+          state = 'opened'
+          splash.hidden = true
+          root.inert = false
+          root.removeAttribute('aria-hidden')
+          document.documentElement.classList.remove('club-launching')
+          root.focus({ preventScroll: true })
+        }
         const show = (text) => {
           splash.hidden = false
+          root.inert = true
+          root.setAttribute('aria-hidden', 'true')
+          document.documentElement.classList.add('club-launching')
+          open.hidden = true
           message.textContent = text
           retry.hidden = false
         }
@@ -136,11 +441,16 @@
         window.clubLaunch = {
           fail(text) {
             clearTimeout(timer)
+            state = 'failed'
             show(text)
           },
           finish() {
             clearTimeout(timer)
-            splash.hidden = true
+            if (state !== 'loading') return
+            state = 'ready'
+            message.textContent = 'Клуб готов'
+            retry.hidden = true
+            open.hidden = false
           },
         }
         window.addEventListener(
@@ -152,6 +462,10 @@
           true,
         )
       })()
+    </script>
+    <script type="module">
+      // Decorative motion must never hold up startup or disable recovery.
+      import('/src/launch-animation.ts').catch(() => {})
     </script>
     <script type="module" src="/src/startup.ts"></script>
   </body>

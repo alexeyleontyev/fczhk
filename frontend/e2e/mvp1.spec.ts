@@ -1,5 +1,5 @@
 import { answerConfirmation } from './confirmation-helpers'
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 
 test('mobile admin: create, enroll, payment, finalize, teams and publish', async ({ page }) => {
   await page.goto('/')

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from './app-test'
 
 async function login(page: Page, role = 'admin') {
   await page.goto('/')

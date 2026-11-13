@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 
 test('transferred guests remain clickable; compact controls fit and team colors can be swapped on both views', async ({
   page,

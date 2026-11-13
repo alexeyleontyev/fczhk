@@ -1,4 +1,13 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+async function enterReadyClub(page: Page) {
+  const open = page.getByRole('button', { name: 'Открыть', exact: true })
+  await expect(open).toBeVisible()
+  await expect(page.locator('#club-launch')).toBeVisible()
+  await expect(page.locator('#root')).toBeHidden()
+  await open.click()
+  await expect(page.locator('#club-launch')).toBeHidden()
+}
 
 test('signals Telegram ready before waiting for the server, even without session storage', async ({
   page,
@@ -34,9 +43,11 @@ test('signals Telegram ready before waiting for the server, even without session
   try {
     await expect(page.locator('html')).toHaveAttribute('data-telegram-ready', 'yes')
     await expect(page.getByText('Открываем клуб…')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Открыть', exact: true })).toBeHidden()
   } finally {
     releaseHealth()
   }
+  await enterReadyClub(page)
   await expect(page.getByText('Локальная демонстрация')).toBeVisible()
 })
 
@@ -81,6 +92,7 @@ test('a late SDK completes login in memory and opens the screen in the Telegram 
   } finally {
     release()
   }
+  await enterReadyClub(page)
   await expect(page.getByRole('heading', { name: 'Аукцион капитанов', exact: true })).toBeVisible()
   expect(logins).toBe(1)
 })
@@ -98,7 +110,9 @@ test('failed SDK download can be retried on the same launch link', async ({ page
   await expect(
     page.getByText('Не удалось загрузить Telegram. Проверьте подключение.'),
   ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Открыть', exact: true })).toBeHidden()
   await page.getByRole('button', { name: 'Повторить', exact: true }).click()
+  await enterReadyClub(page)
   await expect(page.getByText('Локальная демонстрация')).toBeVisible()
   expect(attempts).toBe(2)
 })
@@ -110,6 +124,7 @@ test('the HTML offers recovery when the application bundle fails', async ({ page
   await expect(
     page.getByText('Не удалось загрузить приложение. Проверьте подключение.'),
   ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Открыть', exact: true })).toBeHidden()
 })
 
 test('an uncaught render error leaves a working reload button', async ({ page }) => {
@@ -130,5 +145,6 @@ test('an uncaught render error leaves a working reload button', async ({ page })
   await page.goto('/')
   await expect(page.getByText('Не удалось открыть приложение. Попробуйте ещё раз.')).toBeVisible()
   await page.getByRole('button', { name: 'Повторить', exact: true }).click()
+  await enterReadyClub(page)
   await expect(page.getByText('Локальная демонстрация')).toBeVisible()
 })

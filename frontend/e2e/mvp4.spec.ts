@@ -1,5 +1,6 @@
+import { autoEnterClub } from './app-test'
 import { answerConfirmation } from './confirmation-helpers'
-import { test, expect, type Dialog } from '@playwright/test'
+import { test, expect, type Dialog } from './app-test'
 
 test('two captains: sealed bids, ties, free completion, approval and restart persistence', async ({
   page,
@@ -107,6 +108,7 @@ test('two captains: sealed bids, ties, free completion, approval and restart per
   const second = await browser.newContext({ viewport: { width: 390, height: 844 } })
   try {
     const other = await second.newPage()
+    await autoEnterClub(other)
     await other.goto(page.url())
     await other.getByRole('button', { name: 'Войти игроком', exact: true }).click()
     const blackPanel = other.locator('.auction-panel')

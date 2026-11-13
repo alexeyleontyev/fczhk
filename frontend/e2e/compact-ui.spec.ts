@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 test('one shared keeper card has no personal ratings or profile linking actions', async ({
   page,

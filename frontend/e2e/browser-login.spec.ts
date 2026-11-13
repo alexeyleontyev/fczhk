@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './app-test'
 
 const sdk = `
 window.Telegram = window.Telegram || {};

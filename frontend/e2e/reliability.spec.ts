@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 test('valid session survives stale Mini App initData and logout revokes it', async ({ page }) => {
   const login = await page.request.post('/api/auth/demo/player')

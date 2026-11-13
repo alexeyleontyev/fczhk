@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 test('archived report shows frozen ratings, goals and metadata with private admin edits and history', async ({
   page,

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 test('notification settings persist per-type switches and remain readable on mobile', async ({
   page,

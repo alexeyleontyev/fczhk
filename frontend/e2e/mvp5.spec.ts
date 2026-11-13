@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 import { randomUUID } from 'node:crypto'
 
 test('player outside roster: predict, revise, lock at kickoff and update overall standings', async ({

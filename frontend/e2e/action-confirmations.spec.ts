@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from '@playwright/test'
+import { expect, test, type APIRequestContext } from './app-test'
 import { answerConfirmation, publicationState } from './confirmation-helpers'
 import type { Match, Player } from '../src/types'
 

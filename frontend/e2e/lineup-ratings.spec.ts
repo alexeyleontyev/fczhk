@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 import { publicationState } from './confirmation-helpers'
 
 test('lineup rating sources are independent, prefer rated participants and exclude keepers', async ({

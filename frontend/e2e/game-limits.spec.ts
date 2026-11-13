@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 import { answerConfirmation } from './confirmation-helpers'
 
 test('admin expands a full game to 18+2 and both previews keep two subs per team', async ({

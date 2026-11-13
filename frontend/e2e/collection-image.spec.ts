@@ -1,5 +1,5 @@
 import { answerConfirmation } from './confirmation-helpers'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 const red = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAAQUlEQVR4nO3QwQ0AMAyDwJT9d07fXoB8zAIn8XZu4sidwlp4VFZYC4/KCmvhUVlhLTwqK6yFR2WFtfCorLDW2eoP10YBO0pqtFEAAAAASUVORK5CYII=',

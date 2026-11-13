@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 test('standings show historical forecast counts and average points at mobile and desktop widths', async ({
   page,

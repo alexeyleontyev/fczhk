@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 test('catalog saves field and keeper votes inline and rejects a stale revision', async ({
   page,

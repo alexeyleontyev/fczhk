@@ -1,5 +1,5 @@
 import { answerConfirmation, publicationState } from './confirmation-helpers'
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 
 test('mobile result: unknown goals, actual rosters, corrections and player statistics', async ({
   page,

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { autoEnterClub, expect, test } from './app-test'
 
 test('owner grants and revokes administrator access while protecting owner role', async ({
   page,
@@ -29,6 +29,7 @@ test('owner grants and revokes administrator access while protecting owner role'
       player.token,
     )
     const adminPage = await context.newPage()
+    await autoEnterClub(adminPage)
     await adminPage.goto('/')
     await expect(adminPage.locator('.user-chip small')).toHaveText('Администратор')
     await adminPage.getByRole('button', { name: 'Настройки', exact: true }).click()

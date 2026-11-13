@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 
 test('a real saved vote appears below averages, keeps zero and refreshes after an edit', async ({
   page,

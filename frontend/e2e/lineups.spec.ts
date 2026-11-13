@@ -1,5 +1,6 @@
+import { autoEnterClub } from './app-test'
 import { answerConfirmation, publicationState } from './confirmation-helpers'
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 
 test('completed lineup shows missing ratings as dashes and keeps genuine zero scores', async ({
   page,
@@ -258,6 +259,7 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
   expect((await send(`/matches/${m.id}`)).registrations).toEqual(m.registrations)
   const adminContext = await browser.newContext()
   const admin = await adminContext.newPage()
+  await autoEnterClub(admin)
   try {
     await admin.goto(`/?game=${m.id}&screen=field`)
     await admin.getByRole('button', { name: 'Войти администратором' }).click()

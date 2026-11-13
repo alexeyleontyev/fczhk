@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 
 for (const username of [null, 'long_telegram_username_12345678901']) {
   test(`Telegram profile identification and alias rename: ${username ?? 'ID fallback'}`, async ({

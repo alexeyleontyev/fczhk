@@ -1,5 +1,6 @@
+import { autoEnterClub } from './app-test'
 import { answerConfirmation } from './confirmation-helpers'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './app-test'
 import type { Match, Player } from '../src/types'
 
 test('quick final score creates goal placeholders and preserves filled authors', async ({
@@ -144,6 +145,7 @@ test('player payment and administrator confirmation have independent green and r
   const context = await browser.newContext()
   try {
     const adminPage = await context.newPage()
+    await autoEnterClub(adminPage)
     await adminPage.addInitScript(
       (token) => sessionStorage.setItem('fczhk-session', token),
       admin.token,

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './app-test'
 
 test('community rule and per-score inclusion are visible in catalog, profiles and leaderboards', async ({
   page,
