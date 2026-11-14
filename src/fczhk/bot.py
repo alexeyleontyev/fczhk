@@ -410,7 +410,7 @@ def dispatcher(cfg, factory):
 
     @router.callback_query(F.data.startswith("pts:"))
     async def points_decision(query: CallbackQuery):
-        from .auth import has_admin_access
+        from .auth import is_owner
         from .wallet import decide_request
 
         try:
@@ -421,9 +421,9 @@ def dispatcher(cfg, factory):
 
             def save_decision():
                 with factory() as db, db.begin():
-                    admin = db.get(Player, pid)
-                    if not has_admin_access(admin, cfg):
-                        raise DomainError("Решение принимает администратор")
+                    owner = db.get(Player, pid)
+                    if not is_owner(owner, cfg):
+                        raise DomainError("Решение принимает только владелец")
                     request = decide_request(db, pid, int(rid), verdict == "a")
                     alias = db.get(Player, request.player_id).display_alias
                     amount = request.amount / 100

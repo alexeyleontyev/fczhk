@@ -257,7 +257,7 @@ def test_wallet_migration_matches_models_and_guards_downgrade(tmp_path):
         )
 
 
-def test_administrator_grants_points_with_a_reason(env, call):
+def test_owner_grants_points_with_a_reason(env, call):
     _, factory, _, _, ids = env
     call("POST", "/wallet/freebet", role="player")
     body = dict(player_id=ids["player"], amount=50, reason="Приз за лучший прогноз сезона")
@@ -288,7 +288,7 @@ def test_administrator_grants_points_with_a_reason(env, call):
     assert len(call("GET", "/wallet/grants")) == 2
 
 
-def test_grants_are_for_administrators_and_not_for_themselves(env, call):
+def test_grants_are_for_owner_and_not_for_themselves(env, call):
     _, _, _, _, ids = env
     body = dict(player_id=ids["player"], amount=10, reason="Просто так")
     call("POST", "/wallet/grants", body, role="player", expected=403)

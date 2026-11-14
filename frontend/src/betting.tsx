@@ -81,13 +81,13 @@ export function BettingScreen({
   me,
   onPlayer,
   match,
-  isAdmin = false,
+  isOwner = false,
   players = [],
 }: {
   me: number
   onPlayer: (id: number) => void
   match?: { id: number; status: string; starts_at: string; version: number } | null
-  isAdmin?: boolean
+  isOwner?: boolean
   players?: { id: number; alias: string; shared_keeper?: boolean }[]
 }) {
   const [wallet, setWallet] = useState<Wallet | null>(null)
@@ -192,7 +192,7 @@ export function BettingScreen({
             </p>
             {wallet.request?.status === 'pending' ? (
               <p className="wallet-request">
-                Запрос на {points(wallet.request.amount)} очков у администраторов.{' '}
+                Запрос на {points(wallet.request.amount)} очков у владельца.{' '}
                 <button
                   type="button"
                   className="text-button"
@@ -252,7 +252,7 @@ export function BettingScreen({
       )}
       <MyBets revision={revision} />
       <BetsArchive me={me} revision={revision} />
-      {isAdmin && (
+      {isOwner && (
         <GrantsPanel
           me={me}
           players={players}

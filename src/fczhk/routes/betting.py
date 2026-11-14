@@ -45,7 +45,7 @@ def router(ctx):
 
     @app.get("/api/wallet/requests")
     def pending_requests(
-        p: Player = Depends(ctx.admin), db: Session = Depends(db_dep, scope="function")
+        p: Player = Depends(ctx.owner), db: Session = Depends(db_dep, scope="function")
     ):
         return wallet.pending_requests(db)
 
@@ -53,7 +53,7 @@ def router(ctx):
     def decide_request(
         request_id: int,
         body: S.PointRequestDecision,
-        p: Player = Depends(ctx.admin),
+        p: Player = Depends(ctx.owner),
         db: Session = Depends(db_dep, scope="function"),
     ):
         wallet.decide_request(db, p.id, request_id, body.approve)
@@ -61,14 +61,14 @@ def router(ctx):
 
     @app.get("/api/wallet/grants")
     def wallet_grants(
-        p: Player = Depends(ctx.admin), db: Session = Depends(db_dep, scope="function")
+        p: Player = Depends(ctx.owner), db: Session = Depends(db_dep, scope="function")
     ):
         return wallet.grants(db)
 
     @app.post("/api/wallet/grants", status_code=201)
     def wallet_grant(
         body: S.WalletGrant,
-        p: Player = Depends(ctx.admin),
+        p: Player = Depends(ctx.owner),
         db: Session = Depends(db_dep, scope="function"),
     ):
         wallet.grant(db, p.id, body.player_id, body.amount, body.reason)
