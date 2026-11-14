@@ -7,6 +7,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, Teleg
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import case, or_, select
 
+from .bets import worker_tick as betting_tick
 from .db import database, now
 from .models import PostImage, Publication
 from .notifications import SCHEDULED_KINDS, delivery_allowed
@@ -14,6 +15,8 @@ from .operations import cleanup_sessions, heartbeat
 from .services import schedule_tick
 
 log = logging.getLogger(__name__)
+# Refitting the pricing model and the settlement safety net run at most this often.
+BETTING_INTERVAL = 30
 
 
 def chunks(value: str, size: int = 3500, *, utf16=False) -> list[str]:
@@ -252,12 +255,15 @@ async def mark_stale(cfg, factory, bot=None):
 async def run_worker(cfg, once=False):
     _, factory = database(cfg.database_url)
     bot = Bot(cfg.bot_token) if cfg.bot_token and cfg.env != "demo" else None
-    cleaned_at = None
+    cleaned_at = betting_at = None
     try:
         while True:
             try:
                 with factory() as db, db.begin():
                     schedule_tick(db, cfg)
+                if betting_at is None or now() - betting_at > timedelta(seconds=BETTING_INTERVAL):
+                    betting_tick(factory)
+                    betting_at = now()
                 await deliver_one(cfg, factory, bot)
                 await mark_stale(cfg, factory, bot)
                 if cleaned_at is None or now() - cleaned_at > timedelta(hours=1):
@@ -292,6 +298,7 @@ async def run_demo_worker(cfg, factory):
             schedule_tick(db, cfg)
         asyncio.run(deliver_one(cfg, factory))
         asyncio.run(mark_stale(cfg, factory))
+        betting_tick(factory)
         cleanup_sessions(factory)
         heartbeat(factory)
 

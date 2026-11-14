@@ -34,6 +34,13 @@ def audit(db: Session, actor: int | None, action: str, match_id=None, **data):
     db.add(Audit(actor_id=actor, action=action, match_id=match_id, data=data))
 
 
+def settle_bets(db: Session, match: Match):
+    """Refund, settle or re-settle the match's bets after its line-up, status or result changed."""
+    from .bets import reconcile_match
+
+    reconcile_match(db, match)
+
+
 def get_match(db: Session, match_id: int, version: int | None = None, lock=False) -> Match:
     query = select(Match).where(Match.id == match_id)
     if lock:
@@ -83,6 +90,7 @@ def invalidate(db: Session, match: Match, roster_changed=True):
     match.approved_version = None
     if match.status == "approved":
         match.status = "finalized"
+    settle_bets(db, match)
     for r in entries(db, match.id):
         r.team = None
     for pub in db.scalars(
@@ -588,6 +596,7 @@ def swap_team_colors(db: Session, actor: int, match: Match):
         pub.stale = True
         if pub.status == "pending":
             pub.status = "cancelled"
+    settle_bets(db, match)
     audit(db, actor, "teams.colors_swapped", match.id)
 
 
@@ -641,6 +650,7 @@ def approve(db: Session, actor: int, match: Match, cfg: Settings):
     db.add(snapshot)
     db.flush()
     db.add(TeamRatingSnapshot(snapshot_id=snapshot.id, data=ratings))
+    settle_bets(db, match)
     audit(db, actor, "teams.approved", match.id, version=match.version)
 
 
@@ -892,6 +902,7 @@ def cancel_match(
     if announced:
         publication = enqueue(db, match, "cancellation", cfg.publication_chat_id)
         publication.text += f"\n\nПричина: {reason}"
+    settle_bets(db, match)
     audit(db, actor, "match.cancelled", match.id, reason=reason)
 
 

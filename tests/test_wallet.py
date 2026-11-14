@@ -4,11 +4,43 @@ import pytest
 
 from fczhk import wallet
 from fczhk.db import now
-from fczhk.models import Player, WalletEntry
+from fczhk.models import Bet, Match, MatchOdds, Player, PricingModel, WalletEntry
 from fczhk.services import DomainError
 
 MONDAY = datetime(2026, 11, 16, 0, 0, tzinfo=wallet.MOSCOW)
 SUNDAY_LATE = datetime(2026, 11, 15, 23, 59, tzinfo=wallet.MOSCOW)
+
+
+def _bet(db, player_id, stake=1000):
+    """A bet row for journal entries that must point at a bet."""
+    match = db.query(Match).filter_by(game_day="2026-01-01").one_or_none()
+    if match is None:
+        match = Match(game_day="2026-01-01", starts_at=now(), location="Поле")
+        model = PricingModel(data={}, n_matches=0, source_updated_at=now())
+        db.add_all([match, model])
+        db.flush()
+        db.add(
+            MatchOdds(
+                match_id=match.id, approved_version=1, model_id=model.id, inputs={}, markets=[]
+            )
+        )
+        db.flush()
+    odds = db.query(MatchOdds).filter_by(match_id=match.id).one()
+    bet = Bet(
+        player_id=player_id,
+        match_id=match.id,
+        odds_id=odds.id,
+        approved_version=1,
+        selections=["1x2:a"],
+        labels=["x"],
+        stake=stake,
+        odds=200,
+        status="open",
+        credited=0,
+    )
+    db.add(bet)
+    db.flush()
+    return bet.id
 
 
 def test_weeks_start_on_moscow_monday():
@@ -79,8 +111,20 @@ def test_leaderboard_and_bank(env, call):
                     freebet_week="2026-W02",
                     created_at=at,
                 ),
-                WalletEntry(player_id=ids["player"], kind="stake", amount=-5000, created_at=at),
-                WalletEntry(player_id=ids["player"], kind="payout", amount=12550, created_at=at),
+                WalletEntry(
+                    player_id=ids["player"],
+                    kind="stake",
+                    amount=-5000,
+                    bet_id=_bet(db, ids["player"]),
+                    created_at=at,
+                ),
+                WalletEntry(
+                    player_id=ids["player"],
+                    kind="payout",
+                    amount=12550,
+                    bet_id=_bet(db, ids["player"]),
+                    created_at=at,
+                ),
                 WalletEntry(
                     player_id=ids["admin"],
                     kind="freebet",
@@ -88,9 +132,27 @@ def test_leaderboard_and_bank(env, call):
                     freebet_week="2026-W02",
                     created_at=at,
                 ),
-                WalletEntry(player_id=ids["admin"], kind="stake", amount=-8000, created_at=at),
-                WalletEntry(player_id=ids["admin"], kind="stake", amount=-2000, created_at=at),
-                WalletEntry(player_id=ids["admin"], kind="refund", amount=2000, created_at=at),
+                WalletEntry(
+                    player_id=ids["admin"],
+                    kind="stake",
+                    amount=-8000,
+                    bet_id=_bet(db, ids["admin"]),
+                    created_at=at,
+                ),
+                WalletEntry(
+                    player_id=ids["admin"],
+                    kind="stake",
+                    amount=-2000,
+                    bet_id=_bet(db, ids["admin"]),
+                    created_at=at,
+                ),
+                WalletEntry(
+                    player_id=ids["admin"],
+                    kind="refund",
+                    amount=2000,
+                    bet_id=_bet(db, ids["admin"]),
+                    created_at=at,
+                ),
             ]
         )
     board = call("GET", "/betting/leaderboard", role="player")
@@ -126,8 +188,16 @@ def test_ties_share_a_rank_and_the_bank_can_be_negative(env):
                     created_at=at,
                 )
             )
-            db.add(WalletEntry(player_id=pid, kind="stake", amount=-10000, created_at=at))
-            db.add(WalletEntry(player_id=pid, kind="payout", amount=30000, created_at=at))
+            db.add(
+                WalletEntry(
+                    player_id=pid, kind="stake", amount=-10000, bet_id=_bet(db, pid), created_at=at
+                )
+            )
+            db.add(
+                WalletEntry(
+                    player_id=pid, kind="payout", amount=30000, bet_id=_bet(db, pid), created_at=at
+                )
+            )
         board = wallet.leaderboard(db)
     assert [r["rank"] for r in board["rows"]] == [1, 1]
     assert board["bank"]["balance"] == -400

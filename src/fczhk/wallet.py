@@ -17,7 +17,7 @@ from .services import DomainError, audit
 UNIT = 100  # amounts are stored in hundredths of a point
 FREEBET_POINTS = 100
 RECENT_ENTRIES = 20
-BANK_KINDS = ("stake", "payout", "refund")
+BANK_KINDS = ("stake", "payout", "refund", "correction")
 
 
 def points(amount: int) -> float:
@@ -173,10 +173,11 @@ def leaderboard(db) -> dict:
     return dict(
         rows=rows,
         bank=dict(
-            # What players have lost to the bank: stakes taken minus what was paid back.
-            balance=points(-(bank["stake"] + bank["payout"] + bank["refund"])),
+            # What players have lost to the bank: stakes taken minus everything paid back.
+            balance=points(-sum(bank.values())),
             staked=points(-bank["stake"]),
-            paid_out=points(bank["payout"]),
+            # payouts net of corrections after changed results
+            paid_out=points(bank["payout"] + bank["correction"]),
             refunded=points(bank["refund"]),
         ),
         freebets_issued=points(freebets),

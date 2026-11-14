@@ -436,28 +436,84 @@ class PredictionBaseline(Base):
     source: Mapped[str] = mapped_column(String(250))
 
 
+class PricingModel(Base):
+    """A fitted score model for betting odds (see ``odds_model``); kept for every odds snapshot."""
+
+    __tablename__ = "pricing_models"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON)
+    n_matches: Mapped[int] = mapped_column()
+    # Latest completed result the model saw; a newer one triggers a refit.
+    source_updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class MatchOdds(Base):
+    """Odds frozen for one approved line-up. Inputs make the prices reproducible."""
+
+    __tablename__ = "match_odds"
+    __table_args__ = (UniqueConstraint("match_id", "approved_version", name="uq_match_odds_version"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    approved_version: Mapped[int] = mapped_column()
+    model_id: Mapped[int] = mapped_column(ForeignKey("pricing_models.id"))
+    inputs: Mapped[dict] = mapped_column(JSON)
+    markets: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
+class Bet(Base):
+    """A single or combination bet. Odds are fixed when it is placed; ``credited`` is what the
+    bet has paid back so far, so a corrected result only posts the difference."""
+
+    __tablename__ = "bets"
+    __table_args__ = (
+        CheckConstraint("status IN ('open', 'won', 'lost', 'void')", name="ck_bet_status"),
+        CheckConstraint("stake > 0", name="ck_bet_stake"),
+        CheckConstraint("odds >= 101", name="ck_bet_odds"),
+        CheckConstraint("credited >= 0", name="ck_bet_credited"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    odds_id: Mapped[int] = mapped_column(ForeignKey("match_odds.id"))
+    approved_version: Mapped[int] = mapped_column()
+    selections: Mapped[list] = mapped_column(JSON)
+    labels: Mapped[list] = mapped_column(JSON)
+    stake: Mapped[int] = mapped_column(BigInteger)  # hundredths of a point
+    odds: Mapped[int] = mapped_column()  # hundredths: 187 = 1.87
+    status: Mapped[str] = mapped_column(String(5), default="open")
+    credited: Mapped[int] = mapped_column(BigInteger, default=0)
+    outcome: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+    settled_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
 class WalletEntry(Base):
     """One movement of betting points. A balance is the sum of its owner's entries.
 
     Amounts are hundredths of a point, signed from the player's side: a weekly freebet, a
-    payout and a refund are positive, a stake is negative. Entries are never edited, so every
-    balance and the bank can be recomputed from this table alone.
+    payout and a refund are positive, a stake is negative, and a correction after a changed
+    result has either sign. Entries are never edited, so every balance and the bank can be
+    recomputed from this table alone.
     """
 
     __tablename__ = "wallet_entries"
     __table_args__ = (
         UniqueConstraint("player_id", "freebet_week", name="uq_wallet_freebet_week"),
         CheckConstraint(
-            "kind IN ('freebet', 'stake', 'payout', 'refund')", name="ck_wallet_entry_kind"
+            "kind IN ('freebet', 'stake', 'payout', 'refund', 'correction')",
+            name="ck_wallet_entry_kind",
         ),
         CheckConstraint(
             "(kind = 'freebet' AND freebet_week IS NOT NULL) OR (kind <> 'freebet' AND freebet_week IS NULL)",
             name="ck_wallet_freebet_week",
         ),
         CheckConstraint(
-            "(kind = 'stake' AND amount < 0) OR (kind <> 'stake' AND amount >= 0)",
+            "(kind = 'stake' AND amount < 0) OR (kind IN ('freebet', 'payout', 'refund') AND amount >= 0) OR kind = 'correction'",
             name="ck_wallet_entry_sign",
         ),
+        CheckConstraint("(kind = 'freebet') = (bet_id IS NULL)", name="ck_wallet_entry_bet"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
@@ -465,6 +521,7 @@ class WalletEntry(Base):
     amount: Mapped[int] = mapped_column(BigInteger)
     # ISO week in Moscow time ("2026-W46"); one freebet per player and week.
     freebet_week: Mapped[str | None] = mapped_column(String(8))
+    bet_id: Mapped[int | None] = mapped_column(ForeignKey("bets.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 
 
