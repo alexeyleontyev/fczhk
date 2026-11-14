@@ -487,3 +487,81 @@ def test_model_details_are_for_administrators_only(call, club):
     mid = club["match"]
     assert "model" not in call("GET", f"/matches/{mid}/odds", role="player")
     assert call("GET", f"/matches/{mid}/odds", role="admin")["model"]["n_matches"] == 30
+
+
+def test_implied_selections_add_no_margin(env, call, club):
+    o = call("GET", f"/matches/{club['match']}/odds", role="player")
+    _, factory, _, _, _ = env
+    with factory() as db:
+        snapshot = db.scalar(select(MatchOdds))
+        sim = odds.simulation(db, snapshot)
+    ids, _ = sim.shares["white"]
+
+    def priced(*selections):
+        return odds.price(sim, [odds.parse(s) for s in selections])
+
+    # Over 11.5 already contains over 10.5: the combination is the narrower single.
+    nested = priced("total:over:10.5", "total:over:11.5")
+    assert nested["odds"] == priced("total:over:11.5")["odds"] and nested["implied"] == [0]
+    # The same player over 0.5 and over 1.5; a team scoring next to its player scoring.
+    two = priced(f"player:{ids[0]}:over:1.5", f"player:{ids[0]}:over:0.5")
+    assert two["odds"] == priced(f"player:{ids[0]}:over:1.5")["odds"] and two["implied"] == [1]
+    team = priced("team:a:over:0.5", f"player:{ids[0]}:over:0.5")
+    assert team["odds"] == priced(f"player:{ids[0]}:over:0.5")["odds"] and team["implied"] == [0]
+    # A band of totals narrows the outcome: both selections matter and the price grows.
+    band = priced("total:over:8.5", "total:under:12.5")
+    assert band["implied"] == [] and band["odds"] > priced("total:over:8.5")["odds"]
+
+    total = next(
+        s["id"] for g in o["groups"] for s in g["selections"] if s["id"].startswith("total:over:")
+    )
+    line = float(total.rsplit(":", 1)[1])
+    wider = f"total:over:{line - 1}"
+    if wider in {s["id"] for g in o["groups"] for s in g["selections"]}:
+        q = call(
+            "POST",
+            f"/matches/{club['match']}/odds/quote",
+            dict(odds_id=o["odds_id"], selections=[wider, total]),
+            role="player",
+        )
+        assert len(q["implied"]) == 1 and q["odds"] == priced(total)["odds"]
+
+
+def test_exact_scores_are_central_without_gaps_and_flat_margin(env, call, club):
+    o = call("GET", f"/matches/{club['match']}/odds", role="player")
+    group = next(g for g in o["groups"] if g["name"] == "Точный счёт")
+    scores = {tuple(map(int, s["id"].split(":")[1:])) for s in group["selections"]}
+    assert odds.SCORES[0] <= len(scores) <= odds.SCORES[1]
+    for a, b in scores:  # no gaps within a row or a column
+        assert all((a, c) in scores for c in range(b, max(y for x, y in scores if x == a) + 1))
+        assert all((c, b) in scores for c in range(a, max(x for x, y in scores if y == b) + 1))
+    _, factory, _, _, _ = env
+    with factory() as db:
+        sim = odds.simulation(db, db.scalar(select(MatchOdds)))
+    mat = sim.mats.mean(axis=0)
+    top = np.unravel_index(int(np.argmax(mat)), mat.shape)
+    assert tuple(int(v) for v in top) in scores
+    for s in group["selections"]:
+        p = odds.probability(sim, [odds.parse(s["id"])])
+        assert s["odds"] == odds.rounded(1 / (p * (1 + odds.SCORE_MARGIN)))
+        assert s["label"].startswith("Счёт ")
+    # A score decides the match result: the result next to it is implied, the other is impossible.
+    a, b = max(scores, key=lambda s: s[0] - s[1])
+    winner = "1x2:a" if a > b else "1x2:draw" if a == b else "1x2:b"
+    loser = "1x2:b" if a >= b else "1x2:a"
+    combo = odds.price(sim, [odds.parse(f"score:{a}:{b}"), odds.parse(winner)])
+    assert combo["implied"] == [1]
+    assert odds.price(sim, [odds.parse(f"score:{a}:{b}"), odds.parse(loser)])["odds"] is None
+    # Settlement: the score bet wins only on that exact score.
+    assert bets._leg_result(odds.parse("score:5:4"), dict(white=5, black=4)) == "won"
+    assert bets._leg_result(odds.parse("score:5:4"), dict(white=4, black=5)) == "lost"
+
+
+def test_long_odds_are_rounded_down_on_a_coarser_step():
+    assert odds.rounded(1.876) == 1.87
+    assert odds.rounded(9.999) == 9.99
+    assert odds.rounded(10.0) == 10.0
+    assert odds.rounded(12.38) == 12.3
+    assert odds.rounded(19.99) == 19.9
+    assert odds.rounded(20.0) == 20.0
+    assert odds.rounded(44.71) == 44.0
