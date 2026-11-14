@@ -192,7 +192,7 @@
 
 `GET /api/bets` — до 50 последних собственных ставок: `selections`, `labels`, `stake`, `odds`, `potential`, `status` (`open`, `won`, `lost`, `void`), `credited` (сколько ставка вернула), `outcome` (счёт, результаты исходов, причина возврата).
 
-`PointRequestCreate`: `amount` (1–1000 очков); второй открытый запрос — 409. Ответ — `wallet` с полем `request` (последний запрос: `amount`, `status` `pending`/`approved`/`declined`/`cancelled`). `GET /api/wallet/requests` — открытые запросы (`alias`, `amount`, `balance`). `PointRequestDecision`: `approve` (bool); уже решённый запрос — 409, свой — 422. Бот обрабатывает кнопки `pts:{id}:a|d` только от администраторов.
+`PointRequestCreate`: `amount` (1–1000 очков); второй открытый запрос или второй запрос за московскую неделю (отменённые не считаются) — 409. В `GET /api/wallet` — `request_available` и `next_request_at`. Ответ — `wallet` с полем `request` (последний запрос: `amount`, `status` `pending`/`approved`/`declined`/`cancelled`). `GET /api/wallet/requests` — открытые запросы (`alias`, `amount`, `balance`). `PointRequestDecision`: `approve` (bool); уже решённый запрос — 409, свой — 422. Бот обрабатывает кнопки `pts:{id}:a|d` только от администраторов.
 
 `WalletGrant`: `player_id`, `amount` (очки со знаком, не ноль, по модулю до 100 000), `reason` (3–200 символов). Начисление себе и общей карточке вратаря — 422. Ответ — последние 50 начислений (`alias`, `actor`, `amount`, `note`, `created_at`). В `GET /api/wallet` появляются поле `grants` и операции `grant` с `note`; `profit` не учитывает начисления. В лидерборде — `grants` по игроку и `grants_issued`. Поле `model` в ответе линии отдаётся только администраторам.
 

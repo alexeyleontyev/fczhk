@@ -54,11 +54,9 @@ def test_approval_grants_the_points_and_tells_the_player(env, call):
     with factory() as db:
         told = db.scalar(select(Publication).where(Publication.kind == "points_decided"))
         assert told.chat_id == "102" and "Начислено 100" in told.text
-    # a new request is possible once the previous one is decided; declining grants nothing
-    second = call("POST", "/wallet/requests", dict(amount=30), role="player", expected=201)[
-        "request"
-    ]["id"]
-    call("POST", f"/wallet/requests/{second}/decision", dict(approve=False))
+    # one request a week: the next one waits for Monday
+    again = call("POST", "/wallet/requests", dict(amount=30), role="player", expected=409)
+    assert "раз в неделю" in again["detail"]
     assert call("GET", "/wallet", role="player")["balance"] == 100
 
 
@@ -105,3 +103,35 @@ async def test_bot_rejects_malformed_point_buttons(env, monkeypatch, data):
     assert (
         "Неизвестный запрос" in next(r for r in replies if isinstance(r, AnswerCallbackQuery)).text
     )
+
+
+def test_points_can_be_requested_once_a_moscow_week(env, call):
+    from datetime import datetime
+
+    from fczhk import wallet
+    from fczhk.scheduling import MOSCOW
+
+    cfg, factory, _, _, ids = env
+    pid = ids["player"]
+    sunday = datetime(2026, 11, 15, 23, 0, tzinfo=MOSCOW)
+    monday = datetime(2026, 11, 16, 0, 5, tzinfo=MOSCOW)
+    with factory() as db, db.begin():
+        first = wallet.request_points(
+            db, pid, 100, cfg, at=datetime(2026, 11, 10, 12, tzinfo=MOSCOW)
+        )
+        wallet.decide_request(db, ids["admin"], first.id, approve=False)
+        # declined still counts for the week
+        with pytest.raises(wallet.DomainError, match="раз в неделю"):
+            wallet.request_points(db, pid, 50, cfg, at=sunday)
+        view = wallet.wallet_data(db, pid, at=sunday)
+        assert view["request_available"] is False and view["next_request_at"] == monday.replace(
+            minute=0
+        )
+        # a new week, a new request; a cancelled one does not use up the week
+        second = wallet.request_points(db, pid, 50, cfg, at=monday)
+        second.status = "cancelled"
+        db.flush()
+        assert wallet.wallet_data(db, pid, at=monday)["request_available"] is True
+        wallet.request_points(db, pid, 50, cfg, at=monday)
+    late = call("POST", "/wallet/requests", dict(amount=10), role="admin", expected=201)
+    assert late["request_available"] is False

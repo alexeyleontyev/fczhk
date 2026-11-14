@@ -155,10 +155,26 @@ def _notify(db, chat_id: int | None, kind: str, key: str, text: str) -> None:
     db.add(Publication(kind=kind, version=1, dedupe_key=key, text=text, chat_id=str(chat_id)))
 
 
-def request_points(db, actor: int, amount: float, cfg) -> PointRequest:
-    """A player asks for points. Every administrator gets a bot message with two buttons."""
+def _week_request(db, ids: list[int], at: datetime) -> PointRequest | None:
+    """This Moscow week's request that uses up the weekly allowance; a cancelled one does not."""
+    week_start = next_week_start(at) - timedelta(days=7)
+    return db.scalar(
+        select(PointRequest)
+        .where(
+            PointRequest.player_id.in_(ids),
+            PointRequest.status != "cancelled",
+            PointRequest.created_at >= week_start,
+        )
+        .limit(1)
+    )
+
+
+def request_points(db, actor: int, amount: float, cfg, at: datetime | None = None) -> PointRequest:
+    """A player asks for points, once a week. Every administrator gets a bot message with two
+    buttons."""
     from .auth import has_admin_access
 
+    at = at or now()
     player = db.scalar(select(Player).where(Player.id == actor).with_for_update())
     cents = round(amount * UNIT)
     if not UNIT <= cents <= MAX_REQUEST * UNIT:
@@ -169,7 +185,11 @@ def request_points(db, actor: int, amount: float, cfg) -> PointRequest:
         )
     ):
         raise DomainError("Запрос уже отправлен — дождитесь решения администратора", 409)
-    request = PointRequest(player_id=actor, amount=cents, status="pending", created_at=now())
+    if _week_request(db, _owned_ids(db, actor), at):
+        raise DomainError(
+            "Просить очки можно раз в неделю. Следующий запрос — с понедельника.", 409
+        )
+    request = PointRequest(player_id=actor, amount=cents, status="pending", created_at=at)
     db.add(request)
     db.flush()
     audit(db, actor, "wallet.request", request_id=request.id, amount=points(cents))
@@ -301,6 +321,8 @@ def wallet_data(db, viewer: int, at: datetime | None = None) -> dict:
             next_at=next_week_start(at),
         ),
         entries=[_entry(e) for e in recent],
+        request_available=_week_request(db, ids, at) is None,
+        next_request_at=next_week_start(at),
         request=_request(
             db.scalar(
                 select(PointRequest)

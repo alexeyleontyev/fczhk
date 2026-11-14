@@ -14,6 +14,8 @@ export type Wallet = {
   profit: number
   freebets: number
   grants?: number
+  request_available?: boolean
+  next_request_at?: string
   request?: {
     id: number
     amount: number
@@ -200,9 +202,14 @@ export function BettingScreen({
                   Отменить
                 </button>
               </p>
+            ) : wallet.request_available === false ? (
+              <p className="wallet-request muted">
+                Просить очки можно раз в неделю. Следующий запрос —{' '}
+                {wallet.next_request_at ? moscowDay(wallet.next_request_at) : 'с понедельника'}.
+              </p>
             ) : (
               <div className="wallet-request">
-                <span>Попросить очки:</span>
+                <span>Попросить очки (раз в неделю):</span>
                 {[50, 100, 200].map((amount) => (
                   <button
                     key={amount}
