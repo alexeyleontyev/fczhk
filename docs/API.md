@@ -171,8 +171,20 @@
 | GET | `/api/wallet` | Участник | — |
 | POST | `/api/wallet/freebet` | Участник | — |
 | GET | `/api/betting/leaderboard` | Участник | — |
+| GET | `/api/bets` | Участник | — |
+| GET | `/api/matches/{match_id}/odds` | Участник | — |
+| POST | `/api/matches/{match_id}/odds/quote` | Участник | OddsQuote |
+| POST | `/api/matches/{match_id}/bets` | Участник | BetPlace |
 
-`GET /api/wallet` возвращает `balance`, `freebets` (сумма полученных фрибетов), `profit` (баланс минус фрибеты), `freebet.available`, `freebet.week` (ISO-неделя по Москве), `freebet.next_at` (понедельник 00:00 следующей недели) и до 20 последних операций `entries`. Суммы — очки с точностью до сотых. `POST /api/wallet/freebet` начисляет 100 очков один раз за неделю и возвращает тот же объект; повтор в ту же неделю — 409. `GET /api/betting/leaderboard` возвращает строки `rank`, `player_id`, `alias`, `balance`, `freebets`, `profit`, `staked`, объект `bank` (`balance` = принятые ставки − выплаты − возвраты, `staked`, `paid_out`, `refunded`), `freebets_issued` и `players`. Правила — [Ставки](BETTING.md).
+`GET /api/wallet` возвращает `balance`, `freebets`, `profit` (баланс минус фрибеты), `freebet.available`, `freebet.week` (ISO-неделя по Москве), `freebet.next_at` и до 20 последних операций `entries` (`freebet`, `stake`, `payout`, `refund`, `correction`). Суммы — очки с точностью до сотых. `POST /api/wallet/freebet` начисляет 100 очков один раз за неделю; повтор — 409.
+
+`GET /api/matches/{match_id}/odds` до утверждения составов или без обученной модели возвращает `available=false` и `reason`; после — `available=true`, `odds_id`, `approved_version`, `open` (приём ставок открыт), `closes_at`, `model` (`n_matches`, `fitted_at`) и `groups`: список рынков с исходами `{id, label, odds}`. Первый запрос после утверждения рассчитывает и сохраняет линию. Поле `bets` — собственные ставки на эту игру.
+
+`OddsQuote`: `odds_id`, `selections` (1–10 идентификаторов исходов из линии). Ответ: `odds`, `labels`, `probability`. Смена линии — 409, исход вне линии или невозможная комбинация — 422. `BetPlace` дополнительно содержит `stake` (очки, от 1 до баланса) и `odds` — коэффициент, который видел игрок; расхождение с текущим — 409. Ответ 201: `bet` и обновлённый `wallet`.
+
+`GET /api/bets` — до 50 последних собственных ставок: `selections`, `labels`, `stake`, `odds`, `potential`, `status` (`open`, `won`, `lost`, `void`), `credited` (сколько ставка вернула), `outcome` (счёт, результаты исходов, причина возврата).
+
+`GET /api/betting/leaderboard` возвращает строки `rank`, `player_id`, `alias`, `balance`, `freebets`, `profit`, `staked`, объект `bank` (`balance` по рассчитанным ставкам, `in_play`, `staked`, `paid_out` с учётом перерасчётов, `refunded`), `freebets_issued` и `players`. Правила — [Ставки](BETTING.md).
 
 ### Лимиты участников игры
 
