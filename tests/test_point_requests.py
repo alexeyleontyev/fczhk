@@ -12,15 +12,26 @@ def _admin_messages(factory):
         return list(db.scalars(select(Publication).where(Publication.kind == "points_request")))
 
 
-def test_player_requests_points_and_administrators_are_asked(env, call):
+@pytest.mark.parametrize("legacy_owner", [False, True])
+def test_player_requests_points_and_only_owner_is_notified(env, call, legacy_owner):
     cfg, factory, _, _, ids = env
+    cfg.admin_ids = "101,104"
+    if legacy_owner:
+        cfg.owner_id = 0
+    with factory() as db, db.begin():
+        db.add_all(
+            [
+                Player(alias="Другой администратор", telegram_id=103, admin_access=True),
+                Player(alias="Администратор из списка", telegram_id=104),
+            ]
+        )
     wallet = call("POST", "/wallet/requests", dict(amount=100), role="player", expected=201)
     assert wallet["request"]["status"] == "pending" and wallet["request"]["amount"] == 100
     assert wallet["balance"] == 0  # nothing until an administrator decides
     again = call("POST", "/wallet/requests", dict(amount=50), role="player", expected=409)
     assert "уже отправлен" in again["detail"]
     messages = _admin_messages(factory)
-    assert [m.chat_id for m in messages] == ["101"]  # the one administrator, by Telegram ID
+    assert [m.chat_id for m in messages] == ["101"]
     assert "Игрок просит 100 очков" in messages[0].text
     markup = points_markup(cfg, "points_request", messages[0].dedupe_key)
     request_id = wallet["request"]["id"]
@@ -32,6 +43,44 @@ def test_player_requests_points_and_administrators_are_asked(env, call):
     assert queue[0]["alias"] == "Игрок" and queue[0]["amount"] == 100
     call("GET", "/wallet/requests", role="player", expected=403)
     call("POST", "/wallet/requests", dict(amount=5000), role="player", expected=422)
+
+
+def test_owner_can_be_notified_before_registering_in_the_app(env, call):
+    cfg = env[0]
+    cfg.owner_id = 999
+    call("POST", "/wallet/requests", dict(amount=50), role="player", expected=201)
+    assert [m.chat_id for m in _admin_messages(env[1])] == ["999"]
+
+
+def test_non_owner_administrator_cannot_manage_points(env, call):
+    _, factory, _, _, ids = env
+    request_id = call("POST", "/wallet/requests", dict(amount=50), role="player", expected=201)[
+        "request"
+    ]["id"]
+    call("PUT", f"/administrators/{ids['player']}", dict(is_admin=True, revision=0))
+    assert call("GET", "/me", role="player")["is_admin"] is True
+    assert call("GET", "/me", role="player")["is_owner"] is False
+    call("GET", "/wallet/grants", role="player", expected=403)
+    call("GET", "/wallet/requests", role="player", expected=403)
+    call(
+        "POST",
+        "/wallet/grants",
+        dict(player_id=ids["admin"], amount=50, reason="Приз"),
+        role="player",
+        expected=403,
+    )
+    for approve in (True, False):
+        call(
+            "POST",
+            f"/wallet/requests/{request_id}/decision",
+            dict(approve=approve),
+            role="player",
+            expected=403,
+        )
+    assert call("GET", "/wallet")["balance"] == 0
+    assert call("GET", "/wallet", role="player")["balance"] == 0
+    with factory() as db:
+        assert db.get(PointRequest, request_id).status == "pending"
 
 
 def test_approval_grants_the_points_and_tells_the_player(env, call):
@@ -60,7 +109,7 @@ def test_approval_grants_the_points_and_tells_the_player(env, call):
     assert call("GET", "/wallet", role="player")["balance"] == 100
 
 
-def test_a_player_can_cancel_and_an_administrator_cannot_approve_his_own(env, call):
+def test_a_player_can_cancel_and_owner_cannot_approve_his_own(env, call):
     call("POST", "/wallet/requests/cancel", role="player", expected=404)
     call("POST", "/wallet/requests", dict(amount=10), role="player", expected=201)
     assert (
@@ -68,11 +117,12 @@ def test_a_player_can_cancel_and_an_administrator_cannot_approve_his_own(env, ca
     )
     own = call("POST", "/wallet/requests", dict(amount=10), expected=201)["request"]["id"]
     assert (
-        "другой администратор"
+        "Свой запрос"
         in call("POST", f"/wallet/requests/{own}/decision", dict(approve=True), expected=422)[
             "detail"
         ]
     )
+    assert len(_admin_messages(env[1])) == 1  # no notification about the owner's own request
 
 
 async def test_bot_buttons_approve_a_request(env, call, monkeypatch):
@@ -83,7 +133,7 @@ async def test_bot_buttons_approve_a_request(env, call, monkeypatch):
     # a player pressing the button (e.g. a forwarded message) is refused
     replies = await callback_replies(env, monkeypatch, f"pts:{request_id}:a", user_id=102)
     answer = next(r for r in replies if isinstance(r, AnswerCallbackQuery))
-    assert "администратор" in answer.text
+    assert "владелец" in answer.text
     replies = await callback_replies(env, monkeypatch, f"pts:{request_id}:a", user_id=101)
     answer = next(r for r in replies if isinstance(r, AnswerCallbackQuery))
     assert answer.text == "Одобрено: +40 очков — Игрок"
@@ -95,6 +145,16 @@ async def test_bot_buttons_approve_a_request(env, call, monkeypatch):
     with factory() as db:
         assert db.get(PointRequest, request_id).decided_by == ids["admin"]
         assert db.get(Player, ids["player"]).alias == "Игрок"
+
+
+async def test_non_owner_administrator_cannot_approve_via_bot(env, call, monkeypatch):
+    request_id = call("POST", "/wallet/requests", dict(amount=40), expected=201)["request"]["id"]
+    call("PUT", f"/administrators/{env[4]['player']}", dict(is_admin=True, revision=0))
+    replies = await callback_replies(env, monkeypatch, f"pts:{request_id}:a", user_id=102)
+    assert "владелец" in next(r for r in replies if isinstance(r, AnswerCallbackQuery)).text
+    assert call("GET", "/wallet")["balance"] == 0
+    with env[1]() as db:
+        assert db.get(PointRequest, request_id).status == "pending"
 
 
 @pytest.mark.parametrize("data", ["pts:1:x", "pts:abc:a"])

@@ -38,6 +38,21 @@ test('owner grants and revokes administrator access while protecting owner role'
     await expect(
       adminPage.getByRole('region', { name: 'Администраторы', exact: true }),
     ).toHaveCount(0)
+    await adminPage
+      .getByRole('navigation', { name: 'Главная навигация' })
+      .getByRole('button', { name: 'Ставки', exact: true })
+      .click()
+    await expect(adminPage.getByRole('heading', { name: 'Ставки', level: 1 })).toBeVisible()
+    await expect(
+      adminPage.getByRole('region', { name: 'Начисление очков', exact: true }),
+    ).toHaveCount(0)
+    await page
+      .getByRole('navigation', { name: 'Главная навигация' })
+      .getByRole('button', { name: 'Ставки', exact: true })
+      .click()
+    await expect(page.getByRole('region', { name: 'Начисление очков', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+    await page.getByRole('tab', { name: 'Администраторы', exact: true }).click()
     await panel.screenshot({ path: 'test-results/administrators-mobile.png' })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     page.once('dialog', (dialog) => dialog.accept())

@@ -383,7 +383,7 @@ function App() {
             me={me.id}
             onPlayer={openStats}
             match={m}
-            isAdmin={isAdmin}
+            isOwner={Boolean(me.is_owner)}
             players={players}
           />
         )}

@@ -100,7 +100,7 @@ MAX_GRANT = 100_000  # points per grant, either sign
 
 
 def grant(db, actor: int, player_id: int, amount: float, reason: str) -> WalletEntry:
-    """An administrator adds points to (or takes them from) a player's balance, with a reason.
+    """The owner adds points to (or takes them from) a player's balance, with a reason.
 
     Points stay virtual: a grant is for prizes and corrections, not a way to sell points. It is
     journalled, audited and shown to the player; it is not a bet result, so it changes neither
@@ -170,10 +170,7 @@ def _week_request(db, ids: list[int], at: datetime) -> PointRequest | None:
 
 
 def request_points(db, actor: int, amount: float, cfg, at: datetime | None = None) -> PointRequest:
-    """A player asks for points, once a week. Every administrator gets a bot message with two
-    buttons."""
-    from .auth import has_admin_access
-
+    """A player asks for points once a week; only the owner receives the bot notification."""
     at = at or now()
     player = db.scalar(select(Player).where(Player.id == actor).with_for_update())
     cents = round(amount * UNIT)
@@ -194,17 +191,14 @@ def request_points(db, actor: int, amount: float, cfg, at: datetime | None = Non
     db.flush()
     audit(db, actor, "wallet.request", request_id=request.id, amount=points(cents))
     text = f"🪙 {player.display_alias} просит {points(cents):g} очков.\nБаланс сейчас: {points(balance(db, actor)):g}."
-    for admin in db.scalars(
-        select(Player).where(Player.telegram_id.is_not(None), Player.merged_into.is_(None))
-    ):
-        if admin.id != actor and has_admin_access(admin, cfg):
-            _notify(
-                db,
-                admin.telegram_id,
-                "points_request",
-                f"points_request:{request.id}:{admin.id}",
-                text,
-            )
+    if cfg.effective_owner_id and player.telegram_id != cfg.effective_owner_id:
+        _notify(
+            db,
+            cfg.effective_owner_id,
+            "points_request",
+            f"points_request:{request.id}:owner",
+            text,
+        )
     return request
 
 
@@ -221,7 +215,7 @@ def cancel_request(db, actor: int) -> None:
 
 
 def decide_request(db, actor: int, request_id: int, approve: bool) -> PointRequest:
-    """An administrator approves (the points are granted) or declines a request; the player is told."""
+    """The owner approves (the points are granted) or declines a request; the player is told."""
     request = db.scalar(select(PointRequest).where(PointRequest.id == request_id).with_for_update())
     if request is None:
         raise DomainError("Запрос не найден", 404)
@@ -231,7 +225,7 @@ def decide_request(db, actor: int, request_id: int, approve: bool) -> PointReque
         ]
         raise DomainError(f"Запрос уже {verdict}", 409)
     if request.player_id == actor:
-        raise DomainError("Свой запрос одобряет другой администратор", 422)
+        raise DomainError("Свой запрос одобрять нельзя", 422)
     if approve:
         grant(db, actor, request.player_id, points(request.amount), REQUEST_NOTE)
     request.status = "approved" if approve else "declined"
@@ -310,7 +304,7 @@ def wallet_data(db, viewer: int, at: datetime | None = None) -> dict:
     return dict(
         server_time=at,
         balance=points(total),
-        # Betting result only: freebets and administrators' grants are not won or lost.
+    # Betting result only: freebets and the owner's grants are not won or lost.
         profit=points(total - freebets - granted),
         freebets=points(freebets),
         grants=points(granted),

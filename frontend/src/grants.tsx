@@ -22,7 +22,7 @@ type Grant = {
   created_at: string
 }
 
-/** Administrators add or take back points for one player, with a reason the player sees. */
+/** The owner adds or takes back points for one player, with a reason the player sees. */
 export function GrantsPanel({
   me,
   players,
@@ -107,7 +107,7 @@ export function GrantsPanel({
     <section className="panel grants-panel" aria-label="Начисление очков">
       <h2 className="betting-section-title">Начисление очков</h2>
       <p className="muted caption">
-        Только для администраторов. Запросы игроков приходят и сюда, и в бот. Ниже — начисление
+        Только для владельца. Запросы игроков приходят и сюда, и в бот. Ниже — начисление
         вручную, для призов и исправлений: игрок увидит сумму и причину в своих операциях.
         Отрицательная сумма списывает очки. Очки не продаются за деньги.
       </p>
