@@ -37,6 +37,21 @@ def router(ctx):
     def my_bets(p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")):
         return bets.my_bets(db, p.id)
 
+    @app.get("/api/betting/archive")
+    def betting_archive(
+        p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        return bets.archive(db)
+
+    @app.get("/api/matches/{match_id}/bets")
+    def match_bets(
+        match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
+    ):
+        m = svc.get_match(db, match_id)
+        if m.status == "draft" and not has_admin_access(p, cfg):
+            raise svc.DomainError("Игра не найдена", 404)
+        return bets.match_bets(db, m)
+
     @app.get("/api/matches/{match_id}/odds")
     def match_odds(
         match_id: int, p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")

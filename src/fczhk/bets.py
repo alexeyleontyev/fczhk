@@ -16,7 +16,7 @@ Rules:
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 
 from . import odds as od
 from .db import now
@@ -228,3 +228,58 @@ def worker_tick(factory) -> None:
                 step(db)
         except Exception as exc:  # noqa: BLE001 - the worker keeps running
             log.error("Betting step %s failed (%s); retrying", step.__name__, type(exc).__name__)
+
+
+def _aliases(db) -> dict[int, str]:
+    people = {p.id: p for p in db.scalars(select(Player))}
+    return {pid: people[p.merged_into or pid].display_alias for pid, p in people.items()}
+
+
+def match_bets(db, match: Match) -> list[dict]:
+    """Everybody's bets on a match. Hidden until kick-off, so nobody copies or reacts to them."""
+    if now() < match.starts_at:
+        raise DomainError("Ставки игроков откроются в момент начала игры", 409)
+    alias = _aliases(db)
+    rows = db.scalars(select(Bet).where(Bet.match_id == match.id).order_by(Bet.created_at, Bet.id))
+    return [serialize(b) | dict(player_id=b.player_id, alias=alias[b.player_id]) for b in rows]
+
+
+def archive(db, limit: int = 30) -> list[dict]:
+    """Matches that already started and had bets, newest first, with totals per match."""
+    from sqlalchemy import func
+
+    started = now()
+    rows = db.execute(
+        select(
+            Match.id,
+            Match.starts_at,
+            func.count(Bet.id),
+            func.count(func.distinct(Bet.player_id)),
+            func.sum(Bet.stake),
+            func.sum(Bet.credited),
+            func.sum(case((Bet.status == "open", 1), else_=0)),
+        )
+        .join(Bet, Bet.match_id == Match.id)
+        .where(Match.starts_at <= started)
+        .group_by(Match.id, Match.starts_at)
+        .order_by(Match.starts_at.desc())
+        .limit(limit)
+    ).all()
+    out = []
+    for mid, starts_at, n, players, staked, credited, open_ in rows:
+        result = _result(db, db.get(Match, mid))
+        out.append(
+            dict(
+                match_id=mid,
+                starts_at=starts_at,
+                score=dict(white=result["white"], black=result["black"]) if result else None,
+                bets=n,
+                players=players,
+                staked=points(staked),
+                returned=points(credited),
+                open=int(open_),
+                # The bank's result on this match once every bet is settled.
+                bank=points(staked - credited) if not open_ else None,
+            )
+        )
+    return out

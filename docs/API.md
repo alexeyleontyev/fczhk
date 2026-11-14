@@ -172,6 +172,8 @@
 | POST | `/api/wallet/freebet` | Участник | — |
 | GET | `/api/betting/leaderboard` | Участник | — |
 | GET | `/api/bets` | Участник | — |
+| GET | `/api/betting/archive` | Участник | — |
+| GET | `/api/matches/{match_id}/bets` | Участник | — |
 | GET | `/api/matches/{match_id}/odds` | Участник | — |
 | POST | `/api/matches/{match_id}/odds/quote` | Участник | OddsQuote |
 | POST | `/api/matches/{match_id}/bets` | Участник | BetPlace |
@@ -183,6 +185,8 @@
 `OddsQuote`: `odds_id`, `selections` (1–10 идентификаторов исходов из линии). Ответ: `odds`, `labels`, `probability`. Смена линии — 409, исход вне линии или невозможная комбинация — 422. `BetPlace` дополнительно содержит `stake` (очки, от 1 до баланса) и `odds` — коэффициент, который видел игрок; расхождение с текущим — 409. Ответ 201: `bet` и обновлённый `wallet`.
 
 `GET /api/bets` — до 50 последних собственных ставок: `selections`, `labels`, `stake`, `odds`, `potential`, `status` (`open`, `won`, `lost`, `void`), `credited` (сколько ставка вернула), `outcome` (счёт, результаты исходов, причина возврата).
+
+`GET /api/matches/{match_id}/bets` — ставки всех игроков на игру (поля ставки плюс `player_id` и `alias`); до начала игры — 409. `GET /api/betting/archive` — до 30 начавшихся игр со ставками, новые сверху: `match_id`, `starts_at`, `score`, `bets`, `players`, `staked`, `returned`, `open` и `bank` (результат банка по игре, `null`, пока есть нерассчитанные ставки).
 
 `GET /api/betting/leaderboard` возвращает строки `rank`, `player_id`, `alias`, `balance`, `freebets`, `profit`, `staked`, объект `bank` (`balance` по рассчитанным ставкам, `in_play`, `staked`, `paid_out` с учётом перерасчётов, `refunded`), `freebets_issued` и `players`. Правила — [Ставки](BETTING.md).
 

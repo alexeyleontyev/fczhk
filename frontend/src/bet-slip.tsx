@@ -288,3 +288,111 @@ export function MyBets({ revision }: { revision: number }) {
     </section>
   )
 }
+
+type ArchiveEntry = {
+  match_id: number
+  starts_at: string
+  score: { white: number; black: number } | null
+  bets: number
+  players: number
+  staked: number
+  returned: number
+  open: number
+  bank: number | null
+}
+type PlayerBet = Bet & { player_id: number; alias: string }
+
+const plural = (n: number, one: string, few: string, many: string) => {
+  const d = n % 10
+  const h = n % 100
+  const word = d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many
+  return `${n} ${word}`
+}
+const day = (iso: string) =>
+  new Date(iso).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Europe/Moscow',
+  })
+
+function ArchiveMatch({ entry, me }: { entry: ArchiveEntry; me: number }) {
+  const [rows, setRows] = useState<PlayerBet[] | null>(null)
+  const [error, setError] = useState('')
+  function load() {
+    if (rows) return
+    api<PlayerBet[]>(`/matches/${entry.match_id}/bets`)
+      .then(setRows)
+      .catch((e) => setError((e as Error).message))
+  }
+  return (
+    <details className="bets-archive-match" onToggle={(e) => e.currentTarget.open && load()}>
+      <summary>
+        <span>
+          <strong>{day(entry.starts_at)}</strong>
+          {entry.score && ` · ${entry.score.white}:${entry.score.black}`}
+        </span>
+        <small className="muted">
+          {plural(entry.bets, 'ставка', 'ставки', 'ставок')} ·{' '}
+          {plural(entry.players, 'игрок', 'игрока', 'игроков')} ·{' '}
+          {entry.bank === null
+            ? 'идёт расчёт'
+            : `банк ${entry.bank > 0 ? '+' : entry.bank < 0 ? '−' : ''}${points(Math.abs(entry.bank))}`}
+        </small>
+      </summary>
+      {error && <p className="alert error">{error}</p>}
+      {rows && (
+        <ul className="my-bets">
+          {rows.map((b) => (
+            <li key={b.id} className={`bet-${b.status} ${b.player_id === me ? 'mine' : ''}`}>
+              <div>
+                <span>
+                  <strong>{b.alias}</strong>
+                  {b.player_id === me ? ' · вы' : ''}: {b.labels.join(' + ')}
+                </span>
+                <small className="muted">
+                  {points(b.stake)} × {odd(b.odds)}
+                  {b.status === 'void' && b.outcome?.reason && ` · ${b.outcome.reason}`}
+                </small>
+              </div>
+              <div className="bet-result">
+                <span className="bet-status">{STATUS[b.status]}</span>
+                <strong>{b.status === 'open' ? points(b.potential) : points(b.credited)}</strong>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
+  )
+}
+
+export function BetsArchive({ me, revision }: { me: number; revision: number }) {
+  const [entries, setEntries] = useState<ArchiveEntry[] | null>(null)
+  useEffect(() => {
+    let active = true
+    api<ArchiveEntry[]>('/betting/archive')
+      .then((data) => {
+        if (active) setEntries(data)
+      })
+      .catch(() => {
+        if (active) setEntries([])
+      })
+    return () => {
+      active = false
+    }
+  }, [revision])
+  if (!entries || entries.length === 0) return null
+  return (
+    <section className="panel" aria-label="Архив ставок">
+      <h2 className="betting-section-title">Архив ставок</h2>
+      <p className="muted caption">
+        Ставки всех игроков открываются в момент начала игры. Нажмите на игру, чтобы увидеть, кто на
+        что ставил.
+      </p>
+      {entries.map((entry) => (
+        <ArchiveMatch key={entry.match_id} entry={entry} me={me} />
+      ))}
+    </section>
+  )
+}

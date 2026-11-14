@@ -451,3 +451,33 @@ def test_simulation_is_reproducible_and_shares_sum_to_the_scorer_rate(env, call,
     for team in ("white", "black"):
         np.testing.assert_allclose(a.shares[team][1].sum(1), model["scorer_rate"])
     assert odds_model.K_MAX + 1 == a.mats.shape[1]
+
+
+def test_everybodys_bets_open_at_kick_off_and_stay_in_the_archive(env, call, club):
+    mid, field = club["match"], club["field"]
+    _freebet(call)
+    _freebet(call, role="admin")
+    mine, _ = _bet(call, mid, ["1x2:a"], 20)
+    theirs, _ = _bet(call, mid, ["1x2:b"], 30, role="admin")
+    hidden = call("GET", f"/matches/{mid}/bets", role="player", expected=409)
+    assert "откроются" in hidden["detail"]
+    assert call("GET", "/betting/archive", role="player") == []  # not started yet
+    _finish(env, call, mid, [field[0], field[1]], [field[8]])
+    rows = call("GET", f"/matches/{mid}/bets", role="player")
+    assert [(r["alias"], r["labels"], r["stake"], r["status"]) for r in rows] == [
+        ("Игрок", ["Победа белых"], 20, "won"),
+        ("Администратор", ["Победа чёрных"], 30, "lost"),
+    ]
+    assert rows[0]["credited"] == pytest.approx(20 * mine["bet"]["odds"])
+    archive = call("GET", "/betting/archive", role="player")
+    assert len(archive) == 1
+    entry = archive[0]
+    assert entry["match_id"] == mid and entry["score"] == dict(white=2, black=1)
+    assert (
+        entry["bets"] == 2
+        and entry["players"] == 2
+        and entry["staked"] == 50
+        and entry["open"] == 0
+    )
+    assert entry["bank"] == pytest.approx(50 - 20 * mine["bet"]["odds"])
+    assert theirs["bet"]["status"] == "open"  # as placed; settled since

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Gift, Landmark } from 'lucide-react'
 
 import { api } from './api'
-import { MatchLine, MyBets } from './bet-slip'
+import { BetsArchive, MatchLine, MyBets } from './bet-slip'
 import './betting.css'
 
 type WalletEntryKind = 'freebet' | 'stake' | 'payout' | 'refund' | 'correction'
@@ -175,6 +175,7 @@ export function BettingScreen({
         />
       )}
       <MyBets revision={revision} />
+      <BetsArchive me={me} revision={revision} />
       {bank && (
         <section className="panel bank-panel" aria-label="Банк">
           <Landmark size={18} aria-hidden="true" />

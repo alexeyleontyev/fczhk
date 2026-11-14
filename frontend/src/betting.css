@@ -255,10 +255,28 @@
   letter-spacing: 0.08em;
   color: var(--muted);
 }
-.bet-won strong {
+.bet-won .bet-result strong {
   color: #1f6b2c;
 }
-.bet-lost strong {
+.bet-lost .bet-result strong {
   color: #a3361f;
   text-decoration: line-through;
+}
+.bets-archive-match {
+  border-top: 1px solid var(--line);
+  padding: 6px 0;
+}
+.bets-archive-match summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  min-height: 40px;
+  justify-content: center;
+}
+.bets-archive-match summary small {
+  font-size: 0.78rem;
+}
+.my-bets li.mine {
+  background: #fff6c2;
 }
