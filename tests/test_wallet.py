@@ -35,7 +35,7 @@ def _bet(db, player_id, stake=1000):
         labels=["x"],
         stake=stake,
         odds=200,
-        status="open",
+        status="won",
         credited=0,
     )
     db.add(bet)
@@ -169,7 +169,7 @@ def test_leaderboard_and_bank(env, call):
     )
     assert rows["Администратор"]["balance"] == 20 and rows["Администратор"]["profit"] == -80
     # the bank took 150 in stakes, paid back 125.50 and refunded 20
-    assert board["bank"] == dict(balance=4.5, staked=150, paid_out=125.5, refunded=20)
+    assert board["bank"] == dict(balance=4.5, in_play=0, staked=150, paid_out=125.5, refunded=20)
     assert board["freebets_issued"] == 300 and board["players"] == 2
     assert call("GET", "/wallet", role="player")["balance"] == 275.5
 

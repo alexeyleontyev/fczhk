@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 
 from .db import now
-from .models import Player, WalletEntry
+from .models import Bet, Player, WalletEntry
 from .results import identities
 from .scheduling import MOSCOW
 from .services import DomainError, audit
@@ -169,12 +169,15 @@ def leaderboard(db) -> dict:
         .group_by(WalletEntry.kind)
     ):
         bank[kind] = amount
+    # Stakes of bets not yet settled are held, not won: the bank counts them separately.
+    in_play = db.scalar(select(func.coalesce(func.sum(Bet.stake), 0)).where(Bet.status == "open"))
     freebets = sum(row["freebets"] for row in totals.values())
     return dict(
         rows=rows,
         bank=dict(
-            # What players have lost to the bank: stakes taken minus everything paid back.
-            balance=points(-sum(bank.values())),
+            # What players have lost to the bank on settled bets: stakes minus everything paid back.
+            balance=points(-sum(bank.values()) - in_play),
+            in_play=points(in_play),
             staked=points(-bank["stake"]),
             # payouts net of corrections after changed results
             paid_out=points(bank["payout"] + bank["correction"]),

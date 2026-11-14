@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { Gift, Landmark } from 'lucide-react'
 
 import { api } from './api'
+import { MatchLine, MyBets } from './bet-slip'
 import './betting.css'
 
-type WalletEntryKind = 'freebet' | 'stake' | 'payout' | 'refund'
+type WalletEntryKind = 'freebet' | 'stake' | 'payout' | 'refund' | 'correction'
 
 export type Wallet = {
   server_time: string
@@ -31,7 +32,7 @@ export type BettingLeaderboard = {
     profit: number
     staked: number
   }[]
-  bank: { balance: number; staked: number; paid_out: number; refunded: number }
+  bank: { balance: number; in_play: number; staked: number; paid_out: number; refunded: number }
   freebets_issued: number
   players: number
 }
@@ -41,6 +42,7 @@ const KIND_LABEL: Record<WalletEntryKind, string> = {
   stake: 'Ставка',
   payout: 'Выигрыш',
   refund: 'Возврат',
+  correction: 'Перерасчёт',
 }
 
 export const points = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
@@ -61,7 +63,15 @@ const moscowStamp = (iso: string) =>
     timeZone: 'Europe/Moscow',
   })
 
-export function BettingScreen({ me, onPlayer }: { me: number; onPlayer: (id: number) => void }) {
+export function BettingScreen({
+  me,
+  onPlayer,
+  match,
+}: {
+  me: number
+  onPlayer: (id: number) => void
+  match?: { id: number; status: string; starts_at: string } | null
+}) {
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [board, setBoard] = useState<BettingLeaderboard | null>(null)
   const [error, setError] = useState('')
@@ -152,6 +162,19 @@ export function BettingScreen({ me, onPlayer }: { me: number; onPlayer: (id: num
           </div>
         </section>
       )}
+      {wallet && match && ['approved', 'completed'].includes(match.status) && (
+        <MatchLine
+          matchId={match.id}
+          title={new Date(match.starts_at).toLocaleDateString('ru-RU', {
+            day: 'numeric',
+            month: 'long',
+            timeZone: 'Europe/Moscow',
+          })}
+          balance={wallet.balance}
+          onPlaced={() => setRevision((value) => value + 1)}
+        />
+      )}
+      <MyBets revision={revision} />
       {bank && (
         <section className="panel bank-panel" aria-label="Банк">
           <Landmark size={18} aria-hidden="true" />
@@ -162,8 +185,9 @@ export function BettingScreen({ me, onPlayer }: { me: number; onPlayer: (id: num
             </strong>
             <p className="wallet-meta">
               {bank.balance >= 0
-                ? 'Столько игроки суммарно проиграли банку.'
+                ? 'Столько игроки суммарно проиграли банку по рассчитанным ставкам.'
                 : 'Игроки в сумме обыграли банк на столько.'}{' '}
+              {bank.in_play > 0 && `Ещё ${points(bank.in_play)} в игре. `}
               Принято ставок {points(bank.staked)}, выплачено {points(bank.paid_out)}, возвращено{' '}
               {points(bank.refunded)}.
             </p>
