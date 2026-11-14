@@ -148,7 +148,10 @@ def aggregate(db: Session, ids: list[int]) -> dict:
             if row.withdrawn:
                 votes.pop(key, None)
             else:
-                votes[key] = (row.attack * 100 if row.attack is not None else None, row.defense * 100)
+                votes[key] = (
+                    row.attack * 100 if row.attack is not None else None,
+                    row.defense * 100,
+                )
     grouped = {}
     for (_, pid, pos), (attack, defense) in votes.items():
         attacks, defenses = grouped.setdefault((pid, pos), ([], []))
@@ -435,23 +438,40 @@ def withdraw_rating(db: Session, actor: int, target: int, position: str, revisio
         raise DomainError("Ваша оценка уже изменена. Обновите данные перед удалением.", 409)
     if row is None:
         canonical = {p.id: p.merged_into or p.id for p in db.scalars(select(Player))}
-        imported = any(canonical[r.author_id] == actor for r in db.scalars(
-            select(ImportedRating).where(ImportedRating.player_id.in_(target_ids),
-                                         ImportedRating.position == position)))
+        imported = any(
+            canonical[r.author_id] == actor
+            for r in db.scalars(
+                select(ImportedRating).where(
+                    ImportedRating.player_id.in_(target_ids), ImportedRating.position == position
+                )
+            )
+        )
         if not imported:
             return
         # A tombstone has no public score; preserve the original precise sheet vote separately.
-        row = Rating(author_id=actor, player_id=target, position=position,
-                     attack=0 if position == "field" else None, defense=0, revision=1)
+        row = Rating(
+            author_id=actor,
+            player_id=target,
+            position=position,
+            attack=0 if position == "field" else None,
+            defense=0,
+            revision=1,
+        )
         db.add(row)
     else:
         row.revision += 1
     row.withdrawn, row.updated_at = True, now()
     db.flush()
-    db.add(RatingHistory(rating_id=row.id, revision=row.revision, attack=row.attack,
-                         defense=row.defense, withdrawn=True))
-    audit(db, actor, "rating.withdrawn", player_id=target, position=position,
-          revision=row.revision)
+    db.add(
+        RatingHistory(
+            rating_id=row.id,
+            revision=row.revision,
+            attack=row.attack,
+            defense=row.defense,
+            withdrawn=True,
+        )
+    )
+    audit(db, actor, "rating.withdrawn", player_id=target, position=position, revision=row.revision)
     db.flush()
 
 
@@ -706,7 +726,9 @@ def strength_summary(inputs, assignments):
     return {
         **strength(inputs),
         "teams": {
-            team: strength([row for row in inputs if assignments.get(row["registration_id"]) == team])
+            team: strength(
+                [row for row in inputs if assignments.get(row["registration_id"]) == team]
+            )
             for team in ("white", "black")
         },
     }
@@ -829,6 +851,4 @@ def strength_text(value):
     )
     if value["total"] is not None:
         return f"{value['total']:.2f}{suffix}"
-    return (
-        f"неполная: {value['rated_total']:.2f} по {value['rated']} из {value['count']} игроков{suffix}"
-    )
+    return f"неполная: {value['rated_total']:.2f} по {value['rated']} из {value['count']} игроков{suffix}"

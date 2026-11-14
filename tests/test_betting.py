@@ -525,3 +525,33 @@ def test_implied_selections_add_no_margin(env, call, club):
             role="player",
         )
         assert len(q["implied"]) == 1 and q["odds"] == priced(total)["odds"]
+
+
+def test_exact_scores_are_central_without_gaps_and_flat_margin(env, call, club):
+    o = call("GET", f"/matches/{club['match']}/odds", role="player")
+    group = next(g for g in o["groups"] if g["name"] == "Точный счёт")
+    scores = {tuple(map(int, s["id"].split(":")[1:])) for s in group["selections"]}
+    assert odds.SCORES[0] <= len(scores) <= odds.SCORES[1]
+    for a, b in scores:  # no gaps within a row or a column
+        assert all((a, c) in scores for c in range(b, max(y for x, y in scores if x == a) + 1))
+        assert all((c, b) in scores for c in range(a, max(x for x, y in scores if y == b) + 1))
+    _, factory, _, _, _ = env
+    with factory() as db:
+        sim = odds.simulation(db, db.scalar(select(MatchOdds)))
+    mat = sim.mats.mean(axis=0)
+    top = np.unravel_index(int(np.argmax(mat)), mat.shape)
+    assert tuple(int(v) for v in top) in scores
+    for s in group["selections"]:
+        p = odds.probability(sim, [odds.parse(s["id"])])
+        assert s["odds"] == round(1 / (p * (1 + odds.SCORE_MARGIN)), 2)
+        assert s["label"].startswith("Счёт ")
+    # A score decides the match result: the result next to it is implied, the other is impossible.
+    a, b = max(scores, key=lambda s: s[0] - s[1])
+    winner = "1x2:a" if a > b else "1x2:draw" if a == b else "1x2:b"
+    loser = "1x2:b" if a >= b else "1x2:a"
+    combo = odds.price(sim, [odds.parse(f"score:{a}:{b}"), odds.parse(winner)])
+    assert combo["implied"] == [1]
+    assert odds.price(sim, [odds.parse(f"score:{a}:{b}"), odds.parse(loser)])["odds"] is None
+    # Settlement: the score bet wins only on that exact score.
+    assert bets._leg_result(odds.parse("score:5:4"), dict(white=5, black=4)) == "won"
+    assert bets._leg_result(odds.parse("score:5:4"), dict(white=4, black=5)) == "lost"

@@ -11,7 +11,11 @@ ALGORITHM = "openskill-field-sum/multistart-diversity-v1"
 
 def game_summary(inputs: list[dict], assignments: dict[int, str | None]) -> dict | None:
     sides = {
-        side: [Fraction(str(row["game_mu"])) for row in inputs if assignments.get(row["registration_id"]) == side]
+        side: [
+            Fraction(str(row["game_mu"]))
+            for row in inputs
+            if assignments.get(row["registration_id"]) == side
+        ]
         for side in ("white", "black")
     }
     if not all(sides.values()) or sum(map(len, sides.values())) != len(inputs):

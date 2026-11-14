@@ -123,8 +123,13 @@ def router(ctx):
                 {
                     key: row[key]
                     for key in (
-                        "author_id", "author", "attack", "defense", "at",
-                        "attack_weight", "defense_weight",
+                        "author_id",
+                        "author",
+                        "attack",
+                        "defense",
+                        "at",
+                        "attack_weight",
+                        "defense_weight",
                     )
                 }
                 for row in rt.review_data(db, p.id, player_id, position, True)["reviews"]
@@ -154,8 +159,11 @@ def router(ctx):
 
     @app.delete("/api/players/{player_id}/ratings/{position}")
     def withdraw_rating(
-        player_id: int, position: S.Position, body: S.RatingRemoval,
-        p: Player = Depends(current), db: Session = Depends(db_dep, scope="function"),
+        player_id: int,
+        position: S.Position,
+        body: S.RatingRemoval,
+        p: Player = Depends(current),
+        db: Session = Depends(db_dep, scope="function"),
     ):
         rt.withdraw_rating(db, p.id, player_id, position, body.revision)
         return rt.review_data(db, p.id, player_id, position, has_admin_access(p, cfg))

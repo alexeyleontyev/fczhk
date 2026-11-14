@@ -91,9 +91,7 @@ def replay(
     include_keepers: bool = False,
 ) -> dict:
     """Accumulate ratings chronologically across all seasons, without seasonal resets."""
-    games = tuple(
-        game for game in history(db) if before_day is None or game.day < before_day
-    )
+    games = tuple(game for game in history(db) if before_day is None or game.day < before_day)
     # Content-addressed cache: changed results, identities, or dates get a new key.
     # It cannot serve an old revision after imports or edits, even across processes.
     return deepcopy(_replay(games, margin, include_keepers))
@@ -161,9 +159,9 @@ def forecast_history(
     include_keepers: bool = False,
 ) -> list[dict]:
     """Forecast from all past seasons; season filters report rows, never training history."""
-    predictions = replay(
-        db, margin=margin, before_day=before_day, include_keepers=include_keepers
-    )["predictions"]
+    predictions = replay(db, margin=margin, before_day=before_day, include_keepers=include_keepers)[
+        "predictions"
+    ]
     if season is None:
         return predictions
     match_ids = set(db.scalars(select(Match.id).where(Match.season == season)))
