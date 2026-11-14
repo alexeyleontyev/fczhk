@@ -13,7 +13,7 @@ from . import services as svc
 from .config import Settings, settings
 from .db import database
 from .http_context import HttpContext
-from .routes import administration, auth_routes, competitions, matches, players, ratings
+from .routes import administration, auth_routes, betting, competitions, matches, players, ratings
 
 
 def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
@@ -48,7 +48,7 @@ def create_app(cfg: Settings | None = None, factory=None) -> FastAPI:
     ctx = HttpContext(cfg, factory)
     app.state.context = ctx
     db_dep = ctx.db_dep
-    for module in (auth_routes, players, competitions, matches, ratings, administration):
+    for module in (auth_routes, players, competitions, matches, ratings, administration, betting):
         app.include_router(module.router(ctx))
 
     @app.exception_handler(svc.DomainError)

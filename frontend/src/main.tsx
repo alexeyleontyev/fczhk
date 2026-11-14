@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CircleUserRound,
   Clock3,
+  Coins,
   Settings2,
   Users,
   Trophy,
@@ -16,6 +17,7 @@ import { RatingFlow } from './ratings'
 import { RatingDraftBar } from './rating-draft-controls'
 import { PlayerStats } from './results'
 import { PredictionStandings } from './predictions'
+import { BettingScreen } from './betting'
 import { BrowserLogin } from './browser-login'
 import { Button, Modal } from './ui'
 import { initial } from './format'
@@ -127,7 +129,7 @@ function App() {
     if (!demo || !me) return
     const url = new URL(location.href)
     const view = url.searchParams.get('view')
-    if (!view || !['archive', 'players', 'predictions', 'profile', 'settings'].includes(view)) return
+    if (!view || !['archive', 'players', 'predictions', 'betting', 'profile', 'settings'].includes(view)) return
     url.searchParams.delete('view')
     window.history.replaceState(window.history.state, '', url)
     if (view === 'settings') {
@@ -376,6 +378,7 @@ function App() {
         {tab === 'predictions' && (
           <PredictionStandings me={me.id} onPlayer={openStats} {...seasonFilter} />
         )}
+        {tab === 'betting' && <BettingScreen me={me.id} onPlayer={openStats} />}
         {visited('archive') && (
           <div hidden={tab !== 'archive'}>
             <ArchiveScreen
@@ -522,6 +525,7 @@ function App() {
           ['players', Users, 'Игроки'],
           ['profile', CircleUserRound, 'Профиль'],
           ['predictions', Trophy, 'Прогнозы'],
+          ['betting', Coins, 'Ставки'],
         ].map(([id, Icon, label]) => {
           const I = Icon as typeof Users
           return (

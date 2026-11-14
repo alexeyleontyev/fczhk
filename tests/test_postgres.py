@@ -1347,3 +1347,27 @@ def test_parallel_collection_image_changes_reject_stale_version(pg):
     with factory() as db:
         assert db.get(Match, mid).version == version + 1
         assert len(list(db.scalars(select(PostImage)))) == 1
+
+
+def test_parallel_freebet_claims_credit_one_freebet(pg):
+    from fczhk import wallet
+    from fczhk.models import WalletEntry
+
+    factory, pid = pg
+    at = datetime(2032, 6, 1, 11, 30, tzinfo=MOSCOW)
+
+    def claim(_):
+        try:
+            with factory() as db, db.begin():
+                wallet.claim_freebet(db, pid, at=at)
+            return "ok"
+        except DomainError as exc:
+            return exc.status
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        outcomes = sorted(pool.map(claim, range(4)), key=str)
+    assert outcomes == [409, 409, 409, "ok"]
+    with factory() as db:
+        entries = list(db.scalars(select(WalletEntry)))
+        assert [(e.player_id, e.kind, e.amount) for e in entries] == [(pid, "freebet", 10000)]
+        assert wallet.balance(db, pid) == 10000

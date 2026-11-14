@@ -436,6 +436,38 @@ class PredictionBaseline(Base):
     source: Mapped[str] = mapped_column(String(250))
 
 
+class WalletEntry(Base):
+    """One movement of betting points. A balance is the sum of its owner's entries.
+
+    Amounts are hundredths of a point, signed from the player's side: a weekly freebet, a
+    payout and a refund are positive, a stake is negative. Entries are never edited, so every
+    balance and the bank can be recomputed from this table alone.
+    """
+
+    __tablename__ = "wallet_entries"
+    __table_args__ = (
+        UniqueConstraint("player_id", "freebet_week", name="uq_wallet_freebet_week"),
+        CheckConstraint(
+            "kind IN ('freebet', 'stake', 'payout', 'refund')", name="ck_wallet_entry_kind"
+        ),
+        CheckConstraint(
+            "(kind = 'freebet' AND freebet_week IS NOT NULL) OR (kind <> 'freebet' AND freebet_week IS NULL)",
+            name="ck_wallet_freebet_week",
+        ),
+        CheckConstraint(
+            "(kind = 'stake' AND amount < 0) OR (kind <> 'stake' AND amount >= 0)",
+            name="ck_wallet_entry_sign",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    # ISO week in Moscow time ("2026-W46"); one freebet per player and week.
+    freebet_week: Mapped[str | None] = mapped_column(String(8))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+
+
 class ServiceHeartbeat(Base):
     __tablename__ = "service_heartbeats"
     name: Mapped[str] = mapped_column(String(30), primary_key=True)
