@@ -35,7 +35,13 @@ export type Bet = {
   settled_at: string | null
 }
 
-type Quote = { odds_id: number; selections: string[]; labels: string[]; odds: number }
+type Quote = {
+  odds_id: number
+  selections: string[]
+  labels: string[]
+  odds: number
+  implied?: string[]
+}
 
 const STATUS: Record<Bet['status'], string> = {
   open: 'В игре',
@@ -242,6 +248,13 @@ export function MatchLine({
                   </>
                 )}
               </p>
+              {quote?.implied && quote.implied.length > 0 && (
+                <p className="bet-implied caption" role="note">
+                  {quote.implied.length === 1 ? 'Исход' : 'Исходы'} «{quote.implied.join('», «')}»{' '}
+                  {quote.implied.length === 1 ? 'уже входит' : 'уже входят'} в остальные и не меняет
+                  коэффициент.
+                </p>
+              )}
               {picked.length > 1 && (
                 <p className="muted caption">
                   Комбо считается по совместной вероятности исходов. Если исход на игрока не

@@ -487,3 +487,41 @@ def test_model_details_are_for_administrators_only(call, club):
     mid = club["match"]
     assert "model" not in call("GET", f"/matches/{mid}/odds", role="player")
     assert call("GET", f"/matches/{mid}/odds", role="admin")["model"]["n_matches"] == 30
+
+
+def test_implied_selections_add_no_margin(env, call, club):
+    o = call("GET", f"/matches/{club['match']}/odds", role="player")
+    _, factory, _, _, _ = env
+    with factory() as db:
+        snapshot = db.scalar(select(MatchOdds))
+        sim = odds.simulation(db, snapshot)
+    ids, _ = sim.shares["white"]
+
+    def priced(*selections):
+        return odds.price(sim, [odds.parse(s) for s in selections])
+
+    # Over 11.5 already contains over 10.5: the combination is the narrower single.
+    nested = priced("total:over:10.5", "total:over:11.5")
+    assert nested["odds"] == priced("total:over:11.5")["odds"] and nested["implied"] == [0]
+    # The same player over 0.5 and over 1.5; a team scoring next to its player scoring.
+    two = priced(f"player:{ids[0]}:over:1.5", f"player:{ids[0]}:over:0.5")
+    assert two["odds"] == priced(f"player:{ids[0]}:over:1.5")["odds"] and two["implied"] == [1]
+    team = priced("team:a:over:0.5", f"player:{ids[0]}:over:0.5")
+    assert team["odds"] == priced(f"player:{ids[0]}:over:0.5")["odds"] and team["implied"] == [0]
+    # A band of totals narrows the outcome: both selections matter and the price grows.
+    band = priced("total:over:8.5", "total:under:12.5")
+    assert band["implied"] == [] and band["odds"] > priced("total:over:8.5")["odds"]
+
+    total = next(
+        s["id"] for g in o["groups"] for s in g["selections"] if s["id"].startswith("total:over:")
+    )
+    line = float(total.rsplit(":", 1)[1])
+    wider = f"total:over:{line - 1}"
+    if wider in {s["id"] for g in o["groups"] for s in g["selections"]}:
+        q = call(
+            "POST",
+            f"/matches/{club['match']}/odds/quote",
+            dict(odds_id=o["odds_id"], selections=[wider, total]),
+            role="player",
+        )
+        assert len(q["implied"]) == 1 and q["odds"] == priced(total)["odds"]

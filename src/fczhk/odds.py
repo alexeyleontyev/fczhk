@@ -41,6 +41,7 @@ N_DRAWS = 400
 MIN_VOTES = 3  # a rating from fewer voters keeps only votes / 3 of its distance from the average
 MAX_LEGS = 10
 IMPOSSIBLE = 1e-9  # a combination below this joint probability is not offered
+IMPLIED_TOL = 1e-9  # relative: a selection that moves the joint probability less is implied
 PLAYER_MIN_EXP = 1.0
 PLAYER_RANGE = (0.25, 0.75)
 PLAYER_LINES = (0.5, 1.5, 2.5, 3.5)
@@ -176,24 +177,45 @@ def probability(sim: om.Simulation, legs: list[dict]) -> float:
     return float(weights.sum(axis=(1, 2)).mean())
 
 
+def essential(sim: om.Simulation, legs: list[dict], p: float) -> list[int]:
+    """Indices of the selections that matter. A selection implied by the others (over 10.5
+    next to over 11.5, a team scoring next to one of its players scoring) does not change the
+    joint probability, so it must not add margin either. Broader selections are tried first."""
+    keep = list(range(len(legs)))
+    if len(legs) < 2:
+        return keep
+    order = sorted(keep, key=lambda i: -probability(sim, [legs[i]]))
+    for i in order:
+        rest = [j for j in keep if j != i]
+        if rest and abs(probability(sim, [legs[j] for j in rest]) - p) <= IMPLIED_TOL * max(
+            p, 1e-12
+        ):
+            keep = rest
+    return keep
+
+
 def price(sim: om.Simulation, legs: list[dict]) -> dict:
-    """Fair probability and offered odds. The offered price uses the larger of the joint
-    probability and the product of single probabilities (the joint model was not shown to beat
-    independence on combinations), with the larger of the legs' compounded margins and the
-    margin curve applied to the combination as one outcome."""
+    """Fair probability and offered odds. Selections implied by the others are dropped first.
+    The offered price uses the larger of the joint probability and the product of single
+    probabilities (the joint model was not shown to beat independence on combinations), with
+    the larger of the legs' compounded margins and the margin curve applied to the combination
+    as one outcome."""
     p = probability(sim, legs)
+    if p < IMPOSSIBLE:
+        # Mutually exclusive selections: the joint probability, not independence, decides.
+        return dict(p=p, singles=[], independent=0.0, odds=None, implied=[])
+    keep = essential(sim, legs, p)
+    implied = [i for i in range(len(legs)) if i not in keep]
+    legs = [legs[i] for i in keep]
     singles = [probability(sim, [leg]) for leg in legs] if len(legs) > 1 else [p]
     independent = float(np.prod(singles))
     priced = max(p, independent)
-    if p < IMPOSSIBLE:
-        # Mutually exclusive selections: the joint probability, not independence, decides.
-        return dict(p=p, singles=singles, independent=independent, odds=None)
     per_leg = float(
         np.prod([1 + margin_curve(q, leg_scale(leg)) for leg, q in zip(legs, singles, strict=True)])
     )
     whole = 1 + float(margin_curve(priced, max(leg_scale(leg) for leg in legs)))
     odds = max(MIN_ODDS, round(1 / (priced * max(per_leg, whole)), 2))
-    return dict(p=p, singles=singles, independent=independent, odds=odds)
+    return dict(p=p, singles=singles, independent=independent, odds=odds, implied=implied)
 
 
 def _main_line(values: np.ndarray, probs: np.ndarray) -> float:
@@ -531,6 +553,7 @@ def quote(db, odds: MatchOdds, selections: list[str]) -> dict:
         selections=selections,
         labels=[label(leg, names) for leg in legs],
         odds=result["odds"],
+        implied=[label(legs[i], names) for i in result["implied"]],
         probability=result["p"],
     )
 
