@@ -67,6 +67,26 @@ def publication_parts(kind, content, photo=False):
     )
 
 
+POINTS_KINDS = ("points_request", "points_decided")
+
+
+def points_markup(cfg, kind, dedupe_key):
+    """Approve / decline buttons on a points request sent to an administrator."""
+    if kind == "points_decided":
+        return InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Открыть ставки", url=app_link(cfg))]]
+        )
+    request_id = dedupe_key.split(":")[1]
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Одобрить", callback_data=f"pts:{request_id}:a"),
+                InlineKeyboardButton(text="✖️ Отклонить", callback_data=f"pts:{request_id}:d"),
+            ]
+        ]
+    )
+
+
 async def deliver_one(cfg, factory, bot=None) -> bool:
     with factory() as db, db.begin():
         # Never blindly resend after a crash between Telegram delivery and DB acknowledgement.
@@ -100,12 +120,13 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             return True
         pub.status, pub.claimed_at = "sending", now()
         pub.attempts += 1
-        pub_id, chat, content, match_id, kind = (
+        pub_id, chat, content, match_id, kind, dedupe_key = (
             pub.id,
             pub.chat_id,
             pub.text,
             pub.match_id,
             pub.kind,
+            pub.dedupe_key,
         )
         already_sent = list(pub.message_ids)
         image = db.get(PostImage, pub.image_id) if pub.image_id else None
@@ -129,7 +150,9 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             if i < len(already_sent):
                 continue
             markup = (
-                InlineKeyboardMarkup(
+                points_markup(cfg, kind, dedupe_key)
+                if kind in POINTS_KINDS
+                else InlineKeyboardMarkup(
                     inline_keyboard=[
                         [InlineKeyboardButton(text="Открыть игру", url=app_link(cfg, match_id))]
                         + (

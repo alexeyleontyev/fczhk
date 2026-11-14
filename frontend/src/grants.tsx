@@ -3,6 +3,15 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import { points } from './betting'
 
+type PendingRequest = {
+  id: number
+  player_id: number
+  alias: string
+  amount: number
+  balance: number
+  created_at: string
+}
+
 type Grant = {
   id: number
   player_id: number
@@ -31,11 +40,39 @@ export function GrantsPanel({
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const [requests, setRequests] = useState<PendingRequest[]>([])
+
   useEffect(() => {
     api<Grant[]>('/wallet/grants')
       .then(setGrants)
       .catch(() => setGrants([]))
+    api<PendingRequest[]>('/wallet/requests')
+      .then(setRequests)
+      .catch(() => setRequests([]))
   }, [])
+
+  async function decide(request: PendingRequest, approve: boolean) {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      setRequests(
+        await api<PendingRequest[]>(`/wallet/requests/${request.id}/decision`, 'POST', { approve }),
+      )
+      setNotice(
+        approve
+          ? `${request.alias}: +${points(request.amount)} очков`
+          : `Запрос ${request.alias} отклонён`,
+      )
+      setGrants(await api<Grant[]>('/wallet/grants'))
+      onGranted()
+    } catch (e) {
+      setError((e as Error).message)
+      setRequests(await api<PendingRequest[]>('/wallet/requests').catch(() => requests))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const choices = players
     .filter((p) => p.id !== me && !p.shared_keeper)
@@ -70,9 +107,40 @@ export function GrantsPanel({
     <section className="panel grants-panel" aria-label="Начисление очков">
       <h2 className="betting-section-title">Начисление очков</h2>
       <p className="muted caption">
-        Только для администраторов. Для призов и исправлений: игрок увидит сумму и причину в своих
-        операциях. Отрицательная сумма списывает очки. Очки не продаются за деньги.
+        Только для администраторов. Запросы игроков приходят и сюда, и в бот. Ниже — начисление
+        вручную, для призов и исправлений: игрок увидит сумму и причину в своих операциях.
+        Отрицательная сумма списывает очки. Очки не продаются за деньги.
       </p>
+      {requests.length > 0 && (
+        <ul className="point-requests" aria-label="Запросы очков">
+          {requests.map((r) => (
+            <li key={r.id}>
+              <span>
+                <strong>{r.alias}</strong> просит {points(r.amount)}
+                <small className="muted"> · баланс {points(r.balance)}</small>
+              </span>
+              <span className="point-request-actions">
+                <button
+                  type="button"
+                  className="button primary compact"
+                  disabled={busy || r.player_id === me}
+                  onClick={() => void decide(r, true)}
+                >
+                  Одобрить
+                </button>
+                <button
+                  type="button"
+                  className="button secondary compact"
+                  disabled={busy || r.player_id === me}
+                  onClick={() => void decide(r, false)}
+                >
+                  Отклонить
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="grants-form">
         <label>
           Игрок

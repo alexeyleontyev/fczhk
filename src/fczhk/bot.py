@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from .auth import check_member, player_for_telegram
 from .db import database, now
-from .models import BotCallbackReceipt, GameTemplate, Match, MatchResult, Registration
+from .models import BotCallbackReceipt, GameTemplate, Match, MatchResult, Player, Registration
 from .results import player_stats, result_data, result_text
 from .scheduling import schedule_description
 from .services import MOSCOW, DomainError, cancel, get_match, match_data, register, report_payment
@@ -407,6 +407,46 @@ def dispatcher(cfg, factory):
             await message.answer("\n".join(lines), reply_markup=menu(), parse_mode=None)
         except DomainError as exc:
             await message.answer(exc.message)
+
+    @router.callback_query(F.data.startswith("pts:"))
+    async def points_decision(query: CallbackQuery):
+        from .auth import has_admin_access
+        from .wallet import decide_request
+
+        try:
+            _, rid, verdict = query.data.split(":")
+            if verdict not in ("a", "d"):
+                raise ValueError
+            pid = await identify(query.from_user)
+
+            def save_decision():
+                with factory() as db, db.begin():
+                    admin = db.get(Player, pid)
+                    if not has_admin_access(admin, cfg):
+                        raise DomainError("Решение принимает администратор")
+                    request = decide_request(db, pid, int(rid), verdict == "a")
+                    alias = db.get(Player, request.player_id).display_alias
+                    amount = request.amount / 100
+                    return (
+                        f"Одобрено: +{amount:g} очков — {alias}"
+                        if verdict == "a"
+                        else f"Отклонено: {alias}, {amount:g} очков"
+                    )
+
+            text = await asyncio.to_thread(save_decision)
+            await query.answer(text, show_alert=True)
+            if query.message:
+                try:
+                    await query.message.edit_text(
+                        f"{query.message.text}\n\n{text}", reply_markup=None
+                    )
+                except TelegramBadRequest:
+                    pass
+        except (DomainError, ValueError) as exc:
+            await query.answer(
+                exc.message if isinstance(exc, DomainError) else "Неизвестный запрос",
+                show_alert=True,
+            )
 
     @router.callback_query(F.data.startswith("join:"))
     async def join(query: CallbackQuery):

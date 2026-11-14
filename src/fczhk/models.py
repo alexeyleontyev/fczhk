@@ -491,6 +491,33 @@ class Bet(Base):
     settled_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
+class PointRequest(Base):
+    """A player asks the administrators for points; one open request per player."""
+
+    __tablename__ = "point_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'declined', 'cancelled')",
+            name="ck_point_request_status",
+        ),
+        CheckConstraint("amount > 0", name="ck_point_request_amount"),
+        Index(
+            "uq_point_request_pending",
+            "player_id",
+            unique=True,
+            sqlite_where=text("status = 'pending'"),
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)  # hundredths of a point
+    status: Mapped[str] = mapped_column(String(10), default="pending")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
+
+
 class WalletEntry(Base):
     """One movement of betting points. A balance is the sum of its owner's entries.
 

@@ -86,14 +86,41 @@ def upgrade():
         ),
     )
     op.create_index("ix_wallet_entries_player_id", "wallet_entries", ["player_id"])
+    op.create_table(
+        "point_requests",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("player_id", sa.Integer(), sa.ForeignKey("players.id"), nullable=False),
+        sa.Column("amount", sa.BigInteger(), nullable=False),
+        sa.Column("status", sa.String(10), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("decided_by", sa.Integer(), sa.ForeignKey("players.id"), nullable=True),
+        sa.CheckConstraint(
+            "status IN ('pending', 'approved', 'declined', 'cancelled')",
+            name="ck_point_request_status",
+        ),
+        sa.CheckConstraint("amount > 0", name="ck_point_request_amount"),
+    )
+    op.create_index("ix_point_requests_player_id", "point_requests", ["player_id"])
+    op.create_index(
+        "uq_point_request_pending",
+        "point_requests",
+        ["player_id"],
+        unique=True,
+        sqlite_where=sa.text("status = 'pending'"),
+        postgresql_where=sa.text("status = 'pending'"),
+    )
     op.create_index("ix_wallet_entries_bet_id", "wallet_entries", ["bet_id"])
 
 
 def downgrade():
     bind = op.get_bind()
-    for table in ("wallet_entries", "bets"):
+    for table in ("wallet_entries", "bets", "point_requests"):
         if bind.execute(sa.text(f"SELECT count(*) FROM {table}")).scalar():
             raise RuntimeError("Нельзя удалить журнал ставок с балансами игроков")
+    op.drop_index("uq_point_request_pending", table_name="point_requests")
+    op.drop_index("ix_point_requests_player_id", table_name="point_requests")
+    op.drop_table("point_requests")
     op.drop_index("ix_wallet_entries_bet_id", table_name="wallet_entries")
     op.drop_index("ix_wallet_entries_player_id", table_name="wallet_entries")
     op.drop_table("wallet_entries")

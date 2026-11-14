@@ -312,3 +312,36 @@
   width: 100%;
   box-sizing: border-box;
 }
+.wallet-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+}
+.point-requests {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.point-requests li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+.point-request-actions {
+  display: flex;
+  gap: 6px;
+}
+@media (max-width: 640px) {
+  .wallet-request {
+    justify-content: flex-start;
+  }
+}
