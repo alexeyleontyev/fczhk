@@ -378,7 +378,15 @@ function App() {
         {tab === 'predictions' && (
           <PredictionStandings me={me.id} onPlayer={openStats} {...seasonFilter} />
         )}
-        {tab === 'betting' && <BettingScreen me={me.id} onPlayer={openStats} match={m} />}
+        {tab === 'betting' && (
+          <BettingScreen
+            me={me.id}
+            onPlayer={openStats}
+            match={m}
+            isAdmin={isAdmin}
+            players={players}
+          />
+        )}
         {visited('archive') && (
           <div hidden={tab !== 'archive'}>
             <ArchiveScreen

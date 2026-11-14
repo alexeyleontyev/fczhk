@@ -481,3 +481,9 @@ def test_everybodys_bets_open_at_kick_off_and_stay_in_the_archive(env, call, clu
     )
     assert entry["bank"] == pytest.approx(50 - 20 * mine["bet"]["odds"])
     assert theirs["bet"]["status"] == "open"  # as placed; settled since
+
+
+def test_model_details_are_for_administrators_only(call, club):
+    mid = club["match"]
+    assert "model" not in call("GET", f"/matches/{mid}/odds", role="player")
+    assert call("GET", f"/matches/{mid}/odds", role="admin")["model"]["n_matches"] == 30

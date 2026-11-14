@@ -27,6 +27,21 @@ def router(ctx):
         wallet.claim_freebet(db, p.id)
         return wallet.wallet_data(db, p.id)
 
+    @app.get("/api/wallet/grants")
+    def wallet_grants(
+        p: Player = Depends(ctx.admin), db: Session = Depends(db_dep, scope="function")
+    ):
+        return wallet.grants(db)
+
+    @app.post("/api/wallet/grants", status_code=201)
+    def wallet_grant(
+        body: S.WalletGrant,
+        p: Player = Depends(ctx.admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        wallet.grant(db, p.id, body.player_id, body.amount, body.reason)
+        return wallet.grants(db)
+
     @app.get("/api/betting/leaderboard")
     def betting_leaderboard(
         p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
@@ -67,7 +82,9 @@ def router(ctx):
             if exc.status not in (404, 409):
                 raise
             return dict(available=False, reason=exc.message, bets=mine)
-        return dict(available=True, **odds.view(db, m, snapshot), bets=mine)
+        return dict(
+            available=True, **odds.view(db, m, snapshot, has_admin_access(p, cfg)), bets=mine
+        )
 
     @app.post("/api/matches/{match_id}/odds/quote")
     def odds_quote(

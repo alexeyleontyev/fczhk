@@ -61,10 +61,12 @@ def upgrade():
         sa.Column("amount", sa.BigInteger(), nullable=False),
         sa.Column("freebet_week", sa.String(8), nullable=True),
         sa.Column("bet_id", sa.Integer(), sa.ForeignKey("bets.id"), nullable=True),
+        sa.Column("actor_id", sa.Integer(), sa.ForeignKey("players.id"), nullable=True),
+        sa.Column("note", sa.String(200), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("player_id", "freebet_week", name="uq_wallet_freebet_week"),
         sa.CheckConstraint(
-            "kind IN ('freebet', 'stake', 'payout', 'refund', 'correction')",
+            "kind IN ('freebet', 'stake', 'payout', 'refund', 'correction', 'grant')",
             name="ck_wallet_entry_kind",
         ),
         sa.CheckConstraint(
@@ -72,10 +74,16 @@ def upgrade():
             name="ck_wallet_freebet_week",
         ),
         sa.CheckConstraint(
-            "(kind = 'stake' AND amount < 0) OR (kind IN ('freebet', 'payout', 'refund') AND amount >= 0) OR kind = 'correction'",
+            "(kind = 'stake' AND amount < 0) OR (kind IN ('freebet', 'payout', 'refund') AND amount >= 0) OR kind = 'correction' OR (kind = 'grant' AND amount <> 0)",
             name="ck_wallet_entry_sign",
         ),
-        sa.CheckConstraint("(kind = 'freebet') = (bet_id IS NULL)", name="ck_wallet_entry_bet"),
+        sa.CheckConstraint(
+            "(kind IN ('freebet', 'grant')) = (bet_id IS NULL)", name="ck_wallet_entry_bet"
+        ),
+        sa.CheckConstraint(
+            "(kind = 'grant') = (actor_id IS NOT NULL AND note IS NOT NULL)",
+            name="ck_wallet_entry_grant",
+        ),
     )
     op.create_index("ix_wallet_entries_player_id", "wallet_entries", ["player_id"])
     op.create_index("ix_wallet_entries_bet_id", "wallet_entries", ["bet_id"])

@@ -535,8 +535,7 @@ def quote(db, odds: MatchOdds, selections: list[str]) -> dict:
     )
 
 
-def view(db, match: Match, odds: MatchOdds) -> dict:
-    model = db.get(PricingModel, odds.model_id)
+def view(db, match: Match, odds: MatchOdds, admin: bool = False) -> dict:
     groups: OrderedDict[str, list] = OrderedDict()
     for s in odds.markets:
         groups.setdefault(s["group"], []).append(dict(id=s["id"], label=s["label"], odds=s["odds"]))
@@ -547,6 +546,11 @@ def view(db, match: Match, odds: MatchOdds) -> dict:
         open=betting_open(match) and match.approved_version == odds.approved_version,
         closes_at=match.starts_at,
         created_at=odds.created_at,
-        model=dict(n_matches=model.n_matches, fitted_at=model.created_at),
         groups=[dict(name=name, selections=items) for name, items in groups.items()],
-    )
+    ) | (_model_info(db, odds) if admin else {})
+
+
+def _model_info(db, odds: MatchOdds) -> dict:
+    """Internal details of the pricing model, for administrators only."""
+    model = db.get(PricingModel, odds.model_id)
+    return dict(model=dict(n_matches=model.n_matches, fitted_at=model.created_at))

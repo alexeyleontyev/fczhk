@@ -3,21 +3,24 @@ import { Gift, Landmark } from 'lucide-react'
 
 import { api } from './api'
 import { BetsArchive, MatchLine, MyBets } from './bet-slip'
+import { GrantsPanel } from './grants'
 import './betting.css'
 
-type WalletEntryKind = 'freebet' | 'stake' | 'payout' | 'refund' | 'correction'
+type WalletEntryKind = 'freebet' | 'stake' | 'payout' | 'refund' | 'correction' | 'grant'
 
 export type Wallet = {
   server_time: string
   balance: number
   profit: number
   freebets: number
+  grants?: number
   freebet: { amount: number; week: string; available: boolean; next_at: string }
   entries: {
     id: number
     kind: WalletEntryKind
     amount: number
     week: string | null
+    note?: string | null
     created_at: string
   }[]
 }
@@ -34,6 +37,7 @@ export type BettingLeaderboard = {
   }[]
   bank: { balance: number; in_play: number; staked: number; paid_out: number; refunded: number }
   freebets_issued: number
+  grants_issued?: number
   players: number
 }
 
@@ -43,6 +47,7 @@ const KIND_LABEL: Record<WalletEntryKind, string> = {
   payout: 'Выигрыш',
   refund: 'Возврат',
   correction: 'Перерасчёт',
+  grant: 'Начисление',
 }
 
 export const points = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
@@ -67,10 +72,14 @@ export function BettingScreen({
   me,
   onPlayer,
   match,
+  isAdmin = false,
+  players = [],
 }: {
   me: number
   onPlayer: (id: number) => void
   match?: { id: number; status: string; starts_at: string; version: number } | null
+  isAdmin?: boolean
+  players?: { id: number; alias: string; shared_keeper?: boolean }[]
 }) {
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [board, setBoard] = useState<BettingLeaderboard | null>(null)
@@ -140,7 +149,8 @@ export function BettingScreen({
             <span className="wallet-label">Мой баланс</span>
             <strong>{points(wallet.balance)}</strong>
             <span className="wallet-meta">
-              Фрибетов получено: {points(wallet.freebets)} · результат ставок:{' '}
+              Фрибетов получено: {points(wallet.freebets)}
+              {wallet.grants ? ` · начислено: ${points(wallet.grants)}` : ''} · результат ставок:{' '}
               <span className={wallet.profit < 0 ? 'wallet-minus' : 'wallet-plus'}>
                 {signed(wallet.profit)}
               </span>
@@ -178,6 +188,13 @@ export function BettingScreen({
       )}
       <MyBets revision={revision} />
       <BetsArchive me={me} revision={revision} />
+      {isAdmin && (
+        <GrantsPanel
+          me={me}
+          players={players}
+          onGranted={() => setRevision((value) => value + 1)}
+        />
+      )}
       {bank && (
         <section className="panel bank-panel" aria-label="Банк">
           <Landmark size={18} aria-hidden="true" />
@@ -238,8 +255,11 @@ export function BettingScreen({
             </div>
           )}
           <p className="muted caption">
-            Участников: {board.players}. Выдано фрибетов: {points(board.freebets_issued)}. При
-            равном балансе место общее.
+            Участников: {board.players}. Выдано фрибетов: {points(board.freebets_issued)}.
+            {board.grants_issued
+              ? ` Начислено администраторами: ${points(board.grants_issued)}.`
+              : ''}{' '}
+            При равном балансе место общее.
           </p>
         </section>
       )}
@@ -250,7 +270,10 @@ export function BettingScreen({
             <ul className="wallet-entries">
               {wallet.entries.map((e) => (
                 <li key={e.id}>
-                  <span>{KIND_LABEL[e.kind]}</span>
+                  <span>
+                    {KIND_LABEL[e.kind]}
+                    {e.note && <small className="muted"> · {e.note}</small>}
+                  </span>
                   <span className="muted">{moscowStamp(e.created_at)}</span>
                   <span className={e.amount < 0 ? 'wallet-minus' : 'wallet-plus'}>
                     {signed(e.amount)}

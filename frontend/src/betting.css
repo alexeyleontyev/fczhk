@@ -280,3 +280,35 @@
 .my-bets li.mine {
   background: #fff6c2;
 }
+.grants-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8rem;
+  gap: 8px;
+  align-items: end;
+  margin: 8px 0;
+}
+.grants-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+.grants-form select,
+.grants-form input {
+  min-height: 38px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: #fffdf6;
+}
+.grants-form .grants-reason,
+.grants-form .button {
+  grid-column: 1 / -1;
+}
+.grants-form label,
+.grants-form select,
+.grants-form input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}

@@ -246,7 +246,7 @@ class Rating(Base):
     attack: Mapped[int | None] = mapped_column()
     defense: Mapped[int] = mapped_column()
     revision: Mapped[int] = mapped_column(default=1)
-    withdrawn: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text('false'))
+    withdrawn: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 
 
@@ -256,7 +256,7 @@ class RatingHistory(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     rating_id: Mapped[int] = mapped_column(ForeignKey("ratings.id"), index=True)
     revision: Mapped[int] = mapped_column()
-    withdrawn: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text('false'))
+    withdrawn: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     attack: Mapped[int | None] = mapped_column()
     defense: Mapped[int] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
@@ -452,7 +452,9 @@ class MatchOdds(Base):
     """Odds frozen for one approved line-up. Inputs make the prices reproducible."""
 
     __tablename__ = "match_odds"
-    __table_args__ = (UniqueConstraint("match_id", "approved_version", name="uq_match_odds_version"),)
+    __table_args__ = (
+        UniqueConstraint("match_id", "approved_version", name="uq_match_odds_version"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
     approved_version: Mapped[int] = mapped_column()
@@ -494,7 +496,7 @@ class WalletEntry(Base):
 
     Amounts are hundredths of a point, signed from the player's side: a weekly freebet, a
     payout and a refund are positive, a stake is negative, and a correction after a changed
-    result has either sign. Entries are never edited, so every balance and the bank can be
+    result and an administrator's grant have either sign. Entries are never edited, so every balance and the bank can be
     recomputed from this table alone.
     """
 
@@ -502,7 +504,7 @@ class WalletEntry(Base):
     __table_args__ = (
         UniqueConstraint("player_id", "freebet_week", name="uq_wallet_freebet_week"),
         CheckConstraint(
-            "kind IN ('freebet', 'stake', 'payout', 'refund', 'correction')",
+            "kind IN ('freebet', 'stake', 'payout', 'refund', 'correction', 'grant')",
             name="ck_wallet_entry_kind",
         ),
         CheckConstraint(
@@ -510,10 +512,16 @@ class WalletEntry(Base):
             name="ck_wallet_freebet_week",
         ),
         CheckConstraint(
-            "(kind = 'stake' AND amount < 0) OR (kind IN ('freebet', 'payout', 'refund') AND amount >= 0) OR kind = 'correction'",
+            "(kind = 'stake' AND amount < 0) OR (kind IN ('freebet', 'payout', 'refund') AND amount >= 0) OR kind = 'correction' OR (kind = 'grant' AND amount <> 0)",
             name="ck_wallet_entry_sign",
         ),
-        CheckConstraint("(kind = 'freebet') = (bet_id IS NULL)", name="ck_wallet_entry_bet"),
+        CheckConstraint(
+            "(kind IN ('freebet', 'grant')) = (bet_id IS NULL)", name="ck_wallet_entry_bet"
+        ),
+        CheckConstraint(
+            "(kind = 'grant') = (actor_id IS NOT NULL AND note IS NOT NULL)",
+            name="ck_wallet_entry_grant",
+        ),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
@@ -522,6 +530,9 @@ class WalletEntry(Base):
     # ISO week in Moscow time ("2026-W46"); one freebet per player and week.
     freebet_week: Mapped[str | None] = mapped_column(String(8))
     bet_id: Mapped[int | None] = mapped_column(ForeignKey("bets.id"), index=True)
+    # A grant is a manual change by an administrator, with its reason; never a sale of points.
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
+    note: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
 
 

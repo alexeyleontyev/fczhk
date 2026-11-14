@@ -87,8 +87,71 @@ def claim_freebet(db, actor: int, at: datetime | None = None) -> WalletEntry:
 
 def _entry(e: WalletEntry) -> dict:
     return dict(
-        id=e.id, kind=e.kind, amount=points(e.amount), week=e.freebet_week, created_at=e.created_at
+        id=e.id,
+        kind=e.kind,
+        amount=points(e.amount),
+        week=e.freebet_week,
+        note=e.note,
+        created_at=e.created_at,
     )
+
+
+MAX_GRANT = 100_000  # points per grant, either sign
+
+
+def grant(db, actor: int, player_id: int, amount: float, reason: str) -> WalletEntry:
+    """An administrator adds points to (or takes them from) a player's balance, with a reason.
+
+    Points stay virtual: a grant is for prizes and corrections, not a way to sell points. It is
+    journalled, audited and shown to the player; it is not a bet result, so it changes neither
+    the player's betting result nor the bank."""
+    target = db.scalar(select(Player).where(Player.id == player_id).with_for_update())
+    if target is None or target.merged_into:
+        raise DomainError("Игрок не найден", 404)
+    if target.shared_keeper:
+        raise DomainError("Общей карточке вратаря очки не начисляются", 422)
+    if player_id == actor:
+        raise DomainError("Себе начислять очки нельзя", 422)
+    cents = round(amount * UNIT)
+    if cents == 0 or abs(cents) > MAX_GRANT * UNIT:
+        raise DomainError(f"Сумма — от 0,01 до {MAX_GRANT} очков, со знаком", 422)
+    reason = reason.strip()
+    if not 3 <= len(reason) <= 200:
+        raise DomainError("Укажите причину: от 3 до 200 символов", 422)
+    entry = WalletEntry(
+        player_id=player_id,
+        kind="grant",
+        amount=cents,
+        actor_id=actor,
+        note=reason,
+        created_at=now(),
+    )
+    db.add(entry)
+    db.flush()
+    audit(db, actor, "wallet.grant", player_id=player_id, amount=points(cents), reason=reason)
+    return entry
+
+
+def grants(db, limit: int = 50) -> list[dict]:
+    people = {p.id: p for p in db.scalars(select(Player))}
+    rows = db.scalars(
+        select(WalletEntry)
+        .where(WalletEntry.kind == "grant")
+        .order_by(WalletEntry.created_at.desc(), WalletEntry.id.desc())
+        .limit(limit)
+    )
+    return [
+        dict(
+            id=e.id,
+            player_id=e.player_id,
+            alias=people[e.player_id].display_alias,
+            actor=people[e.actor_id].display_alias,
+            amount=points(e.amount),
+            note=e.note,
+            created_at=e.created_at,
+        )
+        for e in rows
+    ]
 
 
 def wallet_data(db, viewer: int, at: datetime | None = None) -> dict:
@@ -110,11 +173,14 @@ def wallet_data(db, viewer: int, at: datetime | None = None) -> dict:
     )
     total = sum(sums.values())
     freebets = sums.get("freebet", 0)
+    granted = sums.get("grant", 0)
     return dict(
         server_time=at,
         balance=points(total),
-        profit=points(total - freebets),
+        # Betting result only: freebets and administrators' grants are not won or lost.
+        profit=points(total - freebets - granted),
         freebets=points(freebets),
+        grants=points(granted),
         freebet=dict(
             amount=FREEBET_POINTS,
             week=week,
@@ -135,10 +201,12 @@ def leaderboard(db) -> dict:
         )
     ):
         pid = canonical[player_id]
-        row = totals.setdefault(pid, dict(balance=0, freebets=0, staked=0, returned=0))
+        row = totals.setdefault(pid, dict(balance=0, freebets=0, grants=0, staked=0, returned=0))
         row["balance"] += amount
         if kind == "freebet":
             row["freebets"] += amount
+        elif kind == "grant":
+            row["grants"] += amount
         elif kind == "stake":
             row["staked"] -= amount
         else:
@@ -158,7 +226,8 @@ def leaderboard(db) -> dict:
                 alias=people[pid].display_alias,
                 balance=points(row["balance"]),
                 freebets=points(row["freebets"]),
-                profit=points(row["balance"] - row["freebets"]),
+                grants=points(row["grants"]),
+                profit=points(row["balance"] - row["freebets"] - row["grants"]),
                 staked=points(row["staked"]),
             )
         )
@@ -184,5 +253,6 @@ def leaderboard(db) -> dict:
             refunded=points(bank["refund"]),
         ),
         freebets_issued=points(freebets),
+        grants_issued=points(sum(row["grants"] for row in totals.values())),
         players=len(rows),
     )

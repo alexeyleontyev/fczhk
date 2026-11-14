@@ -15,7 +15,7 @@ export type MatchOdds =
       approved_version: number
       open: boolean
       closes_at: string
-      model: { n_matches: number; fitted_at: string }
+      model?: { n_matches: number; fitted_at: string }
       groups: { name: string; selections: Selection[] }[]
       bets: Bet[]
     }
@@ -168,7 +168,7 @@ export function MatchLine({
         <>
           <p className="muted caption">
             {line.open
-              ? `Приём ставок до начала игры. Коэффициенты рассчитаны по утверждённым составам и не меняются; модель обучена на ${line.model.n_matches} матчах.`
+              ? 'Приём ставок до начала игры. Коэффициенты рассчитаны по утверждённым составам и не меняются.'
               : 'Приём ставок на эту игру закрыт.'}
           </p>
           {line.groups.map((group) => (

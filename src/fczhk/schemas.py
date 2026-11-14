@@ -377,3 +377,9 @@ class OddsQuote(Payload):
 class BetPlace(OddsQuote):
     stake: float = Field(gt=0, le=10_000_000)
     odds: float = Field(ge=1.01, le=100_000)
+
+
+class WalletGrant(Payload):
+    player_id: int = Field(ge=1)
+    amount: float = Field(ge=-100_000, le=100_000)
+    reason: str = Field(min_length=3, max_length=200)

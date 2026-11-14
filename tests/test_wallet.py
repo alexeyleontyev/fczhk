@@ -164,6 +164,7 @@ def test_leaderboard_and_bank(env, call):
         alias="Игрок",
         balance=275.5,
         freebets=200,
+        grants=0,
         profit=75.5,
         staked=50,
     )
@@ -254,3 +255,46 @@ def test_wallet_migration_matches_models_and_guards_downgrade(tmp_path):
             ).first()
             is None
         )
+
+
+def test_administrator_grants_points_with_a_reason(env, call):
+    _, factory, _, _, ids = env
+    call("POST", "/wallet/freebet", role="player")
+    body = dict(player_id=ids["player"], amount=50, reason="Приз за лучший прогноз сезона")
+    listed = call("POST", "/wallet/grants", body, expected=201)
+    assert (
+        listed[0]["alias"] == "Игрок"
+        and listed[0]["actor"] == "Администратор"
+        and listed[0]["amount"] == 50
+    )
+    wallet_view = call("GET", "/wallet", role="player")
+    assert wallet_view["balance"] == 150 and wallet_view["grants"] == 50
+    assert wallet_view["profit"] == 0  # a grant is not a betting result
+    assert wallet_view["entries"][0] == dict(
+        wallet_view["entries"][0], kind="grant", amount=50, note="Приз за лучший прогноз сезона"
+    )
+    # a correction can take points back
+    call(
+        "POST",
+        "/wallet/grants",
+        dict(player_id=ids["player"], amount=-20.5, reason="Ошибка начисления"),
+        expected=201,
+    )
+    assert call("GET", "/wallet", role="player")["balance"] == 129.5
+    board = call("GET", "/betting/leaderboard", role="player")
+    row = board["rows"][0]
+    assert row["grants"] == 29.5 and row["profit"] == 0
+    assert board["grants_issued"] == 29.5 and board["bank"]["balance"] == 0  # not the bank's money
+    assert len(call("GET", "/wallet/grants")) == 2
+
+
+def test_grants_are_for_administrators_and_not_for_themselves(env, call):
+    _, _, _, _, ids = env
+    body = dict(player_id=ids["player"], amount=10, reason="Просто так")
+    call("POST", "/wallet/grants", body, role="player", expected=403)
+    call("GET", "/wallet/grants", role="player", expected=403)
+    own = call("POST", "/wallet/grants", dict(body, player_id=ids["admin"]), expected=422)
+    assert "Себе" in own["detail"]
+    call("POST", "/wallet/grants", dict(body, amount=0), expected=422)
+    call("POST", "/wallet/grants", dict(body, reason="  "), expected=422)
+    call("POST", "/wallet/grants", dict(body, player_id=99999), expected=404)
