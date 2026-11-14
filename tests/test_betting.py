@@ -543,7 +543,7 @@ def test_exact_scores_are_central_without_gaps_and_flat_margin(env, call, club):
     assert tuple(int(v) for v in top) in scores
     for s in group["selections"]:
         p = odds.probability(sim, [odds.parse(s["id"])])
-        assert s["odds"] == round(1 / (p * (1 + odds.SCORE_MARGIN)), 2)
+        assert s["odds"] == odds.rounded(1 / (p * (1 + odds.SCORE_MARGIN)))
         assert s["label"].startswith("Счёт ")
     # A score decides the match result: the result next to it is implied, the other is impossible.
     a, b = max(scores, key=lambda s: s[0] - s[1])
@@ -555,3 +555,13 @@ def test_exact_scores_are_central_without_gaps_and_flat_margin(env, call, club):
     # Settlement: the score bet wins only on that exact score.
     assert bets._leg_result(odds.parse("score:5:4"), dict(white=5, black=4)) == "won"
     assert bets._leg_result(odds.parse("score:5:4"), dict(white=4, black=5)) == "lost"
+
+
+def test_long_odds_are_rounded_down_on_a_coarser_step():
+    assert odds.rounded(1.876) == 1.87
+    assert odds.rounded(9.999) == 9.99
+    assert odds.rounded(10.0) == 10.0
+    assert odds.rounded(12.38) == 12.3
+    assert odds.rounded(19.99) == 19.9
+    assert odds.rounded(20.0) == 20.0
+    assert odds.rounded(44.71) == 44.0

@@ -13,6 +13,7 @@ large on long shots, and scaled per market and side.
 
 from __future__ import annotations
 
+import math
 import re
 from collections import OrderedDict
 from threading import Lock
@@ -55,6 +56,9 @@ SCORE_MARGIN = 0.20
 MARGIN_ANCHORS = ((0.05, 1.00), (0.50, 0.065), (0.95, 0.03))
 MARGIN_CAP = 3.0
 MIN_ODDS = 1.01
+# Long odds are shown on a coarser step (from 20 whole numbers, from 10 tenths), always rounded
+# down so the step never eats into the margin.
+ODDS_STEPS = ((20.0, 1.0), (10.0, 0.1), (0.0, 0.01))
 # Unders carry three times the base margin: the model has run a little high on goals, so the
 # under is where the book is exposed. Player overs are the least tested market.
 MARGIN_SCALE = {
@@ -88,6 +92,11 @@ def margin_curve(p, scale: float = 1.0):
     slope = (ys[1] - ys[0]) / (xs[1] - xs[0])
     y = np.where(x < xs[0], ys[0] + slope * (x - xs[0]), y)
     return np.minimum(np.exp(y) * scale, MARGIN_CAP)
+
+
+def rounded(odds: float) -> float:
+    step = next(s for floor, s in ODDS_STEPS if odds >= floor)
+    return round(math.floor(round(odds / step, 6)) * step, 2)
 
 
 def leg_margin(leg: dict, p: float) -> float:
@@ -232,7 +241,7 @@ def price(sim: om.Simulation, legs: list[dict]) -> dict:
         whole = per_leg  # an exact score is a long shot by design; the curve does not apply
     else:
         whole = 1 + float(margin_curve(priced, max(leg_scale(leg) for leg in legs)))
-    odds = max(MIN_ODDS, round(1 / (priced * max(per_leg, whole)), 2))
+    odds = max(MIN_ODDS, rounded(1 / (priced * max(per_leg, whole))))
     return dict(p=p, singles=singles, independent=independent, odds=odds, implied=implied)
 
 
