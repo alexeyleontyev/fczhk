@@ -7,6 +7,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, Teleg
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import case, or_, select
 
+from .bets import worker_tick as betting_tick
 from .db import database, now
 from .models import PostImage, Publication
 from .notifications import SCHEDULED_KINDS, delivery_allowed
@@ -14,6 +15,8 @@ from .operations import cleanup_sessions, heartbeat
 from .services import schedule_tick
 
 log = logging.getLogger(__name__)
+# Refitting the pricing model and the settlement safety net run at most this often.
+BETTING_INTERVAL = 30
 
 
 def chunks(value: str, size: int = 3500, *, utf16=False) -> list[str]:
@@ -64,6 +67,26 @@ def publication_parts(kind, content, photo=False):
     )
 
 
+POINTS_KINDS = ("points_request", "points_decided")
+
+
+def points_markup(cfg, kind, dedupe_key):
+    """Approve / decline buttons on a points request sent to an administrator."""
+    if kind == "points_decided":
+        return InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Открыть ставки", url=app_link(cfg))]]
+        )
+    request_id = dedupe_key.split(":")[1]
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Одобрить", callback_data=f"pts:{request_id}:a"),
+                InlineKeyboardButton(text="✖️ Отклонить", callback_data=f"pts:{request_id}:d"),
+            ]
+        ]
+    )
+
+
 async def deliver_one(cfg, factory, bot=None) -> bool:
     with factory() as db, db.begin():
         # Never blindly resend after a crash between Telegram delivery and DB acknowledgement.
@@ -97,12 +120,13 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             return True
         pub.status, pub.claimed_at = "sending", now()
         pub.attempts += 1
-        pub_id, chat, content, match_id, kind = (
+        pub_id, chat, content, match_id, kind, dedupe_key = (
             pub.id,
             pub.chat_id,
             pub.text,
             pub.match_id,
             pub.kind,
+            pub.dedupe_key,
         )
         already_sent = list(pub.message_ids)
         image = db.get(PostImage, pub.image_id) if pub.image_id else None
@@ -126,7 +150,9 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             if i < len(already_sent):
                 continue
             markup = (
-                InlineKeyboardMarkup(
+                points_markup(cfg, kind, dedupe_key)
+                if kind in POINTS_KINDS
+                else InlineKeyboardMarkup(
                     inline_keyboard=[
                         [InlineKeyboardButton(text="Открыть игру", url=app_link(cfg, match_id))]
                         + (
@@ -252,12 +278,15 @@ async def mark_stale(cfg, factory, bot=None):
 async def run_worker(cfg, once=False):
     _, factory = database(cfg.database_url)
     bot = Bot(cfg.bot_token) if cfg.bot_token and cfg.env != "demo" else None
-    cleaned_at = None
+    cleaned_at = betting_at = None
     try:
         while True:
             try:
                 with factory() as db, db.begin():
                     schedule_tick(db, cfg)
+                if betting_at is None or now() - betting_at > timedelta(seconds=BETTING_INTERVAL):
+                    betting_tick(factory)
+                    betting_at = now()
                 await deliver_one(cfg, factory, bot)
                 await mark_stale(cfg, factory, bot)
                 if cleaned_at is None or now() - cleaned_at > timedelta(hours=1):
@@ -292,6 +321,7 @@ async def run_demo_worker(cfg, factory):
             schedule_tick(db, cfg)
         asyncio.run(deliver_one(cfg, factory))
         asyncio.run(mark_stale(cfg, factory))
+        betting_tick(factory)
         cleanup_sessions(factory)
         heartbeat(factory)
 

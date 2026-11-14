@@ -199,6 +199,10 @@ def save_result(db, actor, match, body, cfg):
         or old["goals"] != new["goals"]
     ):
         publish_result(db, match, new, cfg, corrected=old["completed"])
+    if body.completed:
+        from .services import settle_bets
+
+        settle_bets(db, match)
     audit(
         db,
         actor,

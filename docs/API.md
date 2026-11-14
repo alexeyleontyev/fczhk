@@ -164,6 +164,42 @@
 
 `GET /api/matches/{match_id}` возвращает `team_ratings.strength`: `total` (полная сумма или `null` при пропусках), `rated_total` (сумма известных оценок), `rated`, `count` и `teams.white/black` с теми же четырьмя полями. Основные значения суммируют только исходные эффективные А+З полевых, без нормировки автоподбора, вратарей и резерва; `rated` и `count` также относятся только к полевым. Дополнительный объект `with_keepers` в силе сбора и каждой команды содержит те же четыре поля с учётом защиты вратарей. В интерфейсе и официальном посте он показан в скобках после основного значения. Данные фиксируются в снимке при утверждении. Для старых снимков с прежней силой основной показатель вычисляется из сохранённых оценок полевых и сохранённых составов, прежняя сумма остаётся в `with_keepers`; база и сохранённые оценки не изменяются. Старые снимки без силы сбора не дополняются сегодняшними оценками.
 
+### Ставки, баланс и лидерборд
+
+| Метод | Путь | Доступ | Тело |
+| --- | --- | --- | --- |
+| GET | `/api/wallet` | Участник | — |
+| POST | `/api/wallet/freebet` | Участник | — |
+| GET | `/api/betting/leaderboard` | Участник | — |
+| POST | `/api/wallet/requests` | Участник | PointRequestCreate |
+| POST | `/api/wallet/requests/cancel` | Участник | — |
+| GET | `/api/wallet/requests` | Администратор | — |
+| POST | `/api/wallet/requests/{request_id}/decision` | Администратор | PointRequestDecision |
+| GET | `/api/wallet/grants` | Администратор | — |
+| POST | `/api/wallet/grants` | Администратор | WalletGrant |
+| GET | `/api/bets` | Участник | — |
+| GET | `/api/betting/archive` | Участник | — |
+| GET | `/api/matches/{match_id}/bets` | Участник | — |
+| GET | `/api/matches/{match_id}/odds` | Участник | — |
+| POST | `/api/matches/{match_id}/odds/quote` | Участник | OddsQuote |
+| POST | `/api/matches/{match_id}/bets` | Участник | BetPlace |
+
+`GET /api/wallet` возвращает `balance`, `freebets`, `profit` (баланс минус фрибеты), `freebet.available`, `freebet.week` (ISO-неделя по Москве), `freebet.next_at` и до 20 последних операций `entries` (`freebet`, `stake`, `payout`, `refund`, `correction`). Суммы — очки с точностью до сотых. `POST /api/wallet/freebet` начисляет 100 очков один раз за неделю; повтор — 409.
+
+`GET /api/matches/{match_id}/odds` до утверждения составов или без обученной модели возвращает `available=false` и `reason`; после — `available=true`, `odds_id`, `approved_version`, `open` (приём ставок открыт), `closes_at`, `model` (`n_matches`, `fitted_at`) и `groups`: список рынков с исходами `{id, label, odds}`. Первый запрос после утверждения рассчитывает и сохраняет линию. Поле `bets` — собственные ставки на эту игру.
+
+`OddsQuote`: `odds_id`, `selections` (1–10 идентификаторов исходов из линии). Ответ: `odds`, `labels`, `probability`. Смена линии — 409, исход вне линии или невозможная комбинация — 422. `BetPlace` дополнительно содержит `stake` (очки, от 1 до баланса) и `odds` — коэффициент, который видел игрок; расхождение с текущим — 409. Ответ 201: `bet` и обновлённый `wallet`.
+
+`GET /api/bets` — до 50 последних собственных ставок: `selections`, `labels`, `stake`, `odds`, `potential`, `status` (`open`, `won`, `lost`, `void`), `credited` (сколько ставка вернула), `outcome` (счёт, результаты исходов, причина возврата).
+
+`PointRequestCreate`: `amount` (1–1000 очков); второй открытый запрос или второй запрос за московскую неделю (отменённые не считаются) — 409. В `GET /api/wallet` — `request_available` и `next_request_at`. Ответ — `wallet` с полем `request` (последний запрос: `amount`, `status` `pending`/`approved`/`declined`/`cancelled`). `GET /api/wallet/requests` — открытые запросы (`alias`, `amount`, `balance`). `PointRequestDecision`: `approve` (bool); уже решённый запрос — 409, свой — 422. Бот обрабатывает кнопки `pts:{id}:a|d` только от администраторов.
+
+`WalletGrant`: `player_id`, `amount` (очки со знаком, не ноль, по модулю до 100 000), `reason` (3–200 символов). Начисление себе и общей карточке вратаря — 422. Ответ — последние 50 начислений (`alias`, `actor`, `amount`, `note`, `created_at`). В `GET /api/wallet` появляются поле `grants` и операции `grant` с `note`; `profit` не учитывает начисления. В лидерборде — `grants` по игроку и `grants_issued`. Поле `model` в ответе линии отдаётся только администраторам.
+
+`GET /api/matches/{match_id}/bets` — ставки всех игроков на игру (поля ставки плюс `player_id` и `alias`); до начала игры — 409. `GET /api/betting/archive` — до 30 начавшихся игр со ставками, новые сверху: `match_id`, `starts_at`, `score`, `bets`, `players`, `staked`, `returned`, `open` и `bank` (результат банка по игре, `null`, пока есть нерассчитанные ставки).
+
+`GET /api/betting/leaderboard` возвращает строки `rank`, `player_id`, `alias`, `balance`, `freebets`, `profit`, `staked`, объект `bank` (`balance` по рассчитанным ставкам, `in_play`, `staked`, `paid_out` с учётом перерасчётов, `refunded`), `freebets_issued` и `players`. Правила — [Ставки](BETTING.md).
+
 ### Лимиты участников игры
 
 `GameFields` и `GameEdit` принимают `field_limit` (целое 2–18, по умолчанию 16) и `keeper_limit` (целое 0–2, по умолчанию 2). При редактировании отсутствие этих полей сохраняет лимиты игры. Настройки доступны администратору в форме создания и изменения параметров. Поле `field_limit` относится к обеим командам вместе, включая замены; следующие записавшиеся остаются в резерве сбора. Увеличение лимита открытого сбора расширяет основной список и выбор оплаченных по прежней очереди, не меняя время заявок и оплату. После фиксации списка дополнительные места заполняет администратор через прежний endpoint участников или продвижение из резерва.

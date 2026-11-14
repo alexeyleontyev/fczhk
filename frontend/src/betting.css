@@ -1,0 +1,347 @@
+/* Betting: wallet, bank and leaderboard in the atlas style (paper, ink, sun). */
+.wallet-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: end;
+}
+.wallet-balance,
+.bank-panel > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.wallet-label {
+  font:
+    700 0.65rem/1.3 system-ui,
+    sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+.wallet-balance strong,
+.bank-panel strong {
+  font:
+    500 clamp(2.2rem, 7vw, 3.1rem) / 1 Georgia,
+    serif;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+}
+.bank-panel strong {
+  font-size: clamp(1.6rem, 5vw, 2.2rem);
+}
+.wallet-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0;
+}
+.wallet-plus {
+  color: #1f6b2c;
+}
+.wallet-minus {
+  color: #a3361f;
+}
+.wallet-freebet {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  text-align: right;
+}
+.wallet-freebet .button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--sun);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  font-weight: 700;
+}
+.wallet-freebet .caption,
+.wallet-next {
+  margin: 0;
+  font-size: 0.78rem;
+}
+.bank-panel {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.bank-panel > svg {
+  margin-top: 2px;
+  flex: none;
+}
+.betting-section-title {
+  font:
+    600 1.05rem/1.2 Georgia,
+    serif;
+  margin: 0 0 var(--space-2);
+}
+.betting-standings th:nth-child(n + 3),
+.betting-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wallet-entries {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+.wallet-entries li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-3);
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .wallet-panel {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .wallet-freebet {
+    align-items: stretch;
+    text-align: left;
+  }
+  .wallet-freebet .button {
+    justify-content: center;
+  }
+}
+/* The shared standings table (loaded later) enlarges its last column; here the balance leads. */
+.standings-table.betting-standings td:last-child {
+  font: inherit;
+  font-size: 0.9rem;
+}
+.standings-table.betting-standings td:nth-child(3) {
+  font:
+    600 1.15rem/1.2 Georgia,
+    serif;
+}
+/* Odds and the bet slip */
+.odds-group {
+  border-top: 1px solid var(--line);
+  padding: 6px 0;
+}
+.odds-group summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  min-height: 36px;
+  list-style: none;
+}
+.odds-group summary::-webkit-details-marker {
+  display: none;
+}
+.odds-group[open] summary svg {
+  transform: rotate(180deg);
+}
+.odds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+.odds-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: #fffdf6;
+  color: var(--ink);
+  font-size: 0.8rem;
+  text-align: left;
+}
+.odds-button strong {
+  font-variant-numeric: tabular-nums;
+}
+.odds-button.picked {
+  background: var(--sun);
+  border-color: var(--ink);
+}
+.odds-button:disabled {
+  opacity: 0.55;
+}
+.bet-slip {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius-control);
+  background: #fffdf6;
+}
+.bet-slip-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.bet-slip ul {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+}
+.bet-slip li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.85rem;
+  border-bottom: 1px dashed var(--line);
+}
+.bet-stake {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 0.85rem;
+}
+.bet-stake input {
+  width: 7rem;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  font-variant-numeric: tabular-nums;
+}
+.bet-total {
+  margin: 4px 0 8px;
+  font-size: 0.9rem;
+}
+.bet-place {
+  width: 100%;
+  justify-content: center;
+  background: var(--sun);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.my-bets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.my-bets li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+.my-bets li small {
+  display: block;
+  margin-top: 2px;
+}
+.bet-result {
+  text-align: right;
+  white-space: nowrap;
+}
+.bet-status {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.bet-won .bet-result strong {
+  color: #1f6b2c;
+}
+.bet-lost .bet-result strong {
+  color: #a3361f;
+  text-decoration: line-through;
+}
+.bets-archive-match {
+  border-top: 1px solid var(--line);
+  padding: 6px 0;
+}
+.bets-archive-match summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  min-height: 40px;
+  justify-content: center;
+}
+.bets-archive-match summary small {
+  font-size: 0.78rem;
+}
+.my-bets li.mine {
+  background: #fff6c2;
+}
+.grants-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8rem;
+  gap: 8px;
+  align-items: end;
+  margin: 8px 0;
+}
+.grants-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+.grants-form select,
+.grants-form input {
+  min-height: 38px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: #fffdf6;
+}
+.grants-form .grants-reason,
+.grants-form .button {
+  grid-column: 1 / -1;
+}
+.grants-form label,
+.grants-form select,
+.grants-form input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.wallet-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+}
+.point-requests {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.point-requests li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+.point-request-actions {
+  display: flex;
+  gap: 6px;
+}
+@media (max-width: 640px) {
+  .wallet-request {
+    justify-content: flex-start;
+  }
+}

@@ -34,6 +34,7 @@ SQLite-транзакции начинаются с `BEGIN IMMEDIATE`, до пе
 | Оценки и подбор | [ratings.py](../src/fczhk/ratings.py), [balancing.py](../src/fczhk/balancing.py), [game_ratings.py](../src/fczhk/game_ratings.py), [game_balancing.py](../src/fczhk/game_balancing.py) |
 | Результаты, аукцион, прогнозы | [results.py](../src/fczhk/results.py), [auctions.py](../src/fczhk/auctions.py), [predictions.py](../src/fczhk/predictions.py) |
 | Связь исторических карточек | [profile_claims.py](../src/fczhk/profile_claims.py) |
+| Ставки: модель счёта, линия, ставки и расчёт, баланс | [odds_model.py](../src/fczhk/odds_model.py), [odds.py](../src/fczhk/odds.py), [bets.py](../src/fczhk/bets.py), [wallet.py](../src/fczhk/wallet.py), [описание](BETTING.md) |
 | Владелец и администраторы | [administrators.py](../src/fczhk/administrators.py), [auth.py](../src/fczhk/auth.py), [панель](../frontend/src/administrators.tsx) |
 | Telegram и фоновые операции | [bot.py](../src/fczhk/bot.py), [worker.py](../src/fczhk/worker.py), [operations.py](../src/fczhk/operations.py) |
 | ORM и миграции | [models.py](../src/fczhk/models.py), [migrations](../migrations/versions) |

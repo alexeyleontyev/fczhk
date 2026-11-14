@@ -1347,3 +1347,63 @@ def test_parallel_collection_image_changes_reject_stale_version(pg):
     with factory() as db:
         assert db.get(Match, mid).version == version + 1
         assert len(list(db.scalars(select(PostImage)))) == 1
+
+
+def test_parallel_freebet_claims_credit_one_freebet(pg):
+    from fczhk import wallet
+    from fczhk.models import WalletEntry
+
+    factory, pid = pg
+    at = datetime(2032, 6, 1, 11, 30, tzinfo=MOSCOW)
+
+    def claim(_):
+        try:
+            with factory() as db, db.begin():
+                wallet.claim_freebet(db, pid, at=at)
+            return "ok"
+        except DomainError as exc:
+            return exc.status
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        outcomes = sorted(pool.map(claim, range(4)), key=str)
+    assert outcomes == [409, 409, 409, "ok"]
+    with factory() as db:
+        entries = list(db.scalars(select(WalletEntry)))
+        assert [(e.player_id, e.kind, e.amount) for e in entries] == [(pid, "freebet", 10000)]
+        assert wallet.balance(db, pid) == 10000
+
+
+def test_parallel_bets_cannot_spend_the_same_points(pg):
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from fczhk import bets, odds, wallet
+    from fczhk.models import Bet
+    from tests.test_betting import _league, _upcoming
+
+    factory, pid = pg
+    with factory() as db, db.begin():
+        field, keepers = _league(db, np.random.default_rng(7))
+        odds.refit_if_needed(db)
+        m = _upcoming(db, field, keepers)
+        mid = m.id
+        wallet.claim_freebet(db, pid)
+        snap = odds.snapshot(db, m)
+        quote = odds.quote(db, snap, ["1x2:a"])
+    body = SimpleNamespace(odds_id=snap.id, selections=["1x2:a"], stake=60.0, odds=quote["odds"])
+
+    def place(_):
+        try:
+            with factory() as db, db.begin():
+                bets.place(db, pid, get_match(db, mid, lock=True), body)
+            return "ok"
+        except DomainError as exc:
+            return exc.status
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        outcomes = sorted(pool.map(place, range(4)), key=str)
+    assert outcomes == [409, 409, 409, "ok"]
+    with factory() as db:
+        assert len(list(db.scalars(select(Bet)))) == 1
+        assert wallet.balance(db, pid) == 4000
