@@ -70,7 +70,7 @@ export function BettingScreen({
 }: {
   me: number
   onPlayer: (id: number) => void
-  match?: { id: number; status: string; starts_at: string } | null
+  match?: { id: number; status: string; starts_at: string; version: number } | null
 }) {
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [board, setBoard] = useState<BettingLeaderboard | null>(null)
@@ -165,6 +165,8 @@ export function BettingScreen({
       {wallet && match && ['approved', 'completed'].includes(match.status) && (
         <MatchLine
           matchId={match.id}
+          version={match.version}
+          refresh={revision}
           title={new Date(match.starts_at).toLocaleDateString('ru-RU', {
             day: 'numeric',
             month: 'long',

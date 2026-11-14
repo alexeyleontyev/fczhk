@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, X } from 'lucide-react'
 
-import { api } from './api'
+import { ApiError, api } from './api'
 import { points } from './betting'
 
 export type Selection = { id: string; label: string; odds: number }
@@ -49,11 +49,17 @@ const OPEN_GROUPS = ['Исход', 'Тотал матча']
 
 export function MatchLine({
   matchId,
+  version,
+  refresh,
   title,
   balance,
   onPlaced,
 }: {
   matchId: number
+  // The match version changes with every approval and colour swap; the line follows it.
+  version: number
+  // Bumped by the screen's «Обновить» button.
+  refresh: number
   title: string
   balance: number
   onPlaced: () => void
@@ -66,12 +72,24 @@ export function MatchLine({
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [revision, setRevision] = useState(0)
+  const held = useRef<MatchOdds | null>(null)
 
   useEffect(() => {
     let active = true
     api<MatchOdds>(`/matches/${matchId}/odds`)
       .then((data) => {
-        if (active) setLine(data)
+        if (!active) return
+        const previous = held.current
+        if (previous?.available && (!data.available || previous.odds_id !== data.odds_id)) {
+          // A new approval brings a new line: keep only selections it still offers.
+          const offered = new Set(
+            data.available ? data.groups.flatMap((g) => g.selections.map((s) => s.id)) : [],
+          )
+          setPicked((current) => current.filter((id) => offered.has(id)))
+          setNotice('Составы изменились — линия обновлена. Проверьте купон.')
+        }
+        held.current = data
+        setLine(data)
       })
       .catch((e) => {
         if (active) setError((e as Error).message)
@@ -79,7 +97,7 @@ export function MatchLine({
     return () => {
       active = false
     }
-  }, [matchId, revision])
+  }, [matchId, version, refresh, revision])
 
   const oddsId = line?.available ? line.odds_id : null
   useEffect(() => {
@@ -94,7 +112,10 @@ export function MatchLine({
         }
       })
       .catch((e) => {
-        if (active) setError((e as Error).message)
+        if (!active) return
+        // 409: the line this screen holds is no longer current; fetch the new one.
+        if (e instanceof ApiError && e.status === 409) setRevision((value) => value + 1)
+        else setError((e as Error).message)
       })
     return () => {
       active = false
@@ -124,14 +145,18 @@ export function MatchLine({
       setRevision((value) => value + 1)
       onPlaced()
     } catch (e) {
+      // Shown even when the line reloads: a changed price or line must not pass silently.
       setError((e as Error).message)
-      setRevision((value) => value + 1)
+      if (e instanceof ApiError && e.status === 409) setRevision((value) => value + 1)
     } finally {
       setBusy(false)
     }
   }
 
   if (!line) return null
+  const labels = new Map(
+    line.available ? line.groups.flatMap((g) => g.selections.map((s) => [s.id, s.label])) : [],
+  )
   const amount = Number(stake.replace(',', '.'))
   const valid = Number.isFinite(amount) && amount >= 1 && amount <= balance
   return (
@@ -183,19 +208,21 @@ export function MatchLine({
                 </button>
               </div>
               <ul>
-                {(quote?.labels ?? picked).map((text, i) => (
-                  <li key={picked[i]}>
-                    <span>{text}</span>
-                    <button
-                      type="button"
-                      className="text-button"
-                      aria-label={`Убрать: ${text}`}
-                      onClick={() => toggle(picked[i])}
-                    >
-                      <X size={14} />
-                    </button>
-                  </li>
-                ))}
+                {picked
+                  .map((id) => labels.get(id) ?? id)
+                  .map((text, i) => (
+                    <li key={picked[i]}>
+                      <span>{text}</span>
+                      <button
+                        type="button"
+                        className="text-button"
+                        aria-label={`Убрать: ${text}`}
+                        onClick={() => toggle(picked[i])}
+                      >
+                        <X size={14} />
+                      </button>
+                    </li>
+                  ))}
               </ul>
               <label className="bet-stake">
                 Сумма
