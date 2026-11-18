@@ -64,13 +64,25 @@ def entries(db: Session, match_id: int) -> list[Registration]:
     )
 
 
+def payment_allows_selection(r: Registration) -> bool:
+    return r.position == "keeper" or r.paid
+
+
 def selection(match: Match, regs: list[Registration]) -> set[int]:
     if match.status not in ("draft", "open"):
         return {r.id for r in regs if r.selected}
     selected = {r.id for r in regs if r.forced}
+    # A preregistered goalkeeper enters the projected selection when the collection opens.
+    opened = match.status == "open"
     for position, limit in (("field", match.field_limit), ("keeper", match.keeper_limit)):
         occupied = sum(r.forced and r.position == position for r in regs)
-        eligible = [r for r in regs if r.position == position and r.paid and not r.forced]
+        eligible = [
+            r
+            for r in regs
+            if r.position == position
+            and not r.forced
+            and (payment_allows_selection(r) if opened else r.paid)
+        ]
         selected.update(r.id for r in eligible[: max(0, limit - occupied)])
     return selected
 
@@ -152,7 +164,7 @@ def match_data(db: Session, match: Match) -> dict:
                 queue=queues[r.position],
                 state=("selected" if match.status not in ("draft", "open") else "provisional")
                 if r.id in chosen
-                else ("reserve" if r.paid else "unpaid"),
+                else ("reserve" if payment_allows_selection(r) else "unpaid"),
             )
         )
     pubs = list(
@@ -238,8 +250,9 @@ def text_for(db: Session, match: Match, kind: str) -> str:
         return (
             f"⚽ Открыта запись\n{header}\n\n"
             f"{match.field_limit} полевых + {match.keeper_limit} вратаря\n"
-            f"Стоимость: {match.cost / 100:g} ₽\n{match.payment_details}\n\n"
-            f"{match.description}\n\nПриоритет — время записи среди оплативших."
+            f"Стоимость для полевых: {match.cost / 100:g} ₽\n"
+            f"Вратари играют бесплатно.\n{match.payment_details}\n\n"
+            f"{match.description}\n\nПриоритет — время записи. У полевых оплата должна быть подтверждена."
         )
     lines = [f"Составы утверждены\n{header}"]
     from .ratings import strength_text, team_rating_data
@@ -355,6 +368,8 @@ def confirm_payment(db: Session, actor: int, match: Match, r: Registration, paid
         raise DomainError("Игра отменена. История оплат сохранена.", 409)
     if not r.active:
         raise DomainError("Заявка отменена")
+    if r.position == "keeper":
+        raise DomainError("Вратари играют бесплатно", 409)
     if r.paid == paid:
         return
     audit(db, actor, "payment.changed", match.id, registration_id=r.id, old=r.paid, new=paid)
@@ -368,6 +383,8 @@ def report_payment(db: Session, actor: int, match: Match, r: Registration, repor
         raise DomainError("Можно отметить только свою оплату", 403)
     if match.status not in ("open", "finalized", "approved") or not r.active:
         raise DomainError("Отметка оплаты недоступна для этой заявки", 409)
+    if r.position == "keeper":
+        raise DomainError("Вратари играют бесплатно", 409)
     if r.paid:
         raise DomainError("Оплата уже подтверждена администратором", 409)
     if r.payment_reported == reported:
@@ -486,9 +503,20 @@ def promote(db: Session, actor: int, match: Match, position: str):
     limit = match.field_limit if position == "field" else match.keeper_limit
     if sum(r.selected and r.position == position for r in regs) >= limit:
         raise DomainError("Свободных мест нет")
-    r = next((r for r in regs if not r.selected and r.paid and r.position == position), None)
+    r = next(
+        (
+            r
+            for r in regs
+            if not r.selected and r.position == position and payment_allows_selection(r)
+        ),
+        None,
+    )
     if not r:
-        raise DomainError("В резерве нет оплативших игроков этого амплуа")
+        raise DomainError(
+            "В резерве нет вратарей"
+            if position == "keeper"
+            else "В резерве нет полевых с подтверждённой оплатой"
+        )
     r.selected = True
     invalidate(db, match)
     match.version += 1

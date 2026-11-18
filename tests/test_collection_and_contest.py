@@ -53,12 +53,31 @@ def test_payment_report_requires_registration_and_never_confirms_payment(env, ca
     assert rejoined["registrations"][0]["payment_status"] == "unpaid"
 
 
-def test_provisional_main_uses_queue_but_finalization_requires_admin_confirmation(env, call, game):
-    populate(env[1], game["id"])
+def test_goalkeeper_registration_rejects_payment_marks(call, game):
+    path = f"/matches/{game['id']}"
+    joined = call("POST", path + "/join", {"position": "keeper"}, role="player")
+    r = joined["registrations"][0]
+    assert r["selected"] and not r["paid"] and not r["payment_reported"]
+    call("PUT", path + "/payment-report", {"reported": True}, role="player", expected=409)
+    call(
+        "PUT",
+        path + f"/registrations/{r['id']}/payment",
+        {"version": joined["version"], "paid": True, "reported": True},
+        expected=409,
+    )
+    assert call("GET", path) == joined
+    moved = call("POST", path + "/join", {"position": "field"}, role="player")
+    assert not moved["registrations"][0]["selected"]
+
+
+def test_finalization_and_reserve_require_confirmation_only_for_field_players(env, call, game):
+    populate(env[1], game["id"], keepers=4)
     with env[1]() as db, db.begin():
-        first = db.scalar(select(Registration).order_by(Registration.id))
-        first.paid = False
-        first.payment_reported = True
+        rows = list(db.scalars(select(Registration).order_by(Registration.id)))
+        rows[0].paid = False
+        rows[0].payment_reported = True
+        for keeper in rows[-4:-1]:
+            keeper.paid = False
     path = f"/matches/{game['id']}"
     before = call("GET", path)
     main = [r for r in before["registrations"] if r["in_main"]]
@@ -68,9 +87,21 @@ def test_provisional_main_uses_queue_but_finalization_requires_admin_confirmatio
     assert not next(r for r in before["registrations"] if r["alias"] == "Участник 16")["in_main"]
     after = call("POST", path + "/actions/finalize", {"version": before["version"]})
     selected = [r for r in after["registrations"] if r["in_main"]]
-    assert len(selected) == 18 and all(r["paid"] for r in selected)
+    assert len(selected) == 18
+    assert all(r["paid"] for r in selected if r["position"] == "field")
+    keepers = [r for r in selected if r["position"] == "keeper"]
+    assert [r["alias"] for r in keepers] == ["Участник 18", "Участник 19"]
+    assert all(not r["paid"] for r in keepers)
     assert not next(r for r in after["registrations"] if r["alias"] == "Участник 00")["in_main"]
     assert next(r for r in after["registrations"] if r["alias"] == "Участник 16")["in_main"]
+    after = call(
+        "POST", path + f"/registrations/{keepers[0]['id']}/remove", {"version": after["version"]}
+    )
+    after = call("POST", path + "/promote", {"version": after["version"], "position": "keeper"})
+    reserve_keeper, legacy_paid_keeper = after["registrations"][-2:]
+    assert reserve_keeper["alias"] == "Участник 20" and reserve_keeper["selected"]
+    assert not reserve_keeper["paid"] and not reserve_keeper["payment_reported"]
+    assert legacy_paid_keeper["paid"] and not legacy_paid_keeper["selected"]
 
 
 async def test_game_payment_button_reports_once_and_waits_for_admin(env, call, monkeypatch):

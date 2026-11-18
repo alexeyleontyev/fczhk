@@ -87,7 +87,7 @@ def seed_demo(cfg):
                     match_id=m.id,
                     player_id=p.id,
                     position="keeper" if i >= 18 else "field",
-                    paid=(i % 5 != 0),
+                    paid=i < 18 and i % 5 != 0,
                     registered_at=now() - timedelta(hours=5, minutes=30 - i),
                 )
             )

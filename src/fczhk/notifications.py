@@ -177,7 +177,7 @@ def schedule_notifications(db, template, at):
                 template,
                 "payment_notice",
                 f"payment:{match.id}",
-                f"Внимание, нужно оплатить футбол!\nИгра: {starts:%d.%m.%Y · %H:%M МСК}",
+                f"Полевым игрокам нужно оплатить футбол.\nИгра: {starts:%d.%m.%Y · %H:%M МСК}",
                 starts,
                 match.id,
             )

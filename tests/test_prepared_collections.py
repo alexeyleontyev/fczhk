@@ -83,6 +83,7 @@ def test_prepared_list_is_private_silent_idempotent_and_opens_with_queue(env, ca
         assert schedule_tick(db, cfg, clock[0]) is None
     m = call("GET", "/matches/current", role="player")
     assert m["status"] == "open" and m["registrations"][0]["id"] == first["id"]
+    assert [r["player_id"] for r in m["registrations"] if r["selected"]] == [keeper["id"]]
     clock[0] += timedelta(seconds=1)
     m = call("POST", f"/matches/{m['id']}/join", {"position": "field"}, role="player")
     assert [r["player_id"] for r in m["registrations"] if r["position"] == "field"] == [
@@ -96,9 +97,9 @@ def test_prepared_list_is_private_silent_idempotent_and_opens_with_queue(env, ca
         assert (
             len(list(db.scalars(select(Publication).where(Publication.kind == "collection")))) == 1
         )
-    # Being recorded early does not bypass the administrator's payment confirmation.
+    # Preregistration does not exempt field players from payment confirmation.
     m = call("POST", f"/matches/{m['id']}/actions/finalize", {"version": m["version"]})
-    assert not any(r["selected"] for r in m["registrations"])
+    assert [r["player_id"] for r in m["registrations"] if r["selected"]] == [keeper["id"]]
 
 
 def test_prepare_rejects_nonadmin_stale_schedule_and_opening_in_progress(call, clock):

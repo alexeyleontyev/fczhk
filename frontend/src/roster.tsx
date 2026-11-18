@@ -21,15 +21,17 @@ export function Roster({
     ...m.registrations.filter((r) => r.position === 'field'),
     ...m.registrations.filter((r) => r.position === 'keeper'),
   ]
+  const mainPlayers = registrations.filter(main)
+  const mainField = mainPlayers.filter((r) => r.position === 'field')
   const groups = [
-    { title: 'Основной список', className: 'roster-main', rows: registrations.filter(main) },
+    { title: 'Основной список', className: 'roster-main', rows: mainPlayers },
     { title: 'Резерв', className: 'roster-reserve', rows: registrations.filter((r) => !main(r)) },
   ]
   return (
     <>
       {(['field', 'keeper'] as Position[]).map((position) => {
         const regs = m.registrations.filter((r) => r.position === position)
-        const next = regs.find((r) => !r.selected && r.paid)
+        const next = regs.find((r) => !r.selected && (position === 'keeper' || r.paid))
         const room =
           regs.filter((r) => r.selected).length <
           (position === 'field' ? m.field_limit : m.keeper_limit)
@@ -40,7 +42,7 @@ export function Roster({
           next && (
             <div className="reserve-callout" key={position}>
               <span>
-                Следующий оплативший:{' '}
+                {position === 'keeper' ? 'Следующий вратарь:' : 'Следующий оплативший:'}{' '}
                 <strong>
                   <PlayerName playerId={next.player_id} alias={next.alias} />
                 </strong>
@@ -68,8 +70,11 @@ export function Roster({
           </h3>
           {group.className === 'roster-main' && (
             <p className="muted caption">
-              Полевые: {group.rows.filter((r) => r.position === 'field').length} / {m.field_limit} ·
-              Вратари: {group.rows.filter((r) => r.position === 'keeper').length} / {m.keeper_limit}
+              Полевые: {mainField.length} / {m.field_limit} · Вратари:{' '}
+              {mainPlayers.length - mainField.length} / {m.keeper_limit}
+              <br />
+              Отметили оплату: {mainField.filter((r) => r.payment_reported).length} · Подтверждено:{' '}
+              {mainField.filter((r) => r.paid).length}
             </p>
           )}
           {!group.rows.length && (
@@ -92,35 +97,41 @@ export function Roster({
                 </time>
               </div>
               <div className="roster-actions">
-                <PaymentStatus
-                  reported={Boolean(r.payment_reported)}
-                  confirmed={r.paid}
-                  alias={r.alias}
-                  disabled={busy}
-                  onReported={
-                    admin
-                      ? () =>
-                          void run(() =>
-                            api(`/matches/${m.id}/registrations/${r.id}/payment`, 'PUT', {
-                              version: m.version,
-                              paid: r.paid,
-                              reported: !r.payment_reported,
-                            }),
-                          )
-                      : undefined
-                  }
-                  onConfirmed={
-                    admin
-                      ? () =>
-                          void run(() =>
-                            api(`/matches/${m.id}/registrations/${r.id}/payment`, 'PUT', {
-                              version: m.version,
-                              paid: !r.paid,
-                            }),
-                          )
-                      : undefined
-                  }
-                />
+                {r.position === 'keeper' ? (
+                  <span className="payment-status positive">
+                    <span className="payment-status-label">Бесплатно</span>
+                  </span>
+                ) : (
+                  <PaymentStatus
+                    reported={Boolean(r.payment_reported)}
+                    confirmed={r.paid}
+                    alias={r.alias}
+                    disabled={busy}
+                    onReported={
+                      admin
+                        ? () =>
+                            void run(() =>
+                              api(`/matches/${m.id}/registrations/${r.id}/payment`, 'PUT', {
+                                version: m.version,
+                                paid: r.paid,
+                                reported: !r.payment_reported,
+                              }),
+                            )
+                        : undefined
+                    }
+                    onConfirmed={
+                      admin
+                        ? () =>
+                            void run(() =>
+                              api(`/matches/${m.id}/registrations/${r.id}/payment`, 'PUT', {
+                                version: m.version,
+                                paid: !r.paid,
+                              }),
+                            )
+                        : undefined
+                    }
+                  />
+                )}
                 {admin && (
                   <button
                     disabled={busy}

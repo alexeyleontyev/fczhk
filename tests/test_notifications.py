@@ -140,7 +140,7 @@ def test_payment_notice_configured_time_one_per_game_and_no_autoschedule_require
     posts = notices(env, "payment_notice")
     assert len(posts) == 1 and posts[0].match_id == mid
     assert posts[0].chat_id == "-1001111111"
-    assert posts[0].text.startswith("Внимание, нужно оплатить футбол!")
+    assert posts[0].text.startswith("Полевым игрокам нужно оплатить футбол.")
     with env[1]() as db, db.begin():
         db.get(Match, mid).status = "cancelled"
     with env[1]() as db:

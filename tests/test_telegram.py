@@ -307,6 +307,13 @@ async def test_game_payment_button_is_own_and_bound_to_the_shown_match(env, call
     assert "Игрок · 🔴🔴 · " in replies[0].text
     earlier = future_game(call, days=1)
     call("POST", f"/matches/{earlier['id']}/join", {"position": "keeper"}, role="player")
+    keeper_replies = await command_replies(env, monkeypatch, "/game")
+    assert "Игрок · бесплатно · " in keeper_replies[0].text
+    assert not any(
+        (b.callback_data or "").startswith("paid:")
+        for row in keeper_replies[-1].reply_markup.inline_keyboard
+        for b in row
+    )
     result = await callback_replies(env, monkeypatch, button.callback_data)
     assert "Администратор проверит" in next(
         r.text for r in result if isinstance(r, AnswerCallbackQuery)
@@ -384,7 +391,7 @@ async def test_game_tracks_current_roster_from_open_collection_to_approved_teams
                 ("Оплативший полевой", "field", True),
                 ("Резервный полевой", "field", True),
                 ("Ранний вратарь", "keeper", False),
-                ("Оплативший вратарь", "keeper", True),
+                ("Резервный вратарь", "keeper", True),
             ]
         ):
             player = Player(alias=alias)
@@ -409,9 +416,9 @@ async def test_game_tracks_current_roster_from_open_collection_to_approved_teams
     main, reserve = text.split("\nРезерв\n")
     assert "1. Ранний полевой · 🔴🔴 · 20.10 15:00:00" in main
     assert "2. Оплативший полевой · 🟢🟢" in main
-    assert "1. Ранний вратарь · 🔴🔴" in main
+    assert "1. Ранний вратарь · бесплатно" in main
     assert "Полевые\n3. Резервный полевой · 🟢🟢" in reserve
-    assert "Вратари\n2. Оплативший вратарь · 🟢🟢" in reserve
+    assert "Вратари\n2. Резервный вратарь · бесплатно" in reserve
     assert not any(
         label in text for label in ("Оплачен", "Не оплачен", "Подтверждено", "основной список")
     )
@@ -421,9 +428,8 @@ async def test_game_tracks_current_roster_from_open_collection_to_approved_teams
     assert "Сбор завершён" in text and "Запись открыта" not in text
     main, reserve = text.split("\nРезерв\n")
     assert "Оплативший полевой" in main and "Резервный полевой" in main
-    assert "Оплативший вратарь" in main
-    assert "Ранний полевой" not in main and "Ранний вратарь" not in main
-    assert "Ранний полевой" in reserve and "Ранний вратарь" in reserve
+    assert "Ранний вратарь" in main
+    assert "Ранний полевой" in reserve and "Резервный вратарь" in reserve
 
     assignments = {
         str(r["id"]): "black" if r["alias"] == "Резервный полевой" else "white"
@@ -435,9 +441,9 @@ async def test_game_tracks_current_roster_from_open_collection_to_approved_teams
     text = await reply()
     assert "Составы утверждены" in text and "Сбор завершён" not in text
     white, black = text.split("⚪ Белые\n")[1].split("\n\n⚫ Чёрные\n")
-    assert white == "1. 🧤 Оплативший вратарь · 🟢🟢\n2. Оплативший полевой · 🟢🟢"
+    assert white == "1. 🧤 Ранний вратарь · бесплатно\n2. Оплативший полевой · 🟢🟢"
     assert black == "1. Резервный полевой · 🟢🟢"
-    assert "Ранний" not in text and "\nРезерв\n" not in text and "20.10 15:00:" not in text
+    assert "Ранний полевой" not in text and "\nРезерв\n" not in text and "20.10 15:00:" not in text
     markup = (await command_replies(env, monkeypatch, "/game"))[-1].reply_markup
     assert not any(
         b.callback_data.startswith(("join:", "leave:"))
@@ -450,7 +456,7 @@ async def test_game_tracks_current_roster_from_open_collection_to_approved_teams
     text = await reply()
     white, black = text.split("⚪ Белые\n")[1].split("\n\n⚫ Чёрные\n")
     assert white == "1. Резервный полевой · 🟢🟢"
-    assert black == "1. 🧤 Оплативший вратарь · 🟢🟢\n2. Оплативший полевой · 🟢🟢"
+    assert black == "1. 🧤 Ранний вратарь · бесплатно\n2. Оплативший полевой · 🟢🟢"
 
     # Editing an approved lineup revokes approval until the teams are confirmed again.
     call(
@@ -610,7 +616,7 @@ def registration_state(env, game_id):
 async def test_bot_cancel_button_removes_own_registration_once(env, call, game, monkeypatch):
     with env[1]() as db, db.begin():
         db.get(GameTemplate, 1).extended_chat_id = "-1002222222"
-    m = call("POST", f"/matches/{game['id']}/join", {"position": "keeper"}, role="player")
+    m = call("POST", f"/matches/{game['id']}/join", {"position": "field"}, role="player")
     m = call(
         "PUT",
         f"/matches/{m['id']}/registrations/{m['registrations'][0]['id']}/payment",
@@ -621,7 +627,7 @@ async def test_bot_cancel_button_removes_own_registration_once(env, call, game, 
         env, monkeypatch, f"leave:{m['id']}", callback_id="cancel-once"
     )
     question, buttons = confirmation_buttons(replies)
-    assert "обе отметки оплаты сброшены" in question.text
+    assert "Обе отметки оплаты будут сброшены" in question.text
     assert registration_state(env, m["id"]) == original
     for _ in range(2):
         await callback_replies(env, monkeypatch, buttons["l"], callback_id="confirm-cancel-once")
@@ -647,12 +653,14 @@ async def test_bot_role_confirmation_no_preserves_queue_and_yes_preserves_paymen
     env, call, game, monkeypatch, position, action
 ):
     target = "keeper" if position == "field" else "field"
-    m = call("POST", f"/matches/{game['id']}/join", {"position": position}, role="player")
+    m = call("POST", f"/matches/{game['id']}/join", {"position": "field"}, role="player")
     m = call(
         "PUT",
         f"/matches/{m['id']}/registrations/{m['registrations'][0]['id']}/payment",
         {"version": m["version"], "paid": True, "reported": True},
     )
+    if position == "keeper":
+        m = call("POST", f"/matches/{game['id']}/join", {"position": position}, role="player")
     original = registration_state(env, m["id"])
     question, buttons = confirmation_buttons(
         await callback_replies(env, monkeypatch, f"join:{m['id']}:{target}")

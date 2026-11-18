@@ -130,6 +130,7 @@ test('player payment and administrator confirmation have independent green and r
   await page.goto(`/?game=${match.id}`)
   const main = page.getByRole('region', { name: 'Основной список', exact: true })
   await expect(main).toContainText(member.player.alias)
+  await expect(main).toContainText('Отметили оплату: 0 · Подтверждено: 0')
   await page.getByRole('button', { name: 'Я оплатил', exact: true }).click()
   const statuses = main.getByRole('group', {
     name: `Оплата и подтверждение: ${member.player.alias}`,
@@ -139,6 +140,7 @@ test('player payment and administrator confirmation have independent green and r
   await expect(statuses.locator('.payment-status').first()).toHaveClass(/positive/)
   await expect(statuses.locator('.payment-status').last()).toHaveText('Не подтверждено')
   await expect(statuses.locator('.payment-status').last()).toHaveClass(/negative/)
+  await expect(main).toContainText('Отметили оплату: 1 · Подтверждено: 0')
   const reported = await (await request.get(`/api/matches/${match.id}`, { headers })).json()
   expect(reported.registrations[0].paid).toBe(false)
   expect(reported.registrations[0].selected).toBe(false)
@@ -151,9 +153,11 @@ test('player payment and administrator confirmation have independent green and r
       admin.token,
     )
     await adminPage.goto(`/?game=${match.id}`)
-    const adminStatuses = adminPage
-      .getByRole('region', { name: 'Основной список', exact: true })
-      .getByRole('group', { name: `Оплата и подтверждение: ${member.player.alias}`, exact: true })
+    const adminMain = adminPage.getByRole('region', { name: 'Основной список', exact: true })
+    const adminStatuses = adminMain.getByRole('group', {
+      name: `Оплата и подтверждение: ${member.player.alias}`,
+      exact: true,
+    })
     await expect(adminStatuses).toBeVisible()
     await adminPage.evaluate(() => document.fonts.ready)
     const widths = () =>
@@ -167,6 +171,7 @@ test('player payment and administrator confirmation have independent green and r
       .click()
     await page.getByRole('button', { name: 'Обновить игру', exact: true }).click()
     await expect(statuses.locator('.payment-status.positive')).toHaveCount(2)
+    await expect(main).toContainText('Отметили оплату: 1 · Подтверждено: 1')
     await expect(page.getByRole('button', { name: 'Я оплатил', exact: true })).toHaveCount(0)
     expect(await widths()).toEqual(initialWidths)
     await adminStatuses
@@ -176,6 +181,7 @@ test('player payment and administrator confirmation have independent green and r
     await expect(adminStatuses.locator('.payment-status').first()).toHaveClass(/negative/)
     await expect(adminStatuses.locator('.payment-status').last()).toHaveText('Подтверждено')
     await expect(adminStatuses.locator('.payment-status').last()).toHaveClass(/positive/)
+    await expect(adminMain).toContainText('Отметили оплату: 0 · Подтверждено: 1')
     expect(await widths()).toEqual(initialWidths)
     await adminStatuses
       .getByRole('button', { name: `Отметить оплату: ${member.player.alias}`, exact: true })
@@ -197,6 +203,22 @@ test('player payment and administrator confirmation have independent green and r
   } finally {
     await context.close()
   }
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Сменить амплуа', exact: true }).click()
+  await expect(page.getByText('Вратари играют бесплатно', { exact: true })).toBeVisible()
+  await expect(main.getByText('Бесплатно', { exact: true })).toBeVisible()
+  await expect(statuses).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Я оплатил', exact: true })).toHaveCount(0)
+  const moved: Match = await (await request.get(`/api/matches/${match.id}`, { headers })).json()
+  const finalized = await request.post(`/api/matches/${match.id}/actions/finalize`, {
+    headers,
+    data: { version: moved.version },
+  })
+  expect(finalized.ok()).toBe(true)
+  await page.getByRole('button', { name: 'Обновить игру', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Сменить амплуа', exact: true })).toHaveCount(0)
+  await expect(main.getByText('Бесплатно', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Я оплатил', exact: true })).toHaveCount(0)
 })
 
 test('collection overview separates 16 field players and 2 keepers from the reserve', async ({
@@ -213,8 +235,8 @@ test('collection overview separates 16 field players and 2 keepers from the rese
     id: i + 1,
     player_id: p.id,
     alias: p.alias,
-    paid: i % 3 === 0,
-    payment_reported: i % 3 === 1,
+    paid: i >= 18 || i % 3 === 0,
+    payment_reported: i >= 18 || i % 3 === 1,
     selected: false,
     in_main: i < 16 || (i >= 18 && i < 20),
     position: i < 18 ? 'field' : 'keeper',
@@ -230,7 +252,12 @@ test('collection overview separates 16 field players and 2 keepers from the rese
   await expect(main.locator('.roster-row')).toHaveCount(18)
   await expect(main).toContainText('Полевые: 16 / 16')
   await expect(main).toContainText('Вратари: 2 / 2')
+  await expect(main).toContainText('Отметили оплату: 5 · Подтверждено: 6')
+  await expect(main.locator('span.payment-status.positive', { hasText: 'Бесплатно' })).toHaveCount(2)
+  await expect(main.locator('.payment-statuses')).toHaveCount(16)
   await expect(reserve.locator('.roster-row')).toHaveCount(3)
+  await expect(reserve.getByText('Бесплатно', { exact: true })).toHaveCount(1)
+  await expect(reserve.locator('.payment-statuses')).toHaveCount(2)
   await expect(page.getByRole('tab', { name: 'Участники', exact: true })).toHaveCount(0)
   await expect(page.getByRole('tab', { name: 'Управление', exact: true })).toHaveCount(0)
   await expect(page.getByText('Сбор ещё не утверждён', { exact: true })).toHaveCount(0)
@@ -301,9 +328,9 @@ test('confirmation names reserve replacements, No leaves the collection open and
         alias: p.alias,
         forced: i === 1,
         paid: i === 3 || i === 4,
-        payment_reported: i === 2 || i === 5,
+        payment_reported: i === 5,
         in_main: i < 3,
-        selected: i === 1 || i === 3 || i === 4,
+        selected: i === 1 || i === 2 || i === 3,
         position: i === 2 || i === 4 ? 'keeper' : 'field',
         queue: i + 1,
       }),
@@ -332,8 +359,8 @@ test('confirmation names reserve replacements, No leaves the collection open and
   const keepers = dialog.getByRole('region', { name: 'Изменения: Вратари', exact: true })
   await expect(fields).toContainText(`Не войдут в сбор: ${unpaid.alias}`)
   await expect(fields).toContainText(`Из резерва войдут: ${fieldReserve.alias}`)
-  await expect(keepers).toContainText(`Не войдут в сбор: ${keeper.alias}`)
-  await expect(keepers).toContainText(`Из резерва войдут: ${keeperReserve.alias}`)
+  await expect(keepers).toHaveCount(0)
+  await expect(dialog).toContainText('Вратари играют бесплатно.')
   await expect(dialog.getByRole('button', { name: fixed.alias, exact: true })).toHaveCount(0)
   await expect(
     dialog.getByRole('button', { name: reportedReserve.alias, exact: true }),
@@ -365,7 +392,7 @@ test('confirmation names reserve replacements, No leaves the collection open and
   expect(confirmations).toEqual([{ version: shownVersion }, { version: shownVersion + 1 }])
   expect(match.status).toBe('finalized')
   await expect(main.getByRole('button', { name: fieldReserve.alias, exact: true })).toBeVisible()
-  await expect(main.getByRole('button', { name: keeperReserve.alias, exact: true })).toBeVisible()
+  await expect(main.getByRole('button', { name: keeper.alias, exact: true })).toBeVisible()
   await expect(main.getByRole('button', { name: fixed.alias, exact: true })).toBeVisible()
   await expect(main.getByRole('button', { name: unpaid.alias, exact: true })).toHaveCount(0)
 })
@@ -377,23 +404,25 @@ test('confirmation explains a shortfall when reserve payments are unconfirmed', 
   const { token } = await (await request.post('/api/auth/demo/admin')).json()
   const headers = { Authorization: `Bearer ${token}` }
   const base: Match = await (await request.get('/api/matches/current', { headers })).json()
-  const registrations = base.registrations.map((r) => ({
-    ...r,
-    paid: false,
-    payment_reported: true,
-    forced: false,
-    selected: false,
-  }))
+  const registrations = base.registrations
+    .filter((r) => r.position === 'field' || r.queue === 1)
+    .map((r) => ({
+      ...r,
+      paid: false,
+      payment_reported: r.position === 'field',
+      forced: false,
+      selected: r.position === 'keeper',
+    }))
   const match = { ...base, id: 988032, status: 'open', result: null, registrations }
   await page.route(`**/api/matches/${match.id}`, (route) => route.fulfill({ json: match }))
   await page.addInitScript((value) => sessionStorage.setItem('fczhk-session', value), token)
   await page.goto(`/?game=${match.id}`)
   await page.getByRole('button', { name: 'Зафиксировать участников', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Зафиксировать участников?', exact: true })
-  await expect(dialog).toContainText('В сборе будет 0 / 16 полевых и 0 / 2 вратарей')
+  await expect(dialog).toContainText('В сборе будет 0 / 16 полевых и 1 / 2 вратарей')
   await expect(
-    dialog.getByText('В резерве нет игроков этого амплуа с подтверждённой оплатой.'),
-  ).toHaveCount(2)
+    dialog.getByText('В резерве нет полевых с подтверждённой оплатой.'),
+  ).toHaveCount(1)
   await expect(dialog.getByText('Из резерва войдут:', { exact: false })).toHaveCount(0)
   await dialog.getByRole('button', { name: 'Нет', exact: true }).click()
   await expect(dialog).toHaveCount(0)

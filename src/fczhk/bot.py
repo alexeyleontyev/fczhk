@@ -32,10 +32,13 @@ def game_text(data):
     ]
 
     def player_line(registration, number, *, approved=False):
-        role = "🧤 " if approved and registration["position"] == "keeper" else ""
-        reported = "🟢" if registration["payment_reported"] else "🔴"
-        confirmed = "🟢" if registration["paid"] else "🔴"
-        line = f"{number}. {role}{registration['alias']} · {reported}{confirmed}"
+        if registration["position"] == "keeper":
+            role = "🧤 " if approved else ""
+            line = f"{number}. {role}{registration['alias']} · бесплатно"
+        else:
+            reported = "🟢" if registration["payment_reported"] else "🔴"
+            confirmed = "🟢" if registration["paid"] else "🔴"
+            line = f"{number}. {registration['alias']} · {reported}{confirmed}"
         if not approved:
             line += f" · {registration['registered_at'].astimezone(MOSCOW):%d.%m %H:%M:%S}"
         return line
@@ -110,6 +113,7 @@ def dispatcher(cfg, factory):
         if (
             match.status in ("open", "finalized", "approved")
             and registration
+            and registration.position == "field"
             and not registration.paid
         ):
             payment = InlineKeyboardButton(
@@ -159,9 +163,14 @@ def dispatcher(cfg, factory):
         if action == "l":
             text = (
                 "Вы точно хотите отменить запись?\n\n"
-                "Место в очереди будет потеряно, обе отметки оплаты сброшены. "
-                "При повторной записи время будет новым, оплату потребуется подтвердить заново."
+                "При повторной записи вы займёте новое место в очереди."
             )
+            if (
+                registration.position == "field"
+                or registration.paid
+                or registration.payment_reported
+            ):
+                text += " Обе отметки оплаты будут сброшены."
             yes = "Да, отменить запись"
         else:
             position = "полевого" if action == "f" else "вратаря"
@@ -210,7 +219,8 @@ def dispatcher(cfg, factory):
             description = await asyncio.to_thread(read_schedule)
             await message.answer(
                 "ФКЖК · футбольное сообщество\n\n"
-                f"{description}\nПриоритет — время записи среди оплативших.\n"
+                f"{description}\nПриоритет — время записи. Вратари играют бесплатно. "
+                "У полевых оплата должна быть подтверждена.\n"
                 "В приложении: alias, текущая игра, оценки игроков и подбор составов.\n\n"
                 "/game — текущая игра\n/lastgame — результат последней игры\n"
                 "/profile — моя статистика\n/help — команды бота",
@@ -248,17 +258,19 @@ def dispatcher(cfg, factory):
                 "рассчитан на 16 полевых и 2 вратарей; остальные заявки попадают в резерв. "
                 "Предварительный список может измениться до финализации.\n\n"
                 "3. Оплата и место в составе\n\n"
-                "После перевода нажмите «Я оплатил» в ответе на /game или в карточке игры "
-                "в приложении. Это ваша отметка о переводе; оплату отдельно подтверждает администратор.\n\n"
-                "В списке /game рядом с игроком показаны два кружка: первый — отметка игрока, "
+                "Вратари играют бесплатно. Если вы записались полевым, после перевода нажмите "
+                "«Я оплатил» в ответе на /game или в карточке игры "
+                "в приложении. Оплату отдельно подтверждает администратор.\n\n"
+                "В списке /game рядом с полевым игроком показаны два кружка: первый — отметка игрока, "
                 "второй — подтверждение администратора. 🟢 означает, что отметка есть, 🔴 — что её нет.\n\n"
-                "При финализации обычные заявки отбираются отдельно по амплуа среди игроков "
-                "с подтверждённой оплатой, с учётом порядка записи. Администратор также может "
+                "При финализации вратари проходят по очереди, а полевые — по очереди среди тех, "
+                "чью оплату подтвердили. Администратор также может "
                 "включить участника вручную. Если освободится место, переход игрока из резерва "
                 "подтверждает администратор.\n\n"
                 "После закрытия сбора самостоятельно изменить или отменить запись уже нельзя — "
                 "обратитесь к администратору. Если отменить запись и записаться заново во время "
-                "открытого сбора, время записи будет новым, а оплату потребуется подтвердить повторно.\n\n"
+                "открытого сбора, время записи будет новым. При повторной записи полевым "
+                "оплату нужно подтвердить заново.\n\n"
                 "4. Команды и прогноз\n\n"
                 "После формирования и утверждения составов команда /game покажет команды "
                 "«Белые» и «Чёрные». В приложении можно посмотреть составы подробнее и предложить "
@@ -521,7 +533,7 @@ def dispatcher(cfg, factory):
                         )
                     if match.status not in ("open", "finalized", "approved"):
                         raise DomainError("Отметка оплаты недоступна для этой игры.")
-                    if registration.paid:
+                    if registration.position == "field" and registration.paid:
                         text = "Оплата уже подтверждена администратором."
                     else:
                         report_payment(db, pid, match, registration, True)

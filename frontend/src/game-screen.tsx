@@ -165,9 +165,9 @@ export function GameScreen({
                   <details className="registration-help"><summary>Порядок записи и оплаты</summary>
                   <p className="muted caption">
                     {m.status === 'draft' && (m.scheduled_opening_at || m.collection_paused)
-                      ? 'Этот список виден только администраторам. При открытии сбора игроки займут первые места в очереди. Оплату подтверждает администратор.'
+                      ? 'Этот список виден только администраторам. При открытии сбора игроки займут первые места в очереди. Оплату полевых подтверждает администратор. Вратари играют бесплатно.'
                       : m.status === 'open'
-                        ? 'В основном списке — первые записавшиеся полевые и вратари. При утверждении пройдут игроки с оплатой, подтверждённой администратором, по времени записи.'
+                        ? 'При утверждении полевых отбирают в порядке записи среди тех, чью оплату подтвердил администратор. Вратари играют бесплатно и проходят по времени записи.'
                         : 'Самостоятельная запись закрыта. Изменения вносит администратор.'}
                   </p>
                   </details>
@@ -181,13 +181,17 @@ export function GameScreen({
                               Вы записаны {mine.position === 'field' ? 'полевым' : 'вратарем'}
                             </strong>
                           </div>
-                          <PaymentStatus
-                            reported={Boolean(mine.payment_reported)}
-                            confirmed={mine.paid}
-                            alias={me.alias}
-                          />
+                          {mine.position === 'keeper' ? (
+                            <span className="muted caption">Вратари играют бесплатно</span>
+                          ) : (
+                            <PaymentStatus
+                              reported={Boolean(mine.payment_reported)}
+                              confirmed={mine.paid}
+                              alias={me.alias}
+                            />
+                          )}
                           <div className="inline wrap">
-                            {!mine.paid && (
+                            {mine.position === 'field' && !mine.paid && (
                               <Button
                                 disabled={busy}
                                 className="secondary compact"
@@ -325,7 +329,7 @@ export function GameScreen({
                 <>
                   <div className="hero-bottom">
                     <span>
-                      {money(m.cost)} <small>за игру</small>
+                      {money(m.cost)} <small>для полевых</small>
                     </span>
 
                   </div>
@@ -427,8 +431,7 @@ export function GameScreen({
                   </div>
                 )}
                 {m.status !== 'open' && registrationPanel}
-                {mine &&
-                  m.status !== 'open' &&
+                {mine?.position === 'field' &&
                   !mine.paid &&
                   ['finalized', 'approved'].includes(m.status) && (
                     <section className="panel own-payment" hidden={activeSection !== 'overview'}>
@@ -495,7 +498,7 @@ export function GameScreen({
                     {m.payment_details || 'Реквизиты уточняйте у администратора.'}
                   </p>
                   <span className="muted caption">
-                    Отметка оплаты появляется после подтверждения администратором.
+                    Оплату полевых подтверждает администратор. Вратари играют бесплатно.
                   </span>
                 </details>
               </aside>

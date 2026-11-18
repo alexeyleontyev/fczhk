@@ -41,12 +41,11 @@ export function FinalizeCollection({
   return (
     <Modal title="Зафиксировать участников?" close={close}>
       <p>
-        Пройдут первые {m.field_limit} полевых и {m.keeper_limit} вратаря с оплатой, подтверждённой
-        администратором, по времени записи. Закреплённые места сохранятся.
+        По времени записи пройдут до {m.field_limit} полевых с подтверждённой оплатой и до{' '}
+        {m.keeper_limit} вратарей. Вратари играют бесплатно. Закреплённые места сохранятся.
       </p>
       {changes.length > 0 && (
         <div className="finalize-changes">
-          <p>В основном списке есть игроки без подтверждённой оплаты.</p>
           {changes.map(({ position, label, removed, promoted }) => (
             <section key={position} aria-label={`Изменения: ${label}`}>
               <h3>{label}</h3>
@@ -60,7 +59,11 @@ export function FinalizeCollection({
                   Из резерва войдут: <Names entries={promoted} />.
                 </p>
               ) : (
-                <p>В резерве нет игроков этого амплуа с подтверждённой оплатой.</p>
+                <p>
+                  {position === 'field'
+                    ? 'В резерве нет полевых с подтверждённой оплатой.'
+                    : 'В резерве нет вратарей.'}
+                </p>
               )}
             </section>
           ))}
