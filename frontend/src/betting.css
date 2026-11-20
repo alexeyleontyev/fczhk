@@ -142,6 +142,11 @@
 .odds-group[open] summary svg {
   transform: rotate(180deg);
 }
+.odds-subhead {
+  margin: 6px 0 2px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
 .odds-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));

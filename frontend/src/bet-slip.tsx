@@ -53,6 +53,20 @@ const odd = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2 
 // Open by default: the outcome and match total; the long lists stay folded.
 const OPEN_GROUPS = ['Исход', 'Тотал матча']
 
+// Player goals and assists come ordered by player: one heading per player, short buttons.
+function blocks(selections: Selection[]) {
+  const out: { title: string | null; items: { s: Selection; text: string }[] }[] = []
+  for (const s of selections) {
+    const perPlayer = /^(player|assist):/.test(s.id) && s.label.includes(': ')
+    const title = perPlayer ? s.label.slice(0, s.label.lastIndexOf(': ')) : null
+    const text = perPlayer ? s.label.slice(s.label.lastIndexOf(': ') + 2) : s.label
+    const last = out[out.length - 1]
+    if (last && last.title === title) last.items.push({ s, text })
+    else out.push({ title, items: [{ s, text }] })
+  }
+  return out
+}
+
 export function MatchLine({
   matchId,
   version,
@@ -186,21 +200,27 @@ export function MatchLine({
               <summary>
                 {group.name} <ChevronDown size={14} aria-hidden="true" />
               </summary>
-              <div className="odds-grid">
-                {group.selections.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className={`odds-button ${picked.includes(s.id) ? 'picked' : ''}`}
-                    aria-pressed={picked.includes(s.id)}
-                    disabled={!line.open || busy}
-                    onClick={() => toggle(s.id)}
-                  >
-                    <span>{s.label}</span>
-                    <strong>{odd(s.odds)}</strong>
-                  </button>
-                ))}
-              </div>
+              {blocks(group.selections).map((block, index) => (
+                <div key={block.title ?? index}>
+                  {block.title && <h3 className="odds-subhead">{block.title}</h3>}
+                  <div className="odds-grid">
+                    {block.items.map(({ s, text }) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={`odds-button ${picked.includes(s.id) ? 'picked' : ''}`}
+                        aria-pressed={picked.includes(s.id)}
+                        aria-label={text === s.label ? undefined : `${s.label} ${odd(s.odds)}`}
+                        disabled={!line.open || busy}
+                        onClick={() => toggle(s.id)}
+                      >
+                        <span>{text}</span>
+                        <strong>{odd(s.odds)}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </details>
           ))}
           {picked.length > 0 && line.open && (
@@ -258,7 +278,8 @@ export function MatchLine({
               {picked.length > 1 && (
                 <p className="muted caption">
                   Комбо считается по совместной вероятности исходов. Если исход на игрока не
-                  состоялся (не вышел, гол без автора), вся ставка возвращается.
+                  состоялся (игрок не вышел, а для голов — ещё и гол без автора), вся ставка
+                  возвращается.
                 </p>
               )}
               <button

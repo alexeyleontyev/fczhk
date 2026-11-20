@@ -43,9 +43,13 @@ MIN_VOTES = 3  # a rating from fewer voters keeps only votes / 3 of its distance
 MAX_LEGS = 10
 IMPOSSIBLE = 1e-9  # a combination below this joint probability is not offered
 IMPLIED_TOL = 1e-9  # relative: a selection that moves the joint probability less is implied
-PLAYER_MIN_EXP = 1.0
-PLAYER_RANGE = (0.25, 0.75)
+# Goals and assists of every outfield player, on each line whose fair chance is in this range.
+# Checked walk-forward on 49 matches of the club: the chances matched the outcomes from 5% to 95%.
+PLAYER_RANGE = (0.03, 0.97)
 PLAYER_LINES = (0.5, 1.5, 2.5, 3.5)
+# Total lines around the central one: the margin curve already grows towards the long shots.
+TOTAL_STEPS = range(-5, 6)
+TEAM_TOTAL_STEPS = range(-3, 4)
 # Exact scores: the most likely ones, with the gaps inside each row and column filled, 8 to 12.
 SCORES = (8, 12)
 # Every exact score is a 2-4% shot; the curve would put 150%+ on it, so it gets a flat margin.
@@ -68,7 +72,14 @@ MARGIN_SCALE = {
     "total_under": 3.0,
     "player_over": 1.6,
     "player_under": 3.0,
+    "assist_over": 1.6,
+    "assist_under": 3.0,
 }
+PLAYER_GROUP = {"player": "Голы игроков", "assist": "Передачи игроков"}
+# A player with few outfield matches has a share the model barely knows: his goals and assists
+# carry extra margin on both sides, up to double for a newcomer, fading out by NEW_PLAYER_MATCHES.
+NEW_PLAYER_MATCHES = 10
+NEW_PLAYER_EXTRA = 1.0
 TEAM_NAME = {"a": "Белые", "b": "Чёрные"}
 SELECTION = re.compile(
     r"^(?:1x2:(?P<outcome>a|draw|b)"
@@ -76,6 +87,7 @@ SELECTION = re.compile(
     r"|handicap:(?P<h_team>a|b):(?P<h_line>[+-]\d+\.5)"
     r"|team:(?P<tt_team>a|b):(?P<tt_side>over|under):(?P<tt_line>\d+\.5)"
     r"|player:(?P<pid>\d+):(?P<p_side>over|under):(?P<p_line>\d+\.5)"
+    r"|assist:(?P<aid>\d+):(?P<a_side>over|under):(?P<a_line>\d+\.5)"
     r"|score:(?P<s_white>\d{1,2}):(?P<s_black>\d{1,2}))$"
 )
 
@@ -99,17 +111,26 @@ def rounded(odds: float) -> float:
     return round(math.floor(round(odds / step, 6)) * step, 2)
 
 
-def leg_margin(leg: dict, p: float) -> float:
-    return SCORE_MARGIN if leg["kind"] == "score" else float(margin_curve(p, leg_scale(leg)))
+def leg_margin(leg: dict, p: float, games: dict[int, int] | None = None) -> float:
+    if leg["kind"] == "score":
+        return SCORE_MARGIN
+    return float(margin_curve(p, leg_scale(leg, games)))
 
 
-def leg_scale(leg: dict) -> float:
+def newcomer(games: int) -> float:
+    """Margin multiplier for a player with this many outfield matches in the history."""
+    return 1.0 + NEW_PLAYER_EXTRA * max(0.0, 1.0 - games / NEW_PLAYER_MATCHES)
+
+
+def leg_scale(leg: dict, games: dict[int, int] | None = None) -> float:
     if leg["kind"] == "score":
         return 1.0
     if leg["kind"] in ("1x2", "handicap"):
         return MARGIN_SCALE[leg["kind"]]
-    kind = "player" if leg["kind"] == "player" else "total"
-    return MARGIN_SCALE[f"{kind}_{leg['side']}"]
+    if leg["kind"] in PLAYER_GROUP:
+        base = MARGIN_SCALE[f"{leg['kind']}_{leg['side']}"]
+        return base * newcomer((games or {}).get(leg["player"], NEW_PLAYER_MATCHES))
+    return MARGIN_SCALE[f"total_{leg['side']}"]
 
 
 # --------------------------------------------------------------------------- selections
@@ -130,6 +151,8 @@ def parse(selection: str) -> dict:
         return dict(kind="score", white=int(g["s_white"]), black=int(g["s_black"]))
     if g["tt_team"]:
         return dict(kind="team", team=g["tt_team"], side=g["tt_side"], line=float(g["tt_line"]))
+    if g["aid"]:
+        return dict(kind="assist", player=int(g["aid"]), side=g["a_side"], line=float(g["a_line"]))
     return dict(kind="player", player=int(g["pid"]), side=g["p_side"], line=float(g["p_line"]))
 
 
@@ -145,7 +168,8 @@ def label(leg: dict, names: dict[int, str]) -> str:
         return f"Счёт {leg['white']}:{leg['black']}"
     if leg["kind"] == "team":
         return f"{TEAM_NAME[leg['team']]}: тотал {side[leg['side']]} {leg['line']:g}"
-    return f"{names.get(leg['player'], 'Игрок')}: голов {side[leg['side']]} {leg['line']:g}"
+    what = "передач" if leg["kind"] == "assist" else "голов"
+    return f"{names.get(leg['player'], 'Игрок')}: {what} {side[leg['side']]} {leg['line']:g}"
 
 
 def score_mask(legs: list[dict], size: int) -> np.ndarray:
@@ -188,18 +212,23 @@ def probability(sim: om.Simulation, legs: list[dict]) -> float:
     size = sim.mats.shape[1]
     weights = sim.mats * score_mask(legs, size)[None]
     goals = np.arange(size)
-    for team, letter, axis in (("white", "a", "sxy,sx->sxy"), ("black", "b", "sxy,sy->sxy")):
-        ids, shares = sim.shares[team]
-        allowed: dict[int, np.ndarray] = {}
-        for leg in legs:
-            if leg["kind"] == "player" and leg["player"] in ids:
-                col = ids.index(leg["player"])
-                ok = goals > leg["line"] if leg["side"] == "over" else goals < leg["line"]
-                allowed[col] = allowed.get(col, np.ones(size, dtype=bool)) & ok
-        if allowed:
-            cols = list(allowed)
-            cond = _conditional(shares[:, cols], np.array([allowed[c] for c in cols]))
-            weights = np.einsum(axis, weights, cond)
+    # Goals and assists of a team's players are each a multinomial split of the team's goals;
+    # the two splits are taken as independent given the team's goals.
+    for kind, table in (("player", sim.shares), ("assist", sim.assists)):
+        for team, axis in (("white", "sxy,sx->sxy"), ("black", "sxy,sy->sxy")):
+            if team not in table:
+                continue
+            ids, shares = table[team]
+            allowed: dict[int, np.ndarray] = {}
+            for leg in legs:
+                if leg["kind"] == kind and leg["player"] in ids:
+                    col = ids.index(leg["player"])
+                    ok = goals > leg["line"] if leg["side"] == "over" else goals < leg["line"]
+                    allowed[col] = allowed.get(col, np.ones(size, dtype=bool)) & ok
+            if allowed:
+                cols = list(allowed)
+                cond = _conditional(shares[:, cols], np.array([allowed[c] for c in cols]))
+                weights = np.einsum(axis, weights, cond)
     return float(weights.sum(axis=(1, 2)).mean())
 
 
@@ -236,11 +265,14 @@ def price(sim: om.Simulation, legs: list[dict]) -> dict:
     singles = [probability(sim, [leg]) for leg in legs] if len(legs) > 1 else [p]
     independent = float(np.prod(singles))
     priced = max(p, independent)
-    per_leg = float(np.prod([1 + leg_margin(leg, q) for leg, q in zip(legs, singles, strict=True)]))
+    games = sim.games
+    per_leg = float(
+        np.prod([1 + leg_margin(leg, q, games) for leg, q in zip(legs, singles, strict=True)])
+    )
     if any(leg["kind"] == "score" for leg in legs):
         whole = per_leg  # an exact score is a long shot by design; the curve does not apply
     else:
-        whole = 1 + float(margin_curve(priced, max(leg_scale(leg) for leg in legs)))
+        whole = 1 + float(margin_curve(priced, max(leg_scale(leg, games) for leg in legs)))
     odds = max(MIN_ODDS, rounded(1 / (priced * max(per_leg, whole))))
     return dict(p=p, singles=singles, independent=independent, odds=odds, implied=implied)
 
@@ -287,7 +319,7 @@ def catalogue(sim: om.Simulation, names: dict[int, str]) -> list[dict]:
     t0 = _main_line(np.arange(len(total)), total)
     h0 = -_main_line(margin_values, margin)
     ids = ["1x2:a", "1x2:draw", "1x2:b"]
-    for step in (-2, -1, 0, 1, 2):
+    for step in TOTAL_STEPS:
         line = t0 + step
         if line > 0:
             ids += [f"total:over:{line:g}", f"total:under:{line:g}"]
@@ -297,11 +329,10 @@ def catalogue(sim: om.Simulation, names: dict[int, str]) -> list[dict]:
     for team, axis in (("a", 1), ("b", 0)):
         pmf = mat.sum(axis=axis)
         base = _main_line(k, pmf)
-        for step in (-1, 0, 1):
+        for step in TEAM_TOTAL_STEPS:
             if base + step > 0:
                 ids += [f"team:{team}:over:{base + step:g}", f"team:{team}:under:{base + step:g}"]
     ids += [f"score:{a}:{b}" for a, b in central_scores(mat)]
-    team_pmf = {"white": mat.sum(axis=1), "black": mat.sum(axis=0)}  # mat[white goals, black goals]
     group = {
         "1x2": "Исход",
         "total": "Тотал матча",
@@ -323,32 +354,36 @@ def catalogue(sim: om.Simulation, names: dict[int, str]) -> list[dict]:
                     odds=result["odds"],
                 )
             )
-    for team in ("white", "black"):
-        players, shares = sim.shares[team]
-        expected = float(team_pmf[team] @ k)
-        for col, pid in enumerate(players):
-            pi = shares[:, col]
-            if expected * float(pi.mean()) <= PLAYER_MIN_EXP:
+    for kind, table in (("player", sim.shares), ("assist", sim.assists)):
+        for team in ("white", "black"):
+            if team not in table:
                 continue
+            players, shares = table[team]
             per_draw = sim.mats.sum(axis=2) if team == "white" else sim.mats.sum(axis=1)
-            for line in PLAYER_LINES:
-                tail = stats.binom.sf(int(line), k[None, :], pi[:, None])
-                p_over = float((tail * per_draw).sum(1).mean())
-                if not PLAYER_RANGE[0] <= p_over <= PLAYER_RANGE[1]:
+            # The most likely scorers (assistants) of each team first.
+            for col in np.argsort(-shares.mean(axis=0), kind="stable"):
+                pid = players[col]
+                if pid in sim.keepers:
                     continue
-                for side in ("over", "under"):
-                    sid = f"player:{pid}:{side}:{line:g}"
-                    leg = parse(sid)
-                    result = price(sim, [leg])
-                    out.append(
-                        dict(
-                            id=sid,
-                            group="Голы игроков",
-                            label=label(leg, names),
-                            p=result["p"],
-                            odds=result["odds"],
+                pi = shares[:, col]
+                for line in PLAYER_LINES:
+                    tail = stats.binom.sf(int(line), k[None, :], pi[:, None])
+                    p_over = float((tail * per_draw).sum(1).mean())
+                    if not PLAYER_RANGE[0] <= p_over <= PLAYER_RANGE[1]:
+                        continue
+                    for side in ("over", "under"):
+                        sid = f"{kind}:{pid}:{side}:{line:g}"
+                        leg = parse(sid)
+                        result = price(sim, [leg])
+                        out.append(
+                            dict(
+                                id=sid,
+                                group=PLAYER_GROUP[kind],
+                                label=label(leg, names),
+                                p=result["p"],
+                                odds=result["odds"],
+                            )
                         )
-                    )
     return out
 
 
@@ -419,7 +454,10 @@ def history_from_db(db) -> om.History | None:
     team_goals = np.zeros(2 * n_g)
     scored = np.zeros(n_p)
     gk_scored = 0
-    recent_total = recent_named = 0
+    team_assists = np.zeros(2 * n_g)
+    assisted = np.zeros(n_p)
+    gk_assisted = 0
+    recent_total = recent_named = recent_assisted = 0
     for gi, mid in enumerate(results):
         for r in parts.get(mid, []):
             row = 2 * gi + (r.team == "black")
@@ -438,13 +476,22 @@ def history_from_db(db) -> om.History | None:
             if gi >= n_g - om.RECENT_MATCHES:
                 recent_total += 1
                 recent_named += named
+            row = 2 * gi + (g.team == "black")
             if named:
-                row = 2 * gi + (g.team == "black")
                 i = pos.get(canonical[g.author_id])
                 if i is not None and members[row, i]:
                     team_goals[row] += 1
                     scored[i] += 1
                     gk_scored += int(member_gk[row, i])
+            # Assists by a player of the scoring team; one by an opponent is not a market.
+            if g.kind == "goal" and g.assist_id is not None and real(g.assist_id):
+                i = pos.get(canonical[g.assist_id])
+                if i is not None and members[row, i]:
+                    team_assists[row] += 1
+                    assisted[i] += 1
+                    gk_assisted += int(member_gk[row, i])
+                    if gi >= n_g - om.RECENT_MATCHES:
+                        recent_assisted += 1
     for out in (out_a, out_b):
         n = out.sum(axis=1, keepdims=True)
         out *= om.ON_PITCH / np.maximum(n, 1.0)
@@ -464,6 +511,10 @@ def history_from_db(db) -> om.History | None:
         scored=scored,
         gk_scored=gk_scored,
         scorer_rate=(recent_named + 1) / (recent_total + 1),
+        team_assists=team_assists,
+        assisted=assisted,
+        gk_assisted=gk_assisted,
+        assist_rate=(recent_assisted + 1) / (recent_total + 1),
     )
 
 
@@ -477,7 +528,8 @@ def refit_if_needed(db) -> PricingModel | None:
         select(func.max(MatchResult.updated_at)).where(MatchResult.completed.is_(True))
     )
     model = latest_model(db)
-    if newest is None or (model is not None and model.source_updated_at >= newest):
+    current = model is not None and model.data.get("version", 1) >= om.MODEL_VERSION
+    if newest is None or (current and model.source_updated_at >= newest):
         return model
     history = history_from_db(db)
     if history is None:

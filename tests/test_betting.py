@@ -1,4 +1,5 @@
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import numpy as np
@@ -20,7 +21,7 @@ from fczhk.models import (
     TeamSnapshot,
     WalletEntry,
 )
-from fczhk.services import settle_bets
+from fczhk.services import DomainError, settle_bets
 
 
 def _league(db, rng, n_matches=30):
@@ -45,6 +46,8 @@ def _league(db, rng, n_matches=30):
                 )
             )
     za, zd = (att - att.mean()) / att.std(), (dfn - dfn.mean()) / dfn.std()
+    # Assists come from their own stream, so the goals stay as they were before assists existed.
+    assist_rng = np.random.default_rng(11)
     start = now() - timedelta(days=7 * (n_matches + 2))
     for g in range(n_matches):
         order = rng.permutation(len(field))
@@ -76,9 +79,18 @@ def _league(db, rng, n_matches=30):
             w = np.exp(0.5 * za[own])
             for _ in range(rng.poisson(lam)):
                 scorer = field[own[rng.choice(len(own), p=w / w.sum())]].id
+                mates = [field[i].id for i in own if field[i].id != scorer]
+                assist = (
+                    mates[assist_rng.integers(len(mates))] if assist_rng.random() < 0.6 else None
+                )
                 db.add(
                     ResultGoal(
-                        match_id=m.id, id=str(uuid4()), team=team, kind="goal", author_id=scorer
+                        match_id=m.id,
+                        id=str(uuid4()),
+                        team=team,
+                        kind="goal",
+                        author_id=scorer,
+                        assist_id=assist,
                     )
                 )
     db.flush()
@@ -144,19 +156,18 @@ def _bet(call, mid, selections, stake, role="player", expected=201):
 
 
 def _finish(env, call, mid, white_goals, black_goals):
-    """Move kick-off into the past and save a completed result with the given scorers."""
+    """Move kick-off into the past and save a completed result with the given scorers; a goal is
+    a scorer id (or None) or a (scorer, assistant) pair."""
     _, factory, _, _, _ = env
     with factory() as db, db.begin():
         db.get(Match, mid).starts_at = now() - timedelta(hours=2)
     result = call("GET", f"/matches/{mid}/result")
-    goals = [
-        dict(id=str(uuid4()), team="white", kind="goal", author_id=a, assist_id=None)
-        for a in white_goals
-    ]
-    goals += [
-        dict(id=str(uuid4()), team="black", kind="goal", author_id=a, assist_id=None)
-        for a in black_goals
-    ]
+
+    def goal(team, g):
+        author, assist = g if isinstance(g, tuple) else (g, None)
+        return dict(id=str(uuid4()), team=team, kind="goal", author_id=author, assist_id=assist)
+
+    goals = [goal("white", g) for g in white_goals] + [goal("black", g) for g in black_goals]
     return call(
         "PUT",
         f"/matches/{mid}/result",
@@ -565,3 +576,108 @@ def test_long_odds_are_rounded_down_on_a_coarser_step():
     assert odds.rounded(19.99) == 19.9
     assert odds.rounded(20.0) == 20.0
     assert odds.rounded(44.71) == 44.0
+
+
+def test_every_outfield_player_gets_goal_and_assist_lines(call, club):
+    o = call("GET", f"/matches/{club['match']}/odds", role="player")
+    groups = {g["name"]: [s["id"] for s in g["selections"]] for g in o["groups"]}
+    on_pitch = set(club["field"][:16])
+    for name, kind in (("Голы игроков", "player"), ("Передачи игроков", "assist")):
+        priced = {int(i.split(":")[1]) for i in groups[name]}
+        assert priced == on_pitch, name  # every outfield player, no goalkeeper
+        assert all(i.startswith(kind + ":") for i in groups[name])
+    assert len({i.rsplit(":", 1)[1] for i in groups["Тотал матча"]}) == len(odds.TOTAL_STEPS)
+    labels = {s["id"]: s["label"] for g in o["groups"] for s in g["selections"]}
+    first = groups["Передачи игроков"][0]
+    assert ": передач " in labels[first]
+
+
+def test_assist_probability_matches_brute_force_simulation(env, call, club):
+    call("GET", f"/matches/{club['match']}/odds", role="player")
+    _, factory, _, _, _ = env
+    with factory() as db:
+        sim = odds.simulation(db, db.scalar(select(MatchOdds)))
+    rng = np.random.default_rng(1)
+    n, size = 20000, sim.mats.shape[1]
+    draw = rng.integers(0, len(sim.mats), n)
+    flat = sim.mats.reshape(len(sim.mats), -1)
+    cells = np.array([rng.choice(size * size, p=flat[d] / flat[d].sum()) for d in draw])
+    x, y = np.divmod(cells, size)
+    ids, goal_shares = sim.shares["white"]
+    _, assist_shares = sim.assists["white"]
+    scored = rng.binomial(x, goal_shares[draw, 0])
+    assisted = rng.binomial(x, assist_shares[draw, 1])
+    legs = [
+        odds.parse("1x2:a"),
+        odds.parse(f"player:{ids[0]}:over:0.5"),
+        odds.parse(f"assist:{ids[1]}:over:0.5"),
+    ]
+    hit = (x > y) & (scored >= 1) & (assisted >= 1)
+    assert odds.probability(sim, legs) == pytest.approx(
+        hit.mean(), abs=4 * np.sqrt(hit.mean() / len(hit))
+    )
+
+
+def test_assist_bets_settle_on_the_protocol(env, call, club):
+    mid, field = club["match"], club["field"]
+    _freebet(call)
+    won, _ = _bet(call, mid, [f"assist:{field[1]}:over:0.5"], 10)
+    lost, _ = _bet(call, mid, [f"assist:{field[2]}:over:0.5"], 10)
+    # A goal without a named scorer does not void assist bets: it is a goal without an assist.
+    kept, _ = _bet(call, mid, [f"assist:{field[3]}:under:0.5"], 10)
+    _finish(env, call, mid, [(field[0], field[1]), None], [field[8]])
+    mine = {b["id"]: b for b in call("GET", "/bets", role="player")}
+    assert mine[won["bet"]["id"]]["status"] == "won"
+    assert mine[lost["bet"]["id"]]["status"] == "lost"
+    assert mine[kept["bet"]["id"]]["status"] == "won"
+
+
+@pytest.mark.parametrize("linked_after_pricing", [False, True])
+def test_nobody_bets_on_under_for_his_own_goals_or_assists(env, call, club, linked_after_pricing):
+    mid, me = club["match"], club["field"][0]
+    _, factory, _, _, ids = env
+    o = call("GET", f"/matches/{mid}/odds", role="player")
+    catalogue = {s["id"]: s["odds"] for g in o["groups"] for s in g["selections"]}
+    with factory() as db, db.begin():
+        actor = ids["player"] if linked_after_pricing else me
+        if linked_after_pricing:
+            db.get(Player, me).merged_into = actor
+            db.flush()
+        match = db.get(Match, mid)
+        for kind in ("player", "assist"):
+            under = next(i for i in catalogue if i.startswith(f"{kind}:{me}:under:"))
+            body = SimpleNamespace(odds_id=o["odds_id"], selections=[under], stake=1, odds=0)
+            with pytest.raises(DomainError, match="своим голам и передачам") as exc:
+                bets.place(db, actor, match, body)
+            assert exc.value.status == 422
+
+
+def test_a_model_without_assists_is_refitted(env, club):
+    _, factory, _, _, _ = env
+    with factory() as db, db.begin():
+        old = db.get(odds.PricingModel, club["model"])
+        assert "assist_shares" in old.data
+        old.data = {k: v for k, v in old.data.items() if not k.startswith("assist")} | {
+            "version": 1
+        }
+    with factory() as db, db.begin():
+        new = odds.refit_if_needed(db)
+        assert new.id != club["model"] and new.data["version"] == odds_model.MODEL_VERSION
+        assert "assist_shares" in new.data
+
+
+def test_players_with_few_matches_carry_more_margin_on_both_sides(env, call, club):
+    call("GET", f"/matches/{club['match']}/odds", role="player")
+    _, factory, _, _, _ = env
+    with factory() as db:
+        sim = odds.simulation(db, db.scalar(select(MatchOdds)))
+    me = club["field"][0]
+    assert sim.games[me] >= odds.NEW_PLAYER_MATCHES  # a regular of the synthetic league
+    assert odds.newcomer(0) == 1 + odds.NEW_PLAYER_EXTRA and odds.newcomer(99) == 1.0
+    regular = {
+        side: odds.price(sim, [odds.parse(f"assist:{me}:{side}:0.5")]) for side in ("over", "under")
+    }
+    sim.games = {**sim.games, me: 2}
+    for side, before in regular.items():
+        after = odds.price(sim, [odds.parse(f"assist:{me}:{side}:0.5")])
+        assert after["p"] == before["p"] and after["odds"] < before["odds"], side
