@@ -344,7 +344,10 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
       (r) => r.url().endsWith(`/matches/${m.id}/lineup/share`) && r.request().method() === 'POST',
     )
     await answerConfirmation(share, true, 'в чат для составов?')
-    expect((await shared).ok()).toBe(true)
+    const sent = await shared
+    expect(sent.ok()).toBe(true)
+    const image = Buffer.from(sent.request().postDataJSON().image, 'base64')
+    expect(image.subarray(0, 2).toString('hex')).toBe('ffd8')
     await expect(
       page.getByRole('status').filter({ hasText: 'Состав поставлен в очередь' }),
     ).toBeVisible()

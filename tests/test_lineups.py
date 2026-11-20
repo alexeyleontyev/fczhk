@@ -1,3 +1,4 @@
+import base64
 import copy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -12,17 +13,23 @@ from fczhk.models import (
     Match,
     MatchResult,
     Player,
+    PostImage,
     Publication,
     ResultParticipant,
     TeamRatingSnapshot,
     TeamSnapshot,
 )
+from tests.test_post_images import picture
 from tests.test_ratings import add_guest, prepared, vote
+
+
+def lineup_image():
+    return base64.b64encode(picture(size=(390, 880), format="JPEG")).decode()
 
 
 def share_payload(p):
     return {k: p[k] for k in ("version", "roster_version", "fingerprint")} | dict(
-        assignments=p["result"]["variants"][0]["assignments"]
+        assignments=p["result"]["variants"][0]["assignments"], image=lineup_image()
     )
 
 
@@ -51,10 +58,11 @@ def test_member_shares_proposal_with_verified_author_and_without_changing_teams(
         assert publication.kind == "lineup_share"
         assert "Автор: Игрок (@football_member)" in publication.text
         assert "⚽ Вариант состава" in publication.text
-        assert "⚪ Белые · 9" in publication.text and "⚫ Чёрные · 9" in publication.text
-        assert publication.text.count("Атака 24 · Защита 24 · Σ 48") == 2
-        assert "без вратарей" in publication.text
-        assert all(person["alias"] in publication.text for person in p["players"])
+        assert "Снимок сделан" in publication.text and "МСК" in publication.text
+        assert "Атака" not in publication.text
+        image = db.get(PostImage, publication.image_id)
+        assert image.mime_type == "image/jpeg"
+        assert image.content == base64.b64decode(body["image"])
         assert (
             db.scalar(
                 select(func.count())
@@ -76,7 +84,19 @@ def test_member_shares_proposal_with_verified_author_and_without_changing_teams(
 
 
 @pytest.mark.parametrize(
-    "bad", ["no_chat", "missing", "extra", "unassigned", "one_team", "stale", "spoof", "anonymous"]
+    "bad",
+    [
+        "no_chat",
+        "missing",
+        "extra",
+        "unassigned",
+        "one_team",
+        "stale",
+        "spoof",
+        "anonymous",
+        "no_image",
+        "bad_image",
+    ],
 )
 def test_invalid_shared_proposals_never_queue_messages(env, call, game, bad):
     m = prepared(call, game)
@@ -103,6 +123,12 @@ def test_invalid_shared_proposals_never_queue_messages(env, call, game, bad):
         expected = 422
     elif bad == "anonymous":
         expected = 401
+    elif bad == "no_image":
+        del body["image"]
+        expected = 422
+    elif bad == "bad_image":
+        body["image"] = "bm90IGFuIGltYWdl"
+        expected = 400
     before = counts(env)
     call(
         "POST",
@@ -113,6 +139,7 @@ def test_invalid_shared_proposals_never_queue_messages(env, call, game, bad):
     )
     assert counts(env) == before
     with env[1]() as db:
+        assert db.scalar(select(func.count()).select_from(PostImage)) == 0
         assert (
             db.scalar(
                 select(func.count())
@@ -149,21 +176,24 @@ async def test_shared_proposal_worker_delivers_once_with_game_button(env, call, 
             pub.status = "sent"
     p = preview(call, m)
     sent = call("POST", f"/matches/{m['id']}/lineup/share", share_payload(p), role="player")
-    bot = SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=123)))
+    bot = SimpleNamespace(
+        send_photo=AsyncMock(return_value=SimpleNamespace(message_id=123)), send_message=AsyncMock()
+    )
     assert await deliver_one(env[0], env[1], bot)
     assert not await deliver_one(env[0], env[1], bot)
-    bot.send_message.assert_awaited_once()
-    assert bot.send_message.await_args.args[0] == "-1001247505259"
-    assert "Автор: Игрок" in bot.send_message.await_args.args[1]
-    assert bot.send_message.await_args.kwargs["parse_mode"] is None
-    button = bot.send_message.await_args.kwargs["reply_markup"].inline_keyboard[0][0]
+    bot.send_photo.assert_awaited_once()
+    bot.send_message.assert_not_awaited()
+    args, kwargs = bot.send_photo.await_args
+    assert args[0] == "-1001247505259" and args[1].filename == "lineup.jpg"
+    assert "Автор: Игрок" in kwargs["caption"]
+    button = kwargs["reply_markup"].inline_keyboard[0][0]
     assert button.text == "Открыть игру"
     with env[1]() as db:
         pub = db.get(Publication, sent["publication_id"])
         assert pub.status == "sent" and pub.message_ids == [123]
 
 
-def test_sharing_official_lineup_uses_frozen_scores(env, call, game):
+def test_sharing_official_lineup_uses_its_image(env, call, game):
     m = prepared(call, game, keepers=2)
     with env[1]() as db, db.begin():
         db.get(GameTemplate, 1).extended_chat_id = "-1001247505259"
@@ -174,11 +204,15 @@ def test_sharing_official_lineup_uses_frozen_scores(env, call, game):
     current = call("GET", f"/matches/{m['id']}/lineup")
     body = {k: current[k] for k in ("version", "roster_version", "fingerprint", "assignments")}
     sent = call(
-        "POST", f"/matches/{m['id']}/lineup/share", {**body, "official": True}, role="player"
+        "POST",
+        f"/matches/{m['id']}/lineup/share",
+        {**body, "official": True, "image": lineup_image()},
+        role="player",
     )
     with env[1]() as db:
-        text = db.get(Publication, sent["publication_id"]).text
-        assert text.count("Атака 6 · Защита 6 · Σ 12") == 2
+        publication = db.get(Publication, sent["publication_id"])
+        assert "Утверждённый состав" in publication.text
+        assert db.get(PostImage, publication.image_id).content == base64.b64decode(lineup_image())
 
 
 def preview(call, m, method="community", **kwargs):

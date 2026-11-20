@@ -8,6 +8,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 Position = Literal["field", "keeper"]
 Team = Literal["white", "black"]
 MAX_FIELD_PLAYERS = 18
+MAX_LINEUP_IMAGE_BASE64 = 2_000_000
 
 
 class Payload(BaseModel):
@@ -292,11 +293,17 @@ class LineupProposalRevision(Payload):
     revision: int = Field(ge=1)
 
 
+class LineupShareProposal(LineupProposalRevision):
+    id: int = Field(gt=0)
+
+
 class LineupShare(Version):
     roster_version: int = Field(ge=0)
     fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     assignments: dict[int, Team | None]
     official: bool = False
+    image: str = Field(min_length=1, max_length=MAX_LINEUP_IMAGE_BASE64)
+    proposal: LineupShareProposal | None = None
 
 
 class ActualParticipant(Payload):

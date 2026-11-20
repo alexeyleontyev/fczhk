@@ -192,8 +192,9 @@ def test_parallel_lineup_confirmation_creates_one_snapshot(pg):
 
 def test_parallel_lineup_sharing_queues_one_message(pg):
     from fczhk import lineups
-    from fczhk.models import Audit, Publication
+    from fczhk.models import Audit, PostImage, Publication
     from fczhk.schemas import LineupShare
+    from tests.test_lineups import lineup_image
 
     factory, pid = pg
     cfg = Settings(_env_file=None, env="test")
@@ -220,6 +221,7 @@ def test_parallel_lineup_sharing_queues_one_message(pg):
             roster_version=match.roster_version,
             fingerprint=current["fingerprint"],
             assignments={regs[0]["registration_id"]: "white", regs[1]["registration_id"]: "black"},
+            image=lineup_image(),
         )
         mid = match.id
 
@@ -233,6 +235,7 @@ def test_parallel_lineup_sharing_queues_one_message(pg):
     assert first == second and first["status"] == "pending"
     with factory() as db:
         assert len(list(db.scalars(select(Publication)))) == 1
+        assert len(list(db.scalars(select(PostImage)))) == 1
         assert len(list(db.scalars(select(Audit).where(Audit.action == "lineup.shared")))) == 1
         assert db.get(Match, mid).version == body.version
         assert all(r.team is None for r in db.scalars(select(Registration)))

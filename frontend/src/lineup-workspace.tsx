@@ -6,6 +6,7 @@ import { Button } from './ui'
 import { PlayerName } from './player-name'
 import { ratingNumber } from './rating-mark'
 import { LineupRatings } from './lineup-ratings'
+import { lineupShareImage } from './lineup-share-image'
 import { LineupTeams, LineupTotals } from './lineup-teams'
 import { CommunityRatingExplanation } from './community-rating-explanation'
 import { strengthScale } from './lineup-strength'
@@ -139,6 +140,7 @@ export function TacticsScreen({
   const [ghost, setGhost] = useState<{ id: number; x: number; y: number } | null>(null)
   const initialized = useRef(false)
   const board = useRef<HTMLDivElement>(null)
+  const teams = useRef<HTMLElement>(null)
   const drag = useRef<{ id: number; x: number; y: number; moved: boolean; pointer: number; offset: Point } | null>(null)
   const suppressClick = useRef(false)
   const changed = useRef(onChanged)
@@ -569,13 +571,15 @@ export function TacticsScreen({
       return
     const d = base()
     await run(
-      () =>
+      async () =>
         api(`/matches/${m.id}/lineup/share`, 'POST', {
           version: data!.version,
           roster_version: d.roster_version,
           fingerprint: d.fingerprint,
           assignments,
           official: official && Boolean(data!.official_players),
+          image: await lineupShareImage(teams.current),
+          ...(proposal ? { proposal: { id: proposal.id, revision: proposal.revision } } : {}),
         }),
       'Состав поставлен в очередь отправки в чат',
     )
@@ -741,7 +745,7 @@ export function TacticsScreen({
           )}
         </div>
       )}
-      <section hidden={view !== 'teams'} aria-label="Подбор команд">
+      <section ref={teams} hidden={view !== 'teams'} aria-label="Подбор команд">
         <LineupTeams
           people={people}
           assignments={assignments}

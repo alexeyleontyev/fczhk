@@ -1,5 +1,6 @@
 """Personal previews and chat proposals; only confirmation changes shared teams."""
 
+import base64
 import hashlib
 import json
 from copy import deepcopy
@@ -9,12 +10,23 @@ from threading import Lock
 
 from sqlalchemy import func, select
 
-from . import auctions, balancing, game_balancing, game_ratings, ratings, results, services
+from . import (
+    auctions,
+    balancing,
+    game_balancing,
+    game_ratings,
+    post_images,
+    ratings,
+    results,
+    services,
+)
 from .db import now
 from .models import (
     Audit,
     GameTemplate,
+    LineupProposal,
     MatchResult,
+    Player,
     Publication,
     ResultParticipant,
     TeamRatingSnapshot,
@@ -171,7 +183,7 @@ def data(db, match, cfg):
 
 
 def share(db, actor, match, body, cfg):
-    """Queue a member's proposal without modifying registrations or official teams."""
+    """Queue a lineup image without modifying the lineup or its proposal."""
     if match.status not in ("open", "finalized", "approved", "completed"):
         raise DomainError("Этим составом нельзя поделиться", 409)
     template = db.get(GameTemplate, 1)
@@ -188,9 +200,26 @@ def share(db, actor, match, body, cfg):
         raise DomainError("Список участников изменился. Обновите доску.", 409)
     if None in body.assignments.values() or set(body.assignments.values()) != {"white", "black"}:
         raise DomainError("Перед публикацией распределите всех игроков по двум командам")
+    proposal = None
+    if body.proposal:
+        proposal = db.get(LineupProposal, body.proposal.id)
+        if (
+            body.official
+            or proposal is None
+            or proposal.match_id != match.id
+            or not proposal.published
+            or proposal.revision != body.proposal.revision
+            or proposal.roster_version != body.roster_version
+            or proposal.data["assignments"] != {str(k): v for k, v in body.assignments.items()}
+        ):
+            raise DomainError("Предложение изменилось. Обновите состав перед отправкой.", 409)
     signature = hashlib.sha256(
         json.dumps(
-            {**body.model_dump(mode="json"), "chat": template.extended_chat_id}, sort_keys=True
+            {
+                **body.model_dump(mode="json", exclude={"image"}),
+                "chat": template.extended_chat_id,
+            },
+            sort_keys=True,
         ).encode()
     ).hexdigest()
     prefix = f"lineup:{match.id}:{actor.id}:"
@@ -209,44 +238,26 @@ def share(db, actor, match, body, cfg):
         )
     ):
         raise DomainError("Подождите минуту перед публикацией нового варианта", 429)
-    author = actor.display_alias
-    if actor.telegram_username:
-        author += f" (@{actor.telegram_username})"
+    try:
+        image = base64.b64decode(body.image, validate=True)
+    except ValueError as exc:
+        raise DomainError("Не удалось прочитать снимок состава") from exc
+    image_info = post_images.validate(image)
+    post_images.store(db, actor.id, image, image_info)
+    author = db.get(Player, proposal.author_id) if proposal else actor
+    byline = author.display_alias
+    if author.telegram_username:
+        byline += f" (@{author.telegram_username})"
+    date = (proposal.updated_at if proposal else now()).astimezone(services.MOSCOW)
+    stamp = f"{date:%d.%m.%Y, %H:%M} МСК"
     lines = [
-        "⚽ Вариант состава",
-        f"Автор: {author}",
+        "⚽ Утверждённый состав" if body.official else "⚽ Вариант состава",
+        f"{'Отправил' if body.official else 'Автор'}: {byline}",
+        f"{'Состав сохранён' if proposal else 'Снимок сделан'} {stamp}",
         f"Игра {match.starts_at.astimezone(services.MOSCOW):%d.%m.%Y · %H:%M МСК}",
-        "Суммы оценок — только полевые игроки, без вратарей.",
     ]
-    for team, label in (("white", "⚪ Белые"), ("black", "⚫ Чёрные")):
-        members = [p for p in players if body.assignments[p["registration_id"]] == team]
-
-        def score(kind):
-            relevant = [p for p in members if p["position"] == "field"]
-            known = [p[kind] for p in relevant if p[kind] is not None]
-            if not known:
-                return "—"
-            value = f"{sum(known):.2f}".rstrip("0").rstrip(".").replace(".", ",")
-            return ("≥ " if len(known) < len(relevant) else "") + value
-
-        values = [
-            p[kind] for p in members if p["position"] == "field" for kind in ("attack", "defense")
-        ]
-        known = [value for value in values if value is not None]
-        total = f"{sum(known):.2f}".rstrip("0").rstrip(".").replace(".", ",") if known else "—"
-        if known and len(known) < len(values):
-            total = "≥ " + total
-        lines.extend(
-            [
-                "",
-                f"{label} · {len(members)}",
-                f"Атака {score('attack')} · Защита {score('defense')} · Σ {total}",
-            ]
-        )
-        for p in sorted(
-            members, key=lambda p: (p["position"] != "keeper", p["alias"], p["player_id"])
-        ):
-            lines.append(("🧤 " if p["position"] == "keeper" else "") + p["alias"])
+    if author.id != actor.id:
+        lines.append(f"Отправил: {actor.display_alias}")
     version = (
         db.scalar(
             select(func.max(Publication.version)).where(
@@ -261,6 +272,7 @@ def share(db, actor, match, body, cfg):
         version=version,
         dedupe_key=key,
         chat_id=template.extended_chat_id,
+        image_id=image_info["id"],
         text="\n".join(lines),
     )
     db.add(publication)

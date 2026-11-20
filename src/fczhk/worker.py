@@ -110,9 +110,8 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
         already_sent = list(pub.message_ids)
         image = db.get(PostImage, pub.image_id) if pub.image_id else None
         photo = image.content if image else None
-        filename = (
-            "collection.jpg" if image and image.mime_type == "image/jpeg" else "collection.png"
-        )
+        name = "lineup" if kind == "lineup_share" else "collection"
+        extension = "jpg" if image and image.mime_type == "image/jpeg" else "png"
     if cfg.env == "demo":
         with factory() as db, db.begin():
             p = db.get(Publication, pub_id)
@@ -150,7 +149,7 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             if photo is not None and i == 0:
                 sent = await bot.send_photo(
                     chat,
-                    BufferedInputFile(photo, filename=filename),
+                    BufferedInputFile(photo, filename=f"{name}.{extension}"),
                     caption=part,
                     reply_markup=markup,
                 )

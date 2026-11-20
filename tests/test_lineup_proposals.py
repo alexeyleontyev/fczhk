@@ -3,8 +3,9 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import func, select
 
-from fczhk.models import Audit, LineupProposal, Match, Player, Publication
-from tests.test_lineups import payload, preview
+from fczhk.models import Audit, GameTemplate, LineupProposal, Match, Player, Publication
+from fczhk.scheduling import MOSCOW
+from tests.test_lineups import payload, preview, share_payload
 from tests.test_ratings import prepared, vote
 
 
@@ -66,6 +67,29 @@ def test_one_proposal_per_member_with_independent_revisions_and_no_publications(
     with env[1]() as db:
         assert db.scalar(select(func.count()).select_from(Publication)) == posts
         assert db.scalar(select(func.count()).select_from(LineupProposal)) == 2
+
+
+def test_sharing_another_players_proposal_uses_its_saved_author_and_time(env, call, future_lineup):
+    m = future_lineup
+    with env[1]() as db, db.begin():
+        db.get(GameTemplate, 1).extended_chat_id = "-1001247505259"
+    p = preview(call, m)
+    body = share_payload(p)
+    path = f"/matches/{m['id']}/lineup"
+    proposal = call(
+        "PUT",
+        f"{path}/proposals/mine",
+        {k: body[k] for k in ("roster_version", "fingerprint", "assignments")} | {"revision": 0},
+    )
+    body["proposal"] = {"id": proposal["id"], "revision": proposal["revision"]}
+    sent = call("POST", f"{path}/share", body, role="player")
+    with env[1]() as db:
+        updated = db.get(LineupProposal, proposal["id"]).updated_at.astimezone(MOSCOW)
+        caption = db.get(Publication, sent["publication_id"]).text
+        assert "Автор: Администратор" in caption and "Отправил: Игрок" in caption
+        assert f"Состав сохранён {updated:%d.%m.%Y, %H:%M} МСК" in caption
+    body["proposal"]["revision"] += 1
+    call("POST", f"{path}/share", body, role="player", expected=409)
 
 
 def test_withdraw_and_republish_keep_history_and_revision(env, call, future_lineup):

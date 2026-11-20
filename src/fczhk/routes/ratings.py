@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,21 @@ def router(ctx):
         if match.status == "draft" and not has_admin_access(player, ctx.cfg):
             raise svc.DomainError("Игра не найдена", 404)
         return match
+
+    async def share_payload(request: Request) -> S.LineupShare:
+        limit = S.MAX_LINEUP_IMAGE_BASE64 + 16_384
+        length = request.headers.get("content-length")
+        if length and (not length.isdecimal() or int(length) > limit):
+            raise svc.DomainError("Снимок состава слишком большой", 413)
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > limit:
+                raise svc.DomainError("Снимок состава слишком большой", 413)
+            data.extend(chunk)
+        try:
+            return S.LineupShare.model_validate_json(data)
+        except ValidationError as exc:
+            raise svc.DomainError("Не удалось прочитать данные и снимок состава", 422) from exc
 
     @app.get("/api/matches/{match_id}/lineup")
     def lineup_data(
@@ -61,8 +77,8 @@ def router(ctx):
     @app.post("/api/matches/{match_id}/lineup/share")
     def lineup_share(
         match_id: int,
-        body: S.LineupShare,
         p: Player = Depends(current),
+        body: S.LineupShare = Depends(share_payload),
         db: Session = Depends(db_dep, scope="function"),
     ):
         m = visible(db, match_id, p, body.version, lock=True)

@@ -56,6 +56,15 @@ def metadata(db, image_id):
     )
 
 
+def store(db, actor, content, info):
+    insert = pg_insert if db.bind.dialect.name == "postgresql" else sqlite_insert
+    db.execute(
+        insert(PostImage)
+        .values(**info, content=content, created_by=actor)
+        .on_conflict_do_nothing(index_elements=[PostImage.id])
+    )
+
+
 def save(factory, actor, match_id, version, content, info):
     with factory() as db, db.begin():
         match = get_match(db, match_id, version, lock=True)
@@ -64,12 +73,7 @@ def save(factory, actor, match_id, version, content, info):
         old = match.collection_image_id
         if old == info["id"]:
             return metadata(db, old)
-        insert = pg_insert if db.bind.dialect.name == "postgresql" else sqlite_insert
-        db.execute(
-            insert(PostImage)
-            .values(**info, content=content, created_by=actor)
-            .on_conflict_do_nothing(index_elements=[PostImage.id])
-        )
+        store(db, actor, content, info)
         match.collection_image_id = info["id"]
         match.version += 1
         audit(
