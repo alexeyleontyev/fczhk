@@ -658,3 +658,20 @@ def test_a_model_without_assists_is_refitted(env, club):
         new = odds.refit_if_needed(db)
         assert new.id != club["model"] and new.data["version"] == odds_model.MODEL_VERSION
         assert "assist_shares" in new.data
+
+
+def test_players_with_few_matches_carry_more_margin_on_both_sides(env, call, club):
+    call("GET", f"/matches/{club['match']}/odds", role="player")
+    _, factory, _, _, _ = env
+    with factory() as db:
+        sim = odds.simulation(db, db.scalar(select(MatchOdds)))
+    me = club["field"][0]
+    assert sim.games[me] >= odds.NEW_PLAYER_MATCHES  # a regular of the synthetic league
+    assert odds.newcomer(0) == 1 + odds.NEW_PLAYER_EXTRA and odds.newcomer(99) == 1.0
+    regular = {
+        side: odds.price(sim, [odds.parse(f"assist:{me}:{side}:0.5")]) for side in ("over", "under")
+    }
+    sim.games = {**sim.games, me: 2}
+    for side, before in regular.items():
+        after = odds.price(sim, [odds.parse(f"assist:{me}:{side}:0.5")])
+        assert after["p"] == before["p"] and after["odds"] < before["odds"], side

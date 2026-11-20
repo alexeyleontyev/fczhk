@@ -234,6 +234,7 @@ def fit(h: History) -> dict:
             assist_omega=[a_om, a_om_sd],
             assist_rate=h.assist_rate,
         )
+    played = (h.out_a > 0).sum(0) + (h.out_b > 0).sum(0)
     return (
         dict(
             version=MODEL_VERSION,
@@ -247,6 +248,7 @@ def fit(h: History) -> dict:
             },
             omega_s=[om, om_sd],
             scorer_rate=h.scorer_rate,
+            games={str(pid): int(n) for pid, n in zip(h.player_ids, played, strict=True) if n},
             n_matches=int(len(h.goals_a)),
             converged=bool(res.success),
             min_eigenvalue=float(vals.min()),
@@ -268,6 +270,7 @@ class Simulation:
     # model has no assist data.
     assists: dict[str, tuple[list[int], np.ndarray]] = field(default_factory=dict)
     keepers: frozenset[int] = frozenset()  # player markets are not offered on goalkeepers
+    games: dict[int, int] = field(default_factory=dict)  # outfield matches in the history
 
 
 def simulate(
@@ -335,4 +338,10 @@ def simulate(
         lam_b=np.exp(log_b),
         assists=assists,
         keepers=frozenset(pid for team in lineup.values() for pid, gk in team if gk),
+        # A model saved without match counts prices everybody as a regular.
+        games={
+            pid: int(model["games"].get(str(pid), 0)) for team in lineup.values() for pid, _ in team
+        }
+        if "games" in model
+        else {},
     )

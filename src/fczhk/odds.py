@@ -76,6 +76,10 @@ MARGIN_SCALE = {
     "assist_under": 3.0,
 }
 PLAYER_GROUP = {"player": "Голы игроков", "assist": "Передачи игроков"}
+# A player with few outfield matches has a share the model barely knows: his goals and assists
+# carry extra margin on both sides, up to double for a newcomer, fading out by NEW_PLAYER_MATCHES.
+NEW_PLAYER_MATCHES = 10
+NEW_PLAYER_EXTRA = 1.0
 TEAM_NAME = {"a": "Белые", "b": "Чёрные"}
 SELECTION = re.compile(
     r"^(?:1x2:(?P<outcome>a|draw|b)"
@@ -107,17 +111,26 @@ def rounded(odds: float) -> float:
     return round(math.floor(round(odds / step, 6)) * step, 2)
 
 
-def leg_margin(leg: dict, p: float) -> float:
-    return SCORE_MARGIN if leg["kind"] == "score" else float(margin_curve(p, leg_scale(leg)))
+def leg_margin(leg: dict, p: float, games: dict[int, int] | None = None) -> float:
+    if leg["kind"] == "score":
+        return SCORE_MARGIN
+    return float(margin_curve(p, leg_scale(leg, games)))
 
 
-def leg_scale(leg: dict) -> float:
+def newcomer(games: int) -> float:
+    """Margin multiplier for a player with this many outfield matches in the history."""
+    return 1.0 + NEW_PLAYER_EXTRA * max(0.0, 1.0 - games / NEW_PLAYER_MATCHES)
+
+
+def leg_scale(leg: dict, games: dict[int, int] | None = None) -> float:
     if leg["kind"] == "score":
         return 1.0
     if leg["kind"] in ("1x2", "handicap"):
         return MARGIN_SCALE[leg["kind"]]
-    kind = leg["kind"] if leg["kind"] in PLAYER_GROUP else "total"
-    return MARGIN_SCALE[f"{kind}_{leg['side']}"]
+    if leg["kind"] in PLAYER_GROUP:
+        base = MARGIN_SCALE[f"{leg['kind']}_{leg['side']}"]
+        return base * newcomer((games or {}).get(leg["player"], NEW_PLAYER_MATCHES))
+    return MARGIN_SCALE[f"total_{leg['side']}"]
 
 
 # --------------------------------------------------------------------------- selections
@@ -252,11 +265,14 @@ def price(sim: om.Simulation, legs: list[dict]) -> dict:
     singles = [probability(sim, [leg]) for leg in legs] if len(legs) > 1 else [p]
     independent = float(np.prod(singles))
     priced = max(p, independent)
-    per_leg = float(np.prod([1 + leg_margin(leg, q) for leg, q in zip(legs, singles, strict=True)]))
+    games = sim.games
+    per_leg = float(
+        np.prod([1 + leg_margin(leg, q, games) for leg, q in zip(legs, singles, strict=True)])
+    )
     if any(leg["kind"] == "score" for leg in legs):
         whole = per_leg  # an exact score is a long shot by design; the curve does not apply
     else:
-        whole = 1 + float(margin_curve(priced, max(leg_scale(leg) for leg in legs)))
+        whole = 1 + float(margin_curve(priced, max(leg_scale(leg, games) for leg in legs)))
     odds = max(MIN_ODDS, rounded(1 / (priced * max(per_leg, whole))))
     return dict(p=p, singles=singles, independent=independent, odds=odds, implied=implied)
 
