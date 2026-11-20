@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 
 from .db import now
-from .models import Bet, Player, PointRequest, Publication, WalletEntry
+from .models import Bet, Player, WalletEntry
 from .results import identities
 from .scheduling import MOSCOW
 from .services import DomainError, audit
@@ -132,133 +132,6 @@ def grant(db, actor: int, player_id: int, amount: float, reason: str) -> WalletE
     return entry
 
 
-MAX_REQUEST = 1000  # points a player may ask for at once
-REQUEST_NOTE = "По запросу игрока"
-
-
-def _request(r: PointRequest | None) -> dict | None:
-    if r is None:
-        return None
-    return dict(
-        id=r.id,
-        amount=points(r.amount),
-        status=r.status,
-        created_at=r.created_at,
-        decided_at=r.decided_at,
-    )
-
-
-def _notify(db, chat_id: int | None, kind: str, key: str, text: str) -> None:
-    """Queue a direct bot message; the worker delivers it (see ``worker.deliver_one``)."""
-    if chat_id is None or db.scalar(select(Publication.id).where(Publication.dedupe_key == key)):
-        return
-    db.add(Publication(kind=kind, version=1, dedupe_key=key, text=text, chat_id=str(chat_id)))
-
-
-def _week_request(db, ids: list[int], at: datetime) -> PointRequest | None:
-    """This Moscow week's request that uses up the weekly allowance; a cancelled one does not."""
-    week_start = next_week_start(at) - timedelta(days=7)
-    return db.scalar(
-        select(PointRequest)
-        .where(
-            PointRequest.player_id.in_(ids),
-            PointRequest.status != "cancelled",
-            PointRequest.created_at >= week_start,
-        )
-        .limit(1)
-    )
-
-
-def request_points(db, actor: int, amount: float, cfg, at: datetime | None = None) -> PointRequest:
-    """A player asks for points once a week; only the owner receives the bot notification."""
-    at = at or now()
-    player = db.scalar(select(Player).where(Player.id == actor).with_for_update())
-    cents = round(amount * UNIT)
-    if not UNIT <= cents <= MAX_REQUEST * UNIT:
-        raise DomainError(f"Можно попросить от 1 до {MAX_REQUEST} очков", 422)
-    if db.scalar(
-        select(PointRequest.id).where(
-            PointRequest.player_id == actor, PointRequest.status == "pending"
-        )
-    ):
-        raise DomainError("Запрос уже отправлен — дождитесь решения администратора", 409)
-    if _week_request(db, _owned_ids(db, actor), at):
-        raise DomainError(
-            "Просить очки можно раз в неделю. Следующий запрос — с понедельника.", 409
-        )
-    request = PointRequest(player_id=actor, amount=cents, status="pending", created_at=at)
-    db.add(request)
-    db.flush()
-    audit(db, actor, "wallet.request", request_id=request.id, amount=points(cents))
-    text = f"🪙 {player.display_alias} просит {points(cents):g} очков.\nБаланс сейчас: {points(balance(db, actor)):g}."
-    if cfg.effective_owner_id and player.telegram_id != cfg.effective_owner_id:
-        _notify(
-            db,
-            cfg.effective_owner_id,
-            "points_request",
-            f"points_request:{request.id}:owner",
-            text,
-        )
-    return request
-
-
-def cancel_request(db, actor: int) -> None:
-    request = db.scalar(
-        select(PointRequest)
-        .where(PointRequest.player_id == actor, PointRequest.status == "pending")
-        .with_for_update()
-    )
-    if request is None:
-        raise DomainError("Открытого запроса нет", 404)
-    request.status, request.decided_at = "cancelled", now()
-    audit(db, actor, "wallet.request_cancelled", request_id=request.id)
-
-
-def decide_request(db, actor: int, request_id: int, approve: bool) -> PointRequest:
-    """The owner approves (the points are granted) or declines a request; the player is told."""
-    request = db.scalar(select(PointRequest).where(PointRequest.id == request_id).with_for_update())
-    if request is None:
-        raise DomainError("Запрос не найден", 404)
-    if request.status != "pending":
-        verdict = {"approved": "одобрен", "declined": "отклонён", "cancelled": "отменён игроком"}[
-            request.status
-        ]
-        raise DomainError(f"Запрос уже {verdict}", 409)
-    if request.player_id == actor:
-        raise DomainError("Свой запрос одобрять нельзя", 422)
-    if approve:
-        grant(db, actor, request.player_id, points(request.amount), REQUEST_NOTE)
-    request.status = "approved" if approve else "declined"
-    request.decided_at, request.decided_by = now(), actor
-    audit(db, actor, "wallet.request_decided", request_id=request.id, approved=approve)
-    player = db.get(Player, request.player_id)
-    text = (
-        f"✅ Начислено {points(request.amount):g} очков. Удачных ставок!"
-        if approve
-        else f"Запрос на {points(request.amount):g} очков отклонён."
-    )
-    _notify(db, player.telegram_id, "points_decided", f"points_decided:{request.id}", text)
-    return request
-
-
-def pending_requests(db) -> list[dict]:
-    people = {p.id: p for p in db.scalars(select(Player))}
-    rows = db.scalars(
-        select(PointRequest)
-        .where(PointRequest.status == "pending")
-        .order_by(PointRequest.created_at, PointRequest.id)
-    )
-    return [
-        _request(r)
-        | dict(
-            player_id=r.player_id,
-            alias=people[r.player_id].display_alias,
-            balance=points(balance(db, r.player_id)),
-        )
-        for r in rows
-    ]
-
-
 def grants(db, limit: int = 50) -> list[dict]:
     people = {p.id: p for p in db.scalars(select(Player))}
     rows = db.scalars(
@@ -304,7 +177,7 @@ def wallet_data(db, viewer: int, at: datetime | None = None) -> dict:
     return dict(
         server_time=at,
         balance=points(total),
-    # Betting result only: freebets and the owner's grants are not won or lost.
+        # Profit measures betting results only.
         profit=points(total - freebets - granted),
         freebets=points(freebets),
         grants=points(granted),
@@ -315,16 +188,6 @@ def wallet_data(db, viewer: int, at: datetime | None = None) -> dict:
             next_at=next_week_start(at),
         ),
         entries=[_entry(e) for e in recent],
-        request_available=_week_request(db, ids, at) is None,
-        next_request_at=next_week_start(at),
-        request=_request(
-            db.scalar(
-                select(PointRequest)
-                .where(PointRequest.player_id.in_(ids))
-                .order_by(PointRequest.created_at.desc(), PointRequest.id.desc())
-                .limit(1)
-            )
-        ),
     )
 
 

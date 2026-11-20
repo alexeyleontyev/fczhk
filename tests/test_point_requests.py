@@ -1,197 +1,150 @@
-import pytest
-from aiogram.methods import AnswerCallbackQuery, EditMessageText
-from sqlalchemy import select
+from unittest.mock import AsyncMock
 
-from fczhk.models import Player, PointRequest, Publication
-from fczhk.worker import points_markup
+import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, select
+
+from fczhk.models import Player, PointRequest, Publication, WalletEntry
+from fczhk.worker import deliver_one
 from tests.test_telegram import callback_replies
 
 
-def _admin_messages(factory):
-    with factory() as db:
-        return list(db.scalars(select(Publication).where(Publication.kind == "points_request")))
+def test_point_request_api_is_removed(call):
+    call("POST", "/wallet/requests", {"amount": 50}, role="player", expected=404)
+    call("POST", "/wallet/requests/cancel", role="player", expected=404)
+    call("GET", "/wallet/requests", expected=404)
+    call("POST", "/wallet/requests/1/decision", {"approve": True}, expected=404)
+    wallet = call("GET", "/wallet", role="player")
+    assert wallet["balance"] == 0
+    assert {"request", "request_available", "next_request_at"}.isdisjoint(wallet)
 
 
-@pytest.mark.parametrize("legacy_owner", [False, True])
-def test_player_requests_points_and_only_owner_is_notified(env, call, legacy_owner):
-    cfg, factory, _, _, ids = env
-    cfg.admin_ids = "101,104"
-    if legacy_owner:
-        cfg.owner_id = 0
-    with factory() as db, db.begin():
-        db.add_all(
-            [
-                Player(alias="Другой администратор", telegram_id=103, admin_access=True),
-                Player(alias="Администратор из списка", telegram_id=104),
-            ]
-        )
-    wallet = call("POST", "/wallet/requests", dict(amount=100), role="player", expected=201)
-    assert wallet["request"]["status"] == "pending" and wallet["request"]["amount"] == 100
-    assert wallet["balance"] == 0  # nothing until an administrator decides
-    again = call("POST", "/wallet/requests", dict(amount=50), role="player", expected=409)
-    assert "уже отправлен" in again["detail"]
-    messages = _admin_messages(factory)
-    assert [m.chat_id for m in messages] == ["101"]
-    assert "Игрок просит 100 очков" in messages[0].text
-    markup = points_markup(cfg, "points_request", messages[0].dedupe_key)
-    request_id = wallet["request"]["id"]
-    assert [b.callback_data for b in markup.inline_keyboard[0]] == [
-        f"pts:{request_id}:a",
-        f"pts:{request_id}:d",
-    ]
-    queue = call("GET", "/wallet/requests")
-    assert queue[0]["alias"] == "Игрок" and queue[0]["amount"] == 100
-    call("GET", "/wallet/requests", role="player", expected=403)
-    call("POST", "/wallet/requests", dict(amount=5000), role="player", expected=422)
-
-
-def test_owner_can_be_notified_before_registering_in_the_app(env, call):
-    cfg = env[0]
-    cfg.owner_id = 999
-    call("POST", "/wallet/requests", dict(amount=50), role="player", expected=201)
-    assert [m.chat_id for m in _admin_messages(env[1])] == ["999"]
-
-
-def test_non_owner_administrator_cannot_manage_points(env, call):
+def test_only_the_owner_can_adjust_a_wallet_without_notifications(env, call):
     _, factory, _, _, ids = env
-    request_id = call("POST", "/wallet/requests", dict(amount=50), role="player", expected=201)[
-        "request"
-    ]["id"]
-    call("PUT", f"/administrators/{ids['player']}", dict(is_admin=True, revision=0))
+    call("PUT", f"/administrators/{ids['player']}", {"is_admin": True, "revision": 0})
     assert call("GET", "/me", role="player")["is_admin"] is True
-    assert call("GET", "/me", role="player")["is_owner"] is False
     call("GET", "/wallet/grants", role="player", expected=403)
-    call("GET", "/wallet/requests", role="player", expected=403)
     call(
         "POST",
         "/wallet/grants",
-        dict(player_id=ids["admin"], amount=50, reason="Приз"),
+        {"player_id": ids["admin"], "amount": 50, "reason": "Приз"},
         role="player",
         expected=403,
     )
-    for approve in (True, False):
-        call(
-            "POST",
-            f"/wallet/requests/{request_id}/decision",
-            dict(approve=approve),
-            role="player",
-            expected=403,
-        )
-    assert call("GET", "/wallet")["balance"] == 0
+    call(
+        "POST",
+        "/wallet/grants",
+        {"player_id": ids["player"], "amount": 50, "reason": "Приз"},
+        expected=201,
+    )
+    assert call("GET", "/wallet", role="player")["balance"] == 50
+    with factory() as db:
+        assert not list(db.scalars(select(Publication)))
+
+
+async def test_old_telegram_button_cannot_change_balance(env, call, monkeypatch):
+    assert await callback_replies(env, monkeypatch, "pts:1:a", user_id=101) == []
     assert call("GET", "/wallet", role="player")["balance"] == 0
-    with factory() as db:
-        assert db.get(PointRequest, request_id).status == "pending"
 
 
-def test_approval_grants_the_points_and_tells_the_player(env, call):
-    _, factory, _, _, ids = env
-    request_id = call("POST", "/wallet/requests", dict(amount=100), role="player", expected=201)[
-        "request"
-    ]["id"]
-    assert call("POST", f"/wallet/requests/{request_id}/decision", dict(approve=True)) == []
-    wallet = call("GET", "/wallet", role="player")
-    assert wallet["balance"] == 100 and wallet["grants"] == 100 and wallet["profit"] == 0
-    assert (
-        wallet["entries"][0]["kind"] == "grant"
-        and wallet["entries"][0]["note"] == "По запросу игрока"
-    )
-    assert wallet["request"]["status"] == "approved"
-    late = call(
-        "POST", f"/wallet/requests/{request_id}/decision", dict(approve=False), expected=409
-    )
-    assert "уже одобрен" in late["detail"]
-    with factory() as db:
-        told = db.scalar(select(Publication).where(Publication.kind == "points_decided"))
-        assert told.chat_id == "102" and "Начислено 100" in told.text
-    # one request a week: the next one waits for Monday
-    again = call("POST", "/wallet/requests", dict(amount=30), role="player", expected=409)
-    assert "раз в неделю" in again["detail"]
-    assert call("GET", "/wallet", role="player")["balance"] == 100
-
-
-def test_a_player_can_cancel_and_owner_cannot_approve_his_own(env, call):
-    call("POST", "/wallet/requests/cancel", role="player", expected=404)
-    call("POST", "/wallet/requests", dict(amount=10), role="player", expected=201)
-    assert (
-        call("POST", "/wallet/requests/cancel", role="player")["request"]["status"] == "cancelled"
-    )
-    own = call("POST", "/wallet/requests", dict(amount=10), expected=201)["request"]["id"]
-    assert (
-        "Свой запрос"
-        in call("POST", f"/wallet/requests/{own}/decision", dict(approve=True), expected=422)[
-            "detail"
-        ]
-    )
-    assert len(_admin_messages(env[1])) == 1  # no notification about the owner's own request
-
-
-async def test_bot_buttons_approve_a_request(env, call, monkeypatch):
-    _, factory, _, _, ids = env
-    request_id = call("POST", "/wallet/requests", dict(amount=40), role="player", expected=201)[
-        "request"
-    ]["id"]
-    # a player pressing the button (e.g. a forwarded message) is refused
-    replies = await callback_replies(env, monkeypatch, f"pts:{request_id}:a", user_id=102)
-    answer = next(r for r in replies if isinstance(r, AnswerCallbackQuery))
-    assert "владелец" in answer.text
-    replies = await callback_replies(env, monkeypatch, f"pts:{request_id}:a", user_id=101)
-    answer = next(r for r in replies if isinstance(r, AnswerCallbackQuery))
-    assert answer.text == "Одобрено: +40 очков — Игрок"
-    edited = next(r for r in replies if isinstance(r, EditMessageText))
-    assert edited.reply_markup is None and edited.text.endswith("Одобрено: +40 очков — Игрок")
-    assert call("GET", "/wallet", role="player")["balance"] == 40
-    replies = await callback_replies(env, monkeypatch, f"pts:{request_id}:d", user_id=101)
-    assert "уже одобрен" in next(r for r in replies if isinstance(r, AnswerCallbackQuery)).text
-    with factory() as db:
-        assert db.get(PointRequest, request_id).decided_by == ids["admin"]
-        assert db.get(Player, ids["player"]).alias == "Игрок"
-
-
-async def test_non_owner_administrator_cannot_approve_via_bot(env, call, monkeypatch):
-    request_id = call("POST", "/wallet/requests", dict(amount=40), expected=201)["request"]["id"]
-    call("PUT", f"/administrators/{env[4]['player']}", dict(is_admin=True, revision=0))
-    replies = await callback_replies(env, monkeypatch, f"pts:{request_id}:a", user_id=102)
-    assert "владелец" in next(r for r in replies if isinstance(r, AnswerCallbackQuery)).text
-    assert call("GET", "/wallet")["balance"] == 0
-    with env[1]() as db:
-        assert db.get(PointRequest, request_id).status == "pending"
-
-
-@pytest.mark.parametrize("data", ["pts:1:x", "pts:abc:a"])
-async def test_bot_rejects_malformed_point_buttons(env, monkeypatch, data):
-    replies = await callback_replies(env, monkeypatch, data, user_id=101)
-    assert (
-        "Неизвестный запрос" in next(r for r in replies if isinstance(r, AnswerCallbackQuery)).text
-    )
-
-
-def test_points_can_be_requested_once_a_moscow_week(env, call):
-    from datetime import datetime
-
-    from fczhk import wallet
-    from fczhk.scheduling import MOSCOW
-
-    cfg, factory, _, _, ids = env
-    pid = ids["player"]
-    sunday = datetime(2026, 11, 15, 23, 0, tzinfo=MOSCOW)
-    monday = datetime(2026, 11, 16, 0, 5, tzinfo=MOSCOW)
+@pytest.mark.parametrize("kind", ["points_request", "points_decided"])
+async def test_retired_publications_cannot_be_retried_or_sent(env, call, kind):
+    cfg, factory, *_ = env
     with factory() as db, db.begin():
-        first = wallet.request_points(
-            db, pid, 100, cfg, at=datetime(2026, 11, 10, 12, tzinfo=MOSCOW)
-        )
-        wallet.decide_request(db, ids["admin"], first.id, approve=False)
-        # declined still counts for the week
-        with pytest.raises(wallet.DomainError, match="раз в неделю"):
-            wallet.request_points(db, pid, 50, cfg, at=sunday)
-        view = wallet.wallet_data(db, pid, at=sunday)
-        assert view["request_available"] is False and view["next_request_at"] == monday.replace(
-            minute=0
-        )
-        # a new week, a new request; a cancelled one does not use up the week
-        second = wallet.request_points(db, pid, 50, cfg, at=monday)
-        second.status = "cancelled"
+        failed = Publication(kind=kind, version=1, text="Сообщение", status="failed")
+        pending = Publication(kind=kind, version=1, text="Сообщение", chat_id="123")
+        db.add_all([failed, pending])
         db.flush()
-        assert wallet.wallet_data(db, pid, at=monday)["request_available"] is True
-        wallet.request_points(db, pid, 50, cfg, at=monday)
-    late = call("POST", "/wallet/requests", dict(amount=10), role="admin", expected=201)
-    assert late["request_available"] is False
+        failed_id, pending_id = failed.id, pending.id
+    call("POST", f"/publications/{failed_id}/retry", expected=409)
+    bot = AsyncMock()
+    assert await deliver_one(cfg, factory, bot)
+    bot.send_message.assert_not_awaited()
+    with factory() as db:
+        assert db.get(Publication, pending_id).status == "cancelled"
+
+
+def test_migration_closes_requests_and_preserves_wallet_history(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path}/wallet.db")
+    cfg = Config("alembic.ini")
+    with engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "e1b5c7a93f20")
+        conn.execute(Player.__table__.insert(), {"id": 9001, "alias": "Игрок"})
+        conn.execute(
+            PointRequest.__table__.insert(),
+            [
+                {"id": 1, "player_id": 9001, "amount": 5000, "status": "pending"},
+                {"id": 2, "player_id": 9001, "amount": 8000, "status": "approved"},
+            ],
+        )
+        conn.execute(
+            WalletEntry.__table__.insert(),
+            {"player_id": 9001, "kind": "freebet", "amount": 10000, "freebet_week": "2026-W46"},
+        )
+        conn.execute(
+            Publication.__table__.insert(),
+            [
+                {
+                    "id": 1,
+                    "kind": "points_request",
+                    "version": 1,
+                    "text": "x",
+                    "status": "pending",
+                    "error": None,
+                },
+                {
+                    "id": 2,
+                    "kind": "points_request",
+                    "version": 1,
+                    "text": "x",
+                    "status": "sending",
+                    "error": None,
+                },
+                {
+                    "id": 3,
+                    "kind": "points_decided",
+                    "version": 1,
+                    "text": "x",
+                    "status": "failed",
+                    "error": "x",
+                },
+                {
+                    "id": 4,
+                    "kind": "points_decided",
+                    "version": 1,
+                    "text": "x",
+                    "status": "uncertain",
+                    "error": "x",
+                },
+                {
+                    "id": 5,
+                    "kind": "points_decided",
+                    "version": 1,
+                    "text": "x",
+                    "status": "sent",
+                    "error": None,
+                },
+                {
+                    "id": 6,
+                    "kind": "collection",
+                    "version": 1,
+                    "text": "x",
+                    "status": "failed",
+                    "error": "x",
+                },
+            ],
+        )
+        command.upgrade(cfg, "head")
+        command.downgrade(cfg, "e1b5c7a93f20")
+        command.upgrade(cfg, "head")
+        requests = conn.execute(
+            select(PointRequest.status, PointRequest.decided_at).order_by(PointRequest.id)
+        ).all()
+        assert requests[0].status == "cancelled" and requests[0].decided_at is not None
+        assert requests[1].status == "approved"
+        assert conn.execute(
+            select(Publication.status, Publication.error).order_by(Publication.id)
+        ).all() == [("cancelled", None)] * 4 + [("sent", None), ("failed", "x")]
+        assert conn.scalar(select(WalletEntry.amount)) == 10000

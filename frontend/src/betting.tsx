@@ -14,15 +14,6 @@ export type Wallet = {
   profit: number
   freebets: number
   grants?: number
-  request_available?: boolean
-  next_request_at?: string
-  request?: {
-    id: number
-    amount: number
-    status: 'pending' | 'approved' | 'declined' | 'cancelled'
-    created_at: string
-    decided_at: string | null
-  } | null
   freebet: { amount: number; week: string; available: boolean; next_at: string }
   entries: {
     id: number
@@ -117,18 +108,6 @@ export function BettingScreen({
     }
   }, [revision])
 
-  async function ask(path: string, body?: object) {
-    setBusy(true)
-    setError('')
-    try {
-      setWallet(await api<Wallet>(path, 'POST', body))
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function claim() {
     setBusy(true)
     setError('')
@@ -190,49 +169,6 @@ export function BettingScreen({
             <p className="muted caption">
               Раз в неделю, с понедельника по московскому времени. Неполученный фрибет не копится.
             </p>
-            {wallet.request?.status === 'pending' ? (
-              <p className="wallet-request">
-                Запрос на {points(wallet.request.amount)} очков у владельца.{' '}
-                <button
-                  type="button"
-                  className="text-button"
-                  disabled={busy}
-                  onClick={() => void ask('/wallet/requests/cancel')}
-                >
-                  Отменить
-                </button>
-              </p>
-            ) : wallet.request_available === false ? (
-              <p className="wallet-request muted">
-                Просить очки можно раз в неделю. Следующий запрос —{' '}
-                {wallet.next_request_at ? moscowDay(wallet.next_request_at) : 'с понедельника'}.
-              </p>
-            ) : (
-              <div className="wallet-request">
-                <span>Попросить очки (раз в неделю):</span>
-                {[50, 100, 200].map((amount) => (
-                  <button
-                    key={amount}
-                    type="button"
-                    className="button secondary compact"
-                    disabled={busy}
-                    onClick={() => void ask('/wallet/requests', { amount })}
-                  >
-                    +{amount}
-                  </button>
-                ))}
-              </div>
-            )}
-            {wallet.request && wallet.request.status !== 'pending' && wallet.request.decided_at && (
-              <p className="muted caption">
-                Последний запрос ({points(wallet.request.amount)}):{' '}
-                {
-                  { approved: 'одобрен', declined: 'отклонён', cancelled: 'отменён' }[
-                    wallet.request.status
-                  ]
-                }
-              </p>
-            )}
           </div>
         </section>
       )}
@@ -320,9 +256,7 @@ export function BettingScreen({
           )}
           <p className="muted caption">
             Участников: {board.players}. Выдано фрибетов: {points(board.freebets_issued)}.
-            {board.grants_issued
-              ? ` Начислено администраторами: ${points(board.grants_issued)}.`
-              : ''}{' '}
+            {board.grants_issued ? ` Начислено владельцем: ${points(board.grants_issued)}.` : ''}{' '}
             При равном балансе место общее.
           </p>
         </section>

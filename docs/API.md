@@ -171,12 +171,8 @@
 | GET | `/api/wallet` | Участник | — |
 | POST | `/api/wallet/freebet` | Участник | — |
 | GET | `/api/betting/leaderboard` | Участник | — |
-| POST | `/api/wallet/requests` | Участник | PointRequestCreate |
-| POST | `/api/wallet/requests/cancel` | Участник | — |
-| GET | `/api/wallet/requests` | Администратор | — |
-| POST | `/api/wallet/requests/{request_id}/decision` | Администратор | PointRequestDecision |
-| GET | `/api/wallet/grants` | Администратор | — |
-| POST | `/api/wallet/grants` | Администратор | WalletGrant |
+| GET | `/api/wallet/grants` | Владелец | — |
+| POST | `/api/wallet/grants` | Владелец | WalletGrant |
 | GET | `/api/bets` | Участник | — |
 | GET | `/api/betting/archive` | Участник | — |
 | GET | `/api/matches/{match_id}/bets` | Участник | — |
@@ -184,7 +180,7 @@
 | POST | `/api/matches/{match_id}/odds/quote` | Участник | OddsQuote |
 | POST | `/api/matches/{match_id}/bets` | Участник | BetPlace |
 
-`GET /api/wallet` возвращает `balance`, `freebets`, `profit` (баланс минус фрибеты), `freebet.available`, `freebet.week` (ISO-неделя по Москве), `freebet.next_at` и до 20 последних операций `entries` (`freebet`, `stake`, `payout`, `refund`, `correction`). Суммы — очки с точностью до сотых. `POST /api/wallet/freebet` начисляет 100 очков один раз за неделю; повтор — 409.
+`GET /api/wallet` возвращает `balance`, `freebets`, `grants`, `profit` (баланс минус фрибеты и ручные начисления), `freebet.available`, `freebet.week` (ISO-неделя по Москве), `freebet.next_at` и до 20 последних операций `entries` (`freebet`, `stake`, `payout`, `refund`, `correction`, `grant`). Суммы — очки с точностью до сотых. `POST /api/wallet/freebet` начисляет 100 очков раз в неделю. Повтор возвращает 409.
 
 `GET /api/matches/{match_id}/odds` до утверждения составов или без обученной модели возвращает `available=false` и `reason`; после — `available=true`, `odds_id`, `approved_version`, `open` (приём ставок открыт), `closes_at`, `model` (`n_matches`, `fitted_at`) и `groups`: список рынков с исходами `{id, label, odds}`. Первый запрос после утверждения рассчитывает и сохраняет линию. Поле `bets` — собственные ставки на эту игру.
 
@@ -192,9 +188,7 @@
 
 `GET /api/bets` — до 50 последних собственных ставок: `selections`, `labels`, `stake`, `odds`, `potential`, `status` (`open`, `won`, `lost`, `void`), `credited` (сколько ставка вернула), `outcome` (счёт, результаты исходов, причина возврата).
 
-`PointRequestCreate`: `amount` (1–1000 очков); второй открытый запрос или второй запрос за московскую неделю (отменённые не считаются) — 409. В `GET /api/wallet` — `request_available` и `next_request_at`. Ответ — `wallet` с полем `request` (последний запрос: `amount`, `status` `pending`/`approved`/`declined`/`cancelled`). `GET /api/wallet/requests` — открытые запросы (`alias`, `amount`, `balance`). `PointRequestDecision`: `approve` (bool); уже решённый запрос — 409, свой — 422. Бот обрабатывает кнопки `pts:{id}:a|d` только от администраторов.
-
-`WalletGrant`: `player_id`, `amount` (очки со знаком, не ноль, по модулю до 100 000), `reason` (3–200 символов). Начисление себе и общей карточке вратаря — 422. Ответ — последние 50 начислений (`alias`, `actor`, `amount`, `note`, `created_at`). В `GET /api/wallet` появляются поле `grants` и операции `grant` с `note`; `profit` не учитывает начисления. В лидерборде — `grants` по игроку и `grants_issued`. Поле `model` в ответе линии отдаётся только администраторам.
+`WalletGrant` принимает `player_id`, `amount` (очки со знаком, не ноль, по модулю до 100 000) и `reason` (3–200 символов). Начисление себе и общей карточке вратаря возвращает 422. Ответ содержит последние 50 начислений (`alias`, `actor`, `amount`, `note`, `created_at`). В кошельке причина сохраняется в поле `note` операции `grant`. В лидерборде по игрокам отображаются `grants`, общий итог — `grants_issued`. Поле `model` в ответе линии отдаётся только администраторам.
 
 `GET /api/matches/{match_id}/bets` — ставки всех игроков на игру (поля ставки плюс `player_id` и `alias`); до начала игры — 409. `GET /api/betting/archive` — до 30 начавшихся игр со ставками, новые сверху: `match_id`, `starts_at`, `score`, `bets`, `players`, `staked`, `returned`, `open` и `bank` (результат банка по игре, `null`, пока есть нерассчитанные ставки).
 

@@ -383,11 +383,3 @@ class WalletGrant(Payload):
     player_id: int = Field(ge=1)
     amount: float = Field(ge=-100_000, le=100_000)
     reason: str = Field(min_length=3, max_length=200)
-
-
-class PointRequestCreate(Payload):
-    amount: float = Field(ge=1, le=1000)
-
-
-class PointRequestDecision(Payload):
-    approve: bool = Field(strict=True)

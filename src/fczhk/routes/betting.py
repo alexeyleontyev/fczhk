@@ -27,38 +27,6 @@ def router(ctx):
         wallet.claim_freebet(db, p.id)
         return wallet.wallet_data(db, p.id)
 
-    @app.post("/api/wallet/requests", status_code=201)
-    def request_points(
-        body: S.PointRequestCreate,
-        p: Player = Depends(current),
-        db: Session = Depends(db_dep, scope="function"),
-    ):
-        wallet.request_points(db, p.id, body.amount, cfg)
-        return wallet.wallet_data(db, p.id)
-
-    @app.post("/api/wallet/requests/cancel")
-    def cancel_request(
-        p: Player = Depends(current), db: Session = Depends(db_dep, scope="function")
-    ):
-        wallet.cancel_request(db, p.id)
-        return wallet.wallet_data(db, p.id)
-
-    @app.get("/api/wallet/requests")
-    def pending_requests(
-        p: Player = Depends(ctx.owner), db: Session = Depends(db_dep, scope="function")
-    ):
-        return wallet.pending_requests(db)
-
-    @app.post("/api/wallet/requests/{request_id}/decision")
-    def decide_request(
-        request_id: int,
-        body: S.PointRequestDecision,
-        p: Player = Depends(ctx.owner),
-        db: Session = Depends(db_dep, scope="function"),
-    ):
-        wallet.decide_request(db, p.id, request_id, body.approve)
-        return wallet.pending_requests(db)
-
     @app.get("/api/wallet/grants")
     def wallet_grants(
         p: Player = Depends(ctx.owner), db: Session = Depends(db_dep, scope="function")

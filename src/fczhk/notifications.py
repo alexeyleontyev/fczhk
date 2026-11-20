@@ -10,6 +10,7 @@ from .models import Audit, GameTemplate, Match, Player, Publication, SkippedGame
 from .scheduling import MOSCOW, schedule_window
 
 SCHEDULED_KINDS = ("opening_notice", "payment_notice")
+RETIRED_POINT_KINDS = ("points_request", "points_decided")
 EXTENDED_TYPES = {
     "auction_start": "extended_auction_enabled",
     "auction_open": "extended_auction_enabled",
@@ -184,6 +185,8 @@ def schedule_notifications(db, template, at):
 
 
 def delivery_allowed(db, publication, at=None):
+    if publication.kind in RETIRED_POINT_KINDS:
+        return False
     at = at or now()
     if publication.expires_at and publication.expires_at <= at:
         return False

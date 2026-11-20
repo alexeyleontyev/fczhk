@@ -14,6 +14,8 @@ test('player claims the weekly freebet once and sees the leaderboard and the ban
   const wallet = page.getByRole('region', { name: 'Мой баланс' })
   const balance = wallet.locator('.wallet-balance strong')
   await expect(balance).toHaveText('0')
+  await expect(wallet.getByText('Попросить очки', { exact: false })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Начисление очков' })).toHaveCount(0)
   await wallet.getByRole('button', { name: 'Забрать фрибет +100' }).click()
   await expect(balance).toHaveText('100')
   await expect(
@@ -33,4 +35,28 @@ test('player claims the weekly freebet once and sees the leaderboard and the ban
   expect(again.status()).toBe(409)
   await page.getByRole('button', { name: 'Обновить', exact: true }).click()
   await expect(balance).toHaveText('100')
+})
+
+test('owner adjusts a balance directly from the betting tab', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Войти администратором', exact: true }).click()
+  await page
+    .getByRole('navigation', { name: 'Главная навигация' })
+    .getByRole('button', { name: 'Ставки', exact: true })
+    .click()
+
+  const grants = page.getByRole('region', { name: 'Начисление очков' })
+  await expect(grants).toBeVisible()
+  await expect(grants.getByRole('list', { name: 'Запросы очков' })).toHaveCount(0)
+  await grants
+    .getByRole('combobox', { name: 'Игрок', exact: true })
+    .selectOption({ label: 'Михаил' })
+  await grants.getByLabel('Сумма', { exact: true }).fill('25')
+  await grants.getByLabel('Причина', { exact: true }).fill('Приз за прогноз')
+  await grants.getByRole('button', { name: 'Начислить', exact: true }).click()
+  await expect(grants.getByRole('status')).toContainText('Михаил: +25 очков')
+  await grants.getByLabel('Сумма', { exact: true }).fill('-5')
+  await grants.getByLabel('Причина', { exact: true }).fill('Исправление')
+  await grants.getByRole('button', { name: 'Списать', exact: true }).click()
+  await expect(grants.getByRole('status')).toContainText('Михаил: −5 очков')
 })

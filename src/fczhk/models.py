@@ -492,7 +492,7 @@ class Bet(Base):
 
 
 class PointRequest(Base):
-    """A player asks the administrators for points; one open request per player."""
+    """Archived bonus point requests retained for audit history."""
 
     __tablename__ = "point_requests"
     __table_args__ = (
@@ -512,7 +512,7 @@ class PointRequest(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
     amount: Mapped[int] = mapped_column(BigInteger)  # hundredths of a point
-    status: Mapped[str] = mapped_column(String(10), default="pending")
+    status: Mapped[str] = mapped_column(String(10))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
