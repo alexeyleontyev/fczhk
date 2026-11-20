@@ -31,7 +31,8 @@ MIN_STAKE = UNIT  # one point
 
 
 def place(db, actor: int, match: Match, body) -> Bet:
-    # The caller locks the match first; time is checked after any lock wait.
+    # The caller locks the match first. Serialize spending and profile links on the player.
+    db.scalar(select(Player).where(Player.id == actor).with_for_update())
     if not od.betting_open(match):
         raise DomainError("Приём ставок на эту игру закрыт", 409)
     odds = od.snapshot(db, match)
@@ -62,8 +63,6 @@ def place(db, actor: int, match: Match, body) -> Bet:
     stake = round(body.stake * UNIT)
     if stake < MIN_STAKE:
         raise DomainError("Минимальная ставка — 1 очко", 422)
-    # Lock the player's card so two bets cannot both spend the same balance.
-    db.scalar(select(Player).where(Player.id == actor).with_for_update())
     if stake > balance(db, actor):
         raise DomainError("Недостаточно очков на балансе", 409)
     bet = Bet(
