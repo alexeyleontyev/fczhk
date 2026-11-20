@@ -9,7 +9,7 @@ scrape_configs:
       type: Bearer
       credentials_file: /etc/prometheus/secrets/fczhk-metrics-token
     static_configs:
-      - targets: [football.example.com]
+      - targets: [fczhk.top]
 # Connect your Alertmanager and notification receiver before production.
 # alerting:
 #   alertmanagers:

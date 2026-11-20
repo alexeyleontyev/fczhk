@@ -16,7 +16,7 @@
 | `FCZHK_PUBLICATION_CHAT_ID` | пусто | Основные посты сбора, составов и итогов; настроить до включения расписания |
 | `FCZHK_OWNER_ID` | `0` | Личный числовой Telegram ID владельца; назначает и снимает администраторов в приложении, защищён от понижения |
 | `FCZHK_ADMIN_IDS` | пусто | Совместимость: начальные права по ID через запятую; первый становится владельцем, если `FCZHK_OWNER_ID=0`. Решения владельца в БД имеют приоритет |
-| `FCZHK_PUBLIC_URL` | `http://localhost:8000` | В production HTTPS; совпадает с адресом Mini App и браузерного входа |
+| `FCZHK_PUBLIC_URL` | `http://localhost:8000` | В production `https://fczhk.top`. Адрес совпадает с Mini App и браузерным входом |
 | `FCZHK_TELEGRAM_LOGIN_CLIENT_ID` | `0` | Client ID BotFather; 0 отключает вход в браузере |
 | `FCZHK_WEBHOOK_SECRET` | пусто | Проверка секретного заголовка webhook; пустое значение означает polling |
 | `FCZHK_AUTH_MAX_AGE_SECONDS` | `300` | Максимальный возраст Telegram initData при входе |
@@ -44,7 +44,7 @@
 | Переменная | Назначение |
 | --- | --- |
 | `POSTGRES_PASSWORD` | Настоящий пароль PostgreSQL; в URL использовать его URL-encoded значение. Смена переменной не меняет пароль существующего volume |
-| `DOMAIN` | Имя домена Caddy без схемы и порта; DNS направлен на сервер. Обычно открыты 80/443; для варианта 8443 — 80/8443 |
+| `DOMAIN` | Для рабочего сайта `fczhk.top`. Указать имя без схемы и порта. Обычно открыты 80/443, для варианта 8443 — 80/8443 |
 | `COMPOSE_FILE` | Для HTTPS на 8443: `compose.yaml:deploy/compose.8443.yaml` (Linux, Compose >= 2.24.4). Тогда `FCZHK_PUBLIC_URL` должен содержать `:8443` |
 | `FCZHK_IMAGE` | Образ приложения; успешный deploy сохраняет разрешённый digest в `.local/release-image`, который использует `scripts/compose.sh` |
 | `BACKUP_DIRECTORY` | Абсолютный каталог локальных backup для offsite-скрипта |
