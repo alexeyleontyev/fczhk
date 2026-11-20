@@ -6,7 +6,7 @@ a rating and a team-without-a-keeper effect. A match pace shared by both teams w
 and draws get one renormalising parameter. The model is fitted by its posterior mode plus a
 Laplace approximation, so prices carry parameter uncertainty; the pace is integrated out with
 Gauss-Hermite quadrature. Scoring shares for player markets come from a penalised multinomial
-over the players on the pitch.
+over the players on the pitch, and assist shares from the same model fitted on the assists.
 
 The model was selected and checked walk-forward in the separate research project (Kolobok):
 reading the ratings with a role correction -- a forward is rarely seen defending, so a learnt
@@ -16,7 +16,7 @@ largest single improvement over the ratings as given.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.polynomial.hermite_e import hermegauss
@@ -28,6 +28,7 @@ N_NODES = 9
 SIGMA_S = 0.95  # prior scale of scoring propensities
 SHARE_SHRINK = 0.85  # pulls scoring shares towards the average when pricing
 RECENT_MATCHES = 30  # matches used for the share of goals with a named scorer
+MODEL_VERSION = 2  # 2: assist shares; an older saved model is refitted
 NAMES = (
     "mu",
     "beta_a",
@@ -61,6 +62,11 @@ class History:
     scored: np.ndarray  # (P,) goals with this player as the named scorer
     gk_scored: int  # goals scored by goalkeepers
     scorer_rate: float  # share of goals credited to a named scorer, recent matches
+    # The same for assists; None when the history has no assist data (no assist markets then).
+    team_assists: np.ndarray | None = None  # (T,) goals with a named assistant of the same team
+    assisted: np.ndarray | None = None  # (P,) assists credited to this player
+    gk_assisted: int = 0
+    assist_rate: float = 0.0  # share of goals with a named assistant, recent matches
 
 
 def normalisation(r_att: np.ndarray, r_def: np.ndarray) -> dict:
@@ -165,34 +171,42 @@ def _hessian(f, x: np.ndarray, step: float = 1e-3) -> np.ndarray:
     return h
 
 
-def _shares(h: History) -> tuple[np.ndarray, np.ndarray, float, float]:
-    n_p = len(h.player_ids)
-    if not h.team_goals.sum():
+def _shares(
+    members: np.ndarray,
+    member_gk: np.ndarray,
+    totals: np.ndarray,
+    credited: np.ndarray,
+    gk_credited: int,
+) -> tuple[np.ndarray, np.ndarray, float, float]:
+    """Penalised multinomial of who is credited with each goal (or assist) among the players on
+    the pitch, with a shared goalkeeper offset: propensities, their sds, the offset and its sd."""
+    n_p = members.shape[1]
+    if not totals.sum():
         return np.zeros(n_p), np.full(n_p, SIGMA_S), -2.0, 1.5
-    gk = h.member_gk.astype(float)
+    gk = member_gk.astype(float)
 
     def probs(s, om):
-        z = np.where(h.members, s[None, :] + om * gk, -np.inf)
+        z = np.where(members, s[None, :] + om * gk, -np.inf)
         return np.exp(z - special.logsumexp(z, axis=1, keepdims=True))
 
     def objective(v):
         s, om = v[:-1], v[-1]
-        z = np.where(h.members, s[None, :] + om * gk, -np.inf)
-        ll = h.scored @ s + om * h.gk_scored - h.team_goals @ special.logsumexp(z, axis=1)
+        z = np.where(members, s[None, :] + om * gk, -np.inf)
+        ll = credited @ s + om * gk_credited - totals @ special.logsumexp(z, axis=1)
         return -(ll - 0.5 * (s @ s) / SIGMA_S**2 - 0.5 * ((om + 2.0) / 1.5) ** 2)
 
     def gradient(v):
         s, om = v[:-1], v[-1]
-        pi = probs(s, om) * h.team_goals[:, None]
-        gs = h.scored - pi.sum(0) - s / SIGMA_S**2
-        go = h.gk_scored - (pi * gk).sum() - (om + 2.0) / 1.5**2
+        pi = probs(s, om) * totals[:, None]
+        gs = credited - pi.sum(0) - s / SIGMA_S**2
+        go = gk_credited - (pi * gk).sum() - (om + 2.0) / 1.5**2
         return -np.r_[gs, go]
 
     res = optimize.minimize(objective, np.r_[np.zeros(n_p), -2.0], jac=gradient, method="L-BFGS-B")
     s, om = res.x[:-1], float(res.x[-1])
     pi = probs(s, om)
-    info_s = (h.team_goals[:, None] * pi * (1 - pi) * h.members).sum(0) + 1 / SIGMA_S**2
-    info_o = (h.team_goals[:, None] * pi * (1 - pi) * gk).sum() + 1 / 1.5**2
+    info_s = (totals[:, None] * pi * (1 - pi) * members).sum(0) + 1 / SIGMA_S**2
+    info_o = (totals[:, None] * pi * (1 - pi) * gk).sum() + 1 / 1.5**2
     return s, 1 / np.sqrt(info_s), om, float(1 / np.sqrt(info_o))
 
 
@@ -205,23 +219,40 @@ def fit(h: History) -> dict:
     hess = _hessian(post, res.x)
     vals, vecs = np.linalg.eigh(0.5 * (hess + hess.T))
     cov = (vecs / np.maximum(vals, 1e-6)) @ vecs.T
-    s, s_sd, om, om_sd = _shares(h)
+    s, s_sd, om, om_sd = _shares(h.members, h.member_gk, h.team_goals, h.scored, h.gk_scored)
     mode = unpack(res.x)
-    return dict(
-        version=1,
-        names=list(NAMES),
-        mode=[float(v) for v in res.x],
-        cov=[[float(v) for v in row] for row in cov],
-        norm=norm,
-        shares={
-            str(pid): [float(a), float(b)] for pid, a, b in zip(h.player_ids, s, s_sd, strict=True)
-        },
-        omega_s=[om, om_sd],
-        scorer_rate=h.scorer_rate,
-        n_matches=int(len(h.goals_a)),
-        converged=bool(res.success),
-        min_eigenvalue=float(vals.min()),
-        summary={k: float(v) for k, v in mode.items()},
+    assists = {}
+    if h.team_assists is not None and h.assisted is not None:
+        a, a_sd, a_om, a_om_sd = _shares(
+            h.members, h.member_gk, h.team_assists, h.assisted, h.gk_assisted
+        )
+        assists = dict(
+            assist_shares={
+                str(pid): [float(x), float(y)]
+                for pid, x, y in zip(h.player_ids, a, a_sd, strict=True)
+            },
+            assist_omega=[a_om, a_om_sd],
+            assist_rate=h.assist_rate,
+        )
+    return (
+        dict(
+            version=MODEL_VERSION,
+            names=list(NAMES),
+            mode=[float(v) for v in res.x],
+            cov=[[float(v) for v in row] for row in cov],
+            norm=norm,
+            shares={
+                str(pid): [float(a), float(b)]
+                for pid, a, b in zip(h.player_ids, s, s_sd, strict=True)
+            },
+            omega_s=[om, om_sd],
+            scorer_rate=h.scorer_rate,
+            n_matches=int(len(h.goals_a)),
+            converged=bool(res.success),
+            min_eigenvalue=float(vals.min()),
+            summary={k: float(v) for k, v in mode.items()},
+        )
+        | assists
     )
 
 
@@ -233,6 +264,10 @@ class Simulation:
     shares: dict[str, tuple[list[int], np.ndarray]]  # team -> (player ids, (S, n) shares)
     lam_a: np.ndarray  # (S,) expected goals before the draw adjustment
     lam_b: np.ndarray
+    # Per team, each player's share of the team's goals as the credited assistant; empty when the
+    # model has no assist data.
+    assists: dict[str, tuple[list[int], np.ndarray]] = field(default_factory=dict)
+    keepers: frozenset[int] = frozenset()  # player markets are not offered on goalkeepers
 
 
 def simulate(
@@ -271,16 +306,33 @@ def simulate(
     mats[:, diag, diag] *= np.exp(p["delta"])[:, None]
     mats /= mats.sum(axis=(1, 2), keepdims=True)
 
-    om, om_sd = model["omega_s"]
-    omega = om + rng.normal(size=n_draws) * om_sd
-    shares = {}
-    for team in ("white", "black"):
-        ids = [pid for pid, _ in lineup[team]]
-        is_gk = np.array([gk for _, gk in lineup[team]], dtype=float)
-        known = [model["shares"].get(str(pid), [0.0, SIGMA_S]) for pid in ids]
-        s_hat = np.array([v[0] for v in known])
-        s_sd = np.array([v[1] for v in known])
-        s = s_hat + rng.normal(size=(n_draws, len(ids))) * s_sd
-        w = np.exp(SHARE_SHRINK * s + omega[:, None] * is_gk)
-        shares[team] = (ids, model["scorer_rate"] * w / w.sum(1, keepdims=True))
-    return Simulation(mats=mats, shares=shares, lam_a=np.exp(log_a), lam_b=np.exp(log_b))
+    def credit(table: dict, offset: list, rate: float) -> dict:
+        om, om_sd = offset
+        omega = om + rng.normal(size=n_draws) * om_sd
+        out = {}
+        for team in ("white", "black"):
+            ids = [pid for pid, _ in lineup[team]]
+            is_gk = np.array([gk for _, gk in lineup[team]], dtype=float)
+            known = [table.get(str(pid), [0.0, SIGMA_S]) for pid in ids]
+            s_hat = np.array([v[0] for v in known])
+            s_sd = np.array([v[1] for v in known])
+            s = s_hat + rng.normal(size=(n_draws, len(ids))) * s_sd
+            w = np.exp(SHARE_SHRINK * s + omega[:, None] * is_gk)
+            out[team] = (ids, rate * w / w.sum(1, keepdims=True))
+        return out
+
+    shares = credit(model["shares"], model["omega_s"], model["scorer_rate"])
+    # Drawn after the goal shares, so a model without assists keeps its prices draw for draw.
+    assists = (
+        credit(model["assist_shares"], model["assist_omega"], model["assist_rate"])
+        if "assist_shares" in model
+        else {}
+    )
+    return Simulation(
+        mats=mats,
+        shares=shares,
+        lam_a=np.exp(log_a),
+        lam_b=np.exp(log_b),
+        assists=assists,
+        keepers=frozenset(pid for team in lineup.values() for pid, gk in team if gk),
+    )

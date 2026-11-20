@@ -9,8 +9,11 @@ taken back or added with a ``correction`` entry, and running it twice changes no
 Rules:
 - a bet is refunded when the approved line-up changes after it was placed, or the match is
   cancelled;
-- a player selection is void when the player did not play or when his team has a goal without a
-  named scorer; a combination with a void selection is refunded as a whole;
+- a player goals selection is void when the player did not play or when his team has a goal
+  without a named scorer; a player assists selection is void when the player did not play (a goal
+  without a named assistant is a goal without an assist); a combination with a void selection is
+  refunded as a whole;
+- nobody may bet on "under" for his own goals or assists: it would be his to decide;
 - otherwise a bet wins when every selection wins, and pays stake times odds.
 """
 
@@ -34,6 +37,9 @@ def place(db, actor: int, match: Match, body) -> Bet:
     odds = od.snapshot(db, match)
     if body.odds_id != odds.id:
         raise DomainError("Составы изменились, коэффициенты обновлены. Проверьте ставку.", 409)
+    for leg in od.legs_for(odds, body.selections):
+        if leg["kind"] in od.PLAYER_GROUP and leg["side"] == "under" and leg["player"] == actor:
+            raise DomainError("Нельзя ставить на «меньше» по своим голам и передачам", 422)
     quote = od.quote(db, odds, body.selections)
     if round(body.odds, 2) != quote["odds"]:
         raise DomainError(f"Коэффициент изменился: теперь {quote['odds']:g}", 409)
@@ -79,6 +85,7 @@ def _result(db, match: Match):
         for r in db.scalars(select(ResultParticipant).where(ResultParticipant.match_id == match.id))
     }
     scorers: dict[int, int] = {}
+    assistants: dict[int, int] = {}
     unknown = {"white": False, "black": False}
     for g in goals:
         if g.kind == "goal" and g.author_id is None:
@@ -86,11 +93,17 @@ def _result(db, match: Match):
         elif g.kind == "goal":
             pid = canonical[g.author_id]
             scorers[pid] = scorers.get(pid, 0) + 1
+        if g.kind == "goal" and g.assist_id is not None:
+            pid = canonical[g.assist_id]
+            # Only an assist to a goal of the player's own team counts.
+            if played.get(pid) == g.team:
+                assistants[pid] = assistants.get(pid, 0) + 1
     return dict(
         white=sum(g.team == "white" for g in goals),
         black=sum(g.team == "black" for g in goals),
         played=played,
         scorers=scorers,
+        assistants=assistants,
         unknown=unknown,
         canonical=canonical,
     )
@@ -98,13 +111,14 @@ def _result(db, match: Match):
 
 def _leg_result(leg: dict, r: dict) -> str:
     x, y = r["white"], r["black"]
-    if leg["kind"] == "player":
+    if leg["kind"] in od.PLAYER_GROUP:
         pid = r["canonical"].get(leg["player"], leg["player"])
         team = r["played"].get(pid)
-        if team is None or r["unknown"][team]:
+        if team is None or (leg["kind"] == "player" and r["unknown"][team]):
             return "void"
-        goals = r["scorers"].get(pid, 0)
-        won = goals > leg["line"] if leg["side"] == "over" else goals < leg["line"]
+        credited = r["scorers" if leg["kind"] == "player" else "assistants"]
+        n = credited.get(pid, 0)
+        won = n > leg["line"] if leg["side"] == "over" else n < leg["line"]
         return "won" if won else "lost"
     won = bool(od.score_mask([leg], max(x, y) + 1)[x, y])
     return "won" if won else "lost"
