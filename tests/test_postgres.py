@@ -1352,6 +1352,21 @@ def test_parallel_collection_image_changes_reject_stale_version(pg):
         assert len(list(db.scalars(select(PostImage)))) == 1
 
 
+def test_betting_pool_preserves_fractional_points_and_returns_float(pg):
+    from fczhk import wallet
+
+    factory, actor = pg
+    with factory() as db, db.begin():
+        player = Player(alias="Игрок с очками")
+        db.add(player)
+        db.flush()
+        wallet.claim_freebet(db, actor)
+        wallet.grant(db, actor, player.id, 3000.25, "Тестовое начисление")
+        pool = wallet.pool(db)
+        assert isinstance(pool, float)
+        assert pool == 3200.25
+
+
 def test_parallel_freebet_claims_credit_one_freebet(pg):
     from fczhk import wallet
     from fczhk.models import WalletEntry

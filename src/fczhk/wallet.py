@@ -201,7 +201,8 @@ def pool(db, at: datetime | None = None) -> float:
         select(WalletEntry.player_id, func.sum(WalletEntry.amount)).group_by(WalletEntry.player_id)
     ):
         pid = canonical[player_id]
-        balances[pid] = balances.get(pid, 0) + amount
+        # PostgreSQL returns Decimal for SUM(bigint). Keep balances in integer cents.
+        balances[pid] = balances.get(pid, 0) + int(amount)
     claimed = {
         canonical[pid]
         for pid in db.scalars(select(WalletEntry.player_id).where(WalletEntry.freebet_week == week))
