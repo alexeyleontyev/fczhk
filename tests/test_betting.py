@@ -681,3 +681,117 @@ def test_players_with_few_matches_carry_more_margin_on_both_sides(env, call, clu
     for side, before in regular.items():
         after = odds.price(sim, [odds.parse(f"assist:{me}:{side}:0.5")])
         assert after["p"] == before["p"] and after["odds"] < before["odds"], side
+
+
+def _grant(env, role, amount):
+    _, factory, _, _, ids = env
+    with factory() as db, db.begin():
+        db.add(
+            WalletEntry(
+                player_id=ids[role],
+                kind="grant",
+                amount=amount * 100,
+                actor_id=ids["admin" if role == "player" else "player"],
+                note="тест",
+                created_at=now(),
+            )
+        )
+
+
+def _line(call, mid):
+    o = call("GET", f"/matches/{mid}/odds", role="player")
+    return o, {s["id"]: s for g in o["groups"] for s in g["selections"]}
+
+
+def test_the_line_follows_the_bets(env, call, club):
+    mid = club["match"]
+    _, before = _line(call, mid)
+    assert not any("base" in s for s in before.values())  # no bets: the model's line
+    _grant(env, "player", 1000)
+    first, _ = _bet(call, mid, ["1x2:b"], 100)
+    for _ in range(5):
+        _bet(call, mid, ["1x2:b"], 100)
+    o, after = _line(call, mid)
+    # The loaded outcome gets cheaper, the others dearer; the model's price is shown beside.
+    assert after["1x2:b"]["odds"] < before["1x2:b"]["odds"] == after["1x2:b"]["base"]
+    assert after["1x2:a"]["odds"] > before["1x2:a"]["odds"]
+    assert after["1x2:draw"]["odds"] > before["1x2:draw"]["odds"]
+    # Correlated markets move with it: Black's handicaps get cheaper too.
+    black = [s for s in after if s.startswith("handicap:b:")]
+    assert any(after[s]["odds"] < before[s]["odds"] for s in black)
+    assert all(after[s]["odds"] <= before[s]["odds"] for s in black)
+    # A quote matches the shown line; a bet keeps the odds it was placed at.
+    q = call(
+        "POST",
+        f"/matches/{mid}/odds/quote",
+        dict(odds_id=o["odds_id"], selections=["1x2:b"]),
+        role="player",
+    )
+    assert q["odds"] == after["1x2:b"]["odds"]
+    mine = {b["id"]: b for b in o["bets"]}
+    assert mine[first["bet"]["id"]]["odds"] == before["1x2:b"]["odds"]
+
+
+def test_a_player_bet_moves_that_players_line(env, call, club):
+    mid = club["match"]
+    _, before = _line(call, mid)
+    sid = next(s for s in before if s.startswith("player:") and s.endswith(":over:0.5"))
+    _grant(env, "player", 1000)
+    _bet(call, mid, [sid], 500)
+    _, after = _line(call, mid)
+    assert after[sid]["odds"] < before[sid]["odds"]
+    under = sid.replace(":over:", ":under:")
+    assert after[under]["odds"] >= before[under]["odds"]
+
+
+def test_the_move_is_capped_and_scaled_by_the_points_players_hold(env, call, club):
+    mid = club["match"]
+    _grant(env, "player", 5000)
+    _bet(call, mid, ["1x2:a"], 4000)
+    _, factory, _, _, _ = env
+    with factory() as db:
+        snapshot = db.scalar(select(MatchOdds).where(MatchOdds.match_id == mid))
+        tilt = odds.live(db, snapshot)
+        up = tilt([odds.parse("1x2:a")])
+        down = tilt([odds.parse("1x2:b")])
+    assert up == pytest.approx(1 + odds.DYNAMIC_CAP)  # a huge bet hits the cap
+    assert 1 / (1 + odds.DYNAMIC_CAP) <= down < 1
+
+
+def test_pool_counts_balances_and_unclaimed_freebets(env, call, club):
+    from fczhk import wallet
+
+    _, factory, _, _, _ = env
+    with factory() as db:
+        assert wallet.pool(db) == 0  # nobody holds points yet
+    _freebet(call)
+    _grant(env, "admin", 50)
+    with factory() as db:
+        # The player's freebet is claimed; the admin holds 50 and may still claim 100.
+        assert wallet.pool(db) == 100 + 50 + 100
+        assert wallet.pool(db, now() + timedelta(days=7)) == 100 + 50 + 2 * 100
+
+
+def test_a_price_that_went_up_is_taken_one_that_went_down_is_refused(env, call, club):
+    mid = club["match"]
+    _grant(env, "player", 1000)
+    _bet(call, mid, ["1x2:b"], 500)
+    o, line = _line(call, mid)
+    up, down = line["1x2:a"], line["1x2:b"]
+    assert up["odds"] > up["base"] and down["odds"] < down["base"]
+    placed = call(
+        "POST",
+        f"/matches/{mid}/bets",
+        dict(odds_id=o["odds_id"], selections=["1x2:a"], stake=10, odds=up["base"]),
+        role="player",
+        expected=201,
+    )
+    assert placed["bet"]["odds"] == up["odds"]  # the better price now
+    refused = call(
+        "POST",
+        f"/matches/{mid}/bets",
+        dict(odds_id=o["odds_id"], selections=["1x2:b"], stake=10, odds=down["base"]),
+        role="player",
+        expected=409,
+    )
+    assert "Коэффициент изменился" in refused["detail"]

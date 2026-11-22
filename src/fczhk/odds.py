@@ -9,6 +9,10 @@ is priced from the joint probability of all its selections, evaluated per poster
 
 Margins depend on the fair probability of an outcome (``margin_curve``): small at even money,
 large on long shots, and scaled per market and side.
+
+The line follows the bets (``live``): the model's probabilities are reweighted towards the
+outcomes where the bank would pay most, by the Esscher transform of the bank's loss. The frozen
+model stays the anchor; with no bets taken the line is the model's.
 """
 
 from __future__ import annotations
@@ -16,6 +20,8 @@ from __future__ import annotations
 import math
 import re
 from collections import OrderedDict
+from collections.abc import Callable
+from dataclasses import dataclass
 from threading import Lock
 
 import numpy as np
@@ -26,6 +32,7 @@ from . import odds_model as om
 from .db import now
 from .guest_keepers import SHARED_KEEPER_ALIASES
 from .models import (
+    Bet,
     Match,
     MatchOdds,
     MatchResult,
@@ -36,6 +43,7 @@ from .models import (
     TeamSnapshot,
 )
 from .services import DomainError
+from .wallet import UNIT, pool
 
 MIN_MATCHES = 10  # completed matches needed before the first odds
 N_DRAWS = 400
@@ -80,6 +88,15 @@ PLAYER_GROUP = {"player": "Голы игроков", "assist": "Передачи
 # carry extra margin on both sides, up to double for a newcomer, fading out by NEW_PLAYER_MATCHES.
 NEW_PLAYER_MATCHES = 10
 NEW_PLAYER_EXTRA = 1.0
+# The line follows the bets. Each simulated match outcome is weighted by exp(lambda * L), L the
+# bank's loss in it on the bets taken, lambda = DYNAMIC_KAPPA / points the players hold: a loss
+# of 10% of those points moves the odds of the outcome by about 10%. A price moves by at most
+# DYNAMIC_CAP either way from the model's; the pool is floored so a young club does not swing.
+DYNAMIC_SAMPLES = 20_000
+DYNAMIC_KAPPA = 1.0
+DYNAMIC_CAP = 0.25
+MIN_POOL = 2_000
+MAX_TILTED = 0.995
 TEAM_NAME = {"a": "Белые", "b": "Чёрные"}
 SELECTION = re.compile(
     r"^(?:1x2:(?P<outcome>a|draw|b)"
@@ -249,12 +266,15 @@ def essential(sim: om.Simulation, legs: list[dict], p: float) -> list[int]:
     return keep
 
 
-def price(sim: om.Simulation, legs: list[dict]) -> dict:
+Tilt = Callable[[list[dict]], float]
+
+
+def price(sim: om.Simulation, legs: list[dict], tilt: Tilt | None = None) -> dict:
     """Fair probability and offered odds. Selections implied by the others are dropped first.
     The offered price uses the larger of the joint probability and the product of single
     probabilities (the joint model was not shown to beat independence on combinations), with
     the larger of the legs' compounded margins and the margin curve applied to the combination
-    as one outcome."""
+    as one outcome. ``tilt`` moves the probabilities with the bets already taken (``live``)."""
     p = probability(sim, legs)
     if p < IMPOSSIBLE:
         # Mutually exclusive selections: the joint probability, not independence, decides.
@@ -263,9 +283,19 @@ def price(sim: om.Simulation, legs: list[dict]) -> dict:
     implied = [i for i in range(len(legs)) if i not in keep]
     legs = [legs[i] for i in keep]
     singles = [probability(sim, [leg]) for leg in legs] if len(legs) > 1 else [p]
+    if tilt is not None:
+        p = tilted(p, tilt(legs))
+        singles = [tilted(q, tilt([leg])) for leg, q in zip(legs, singles, strict=True)]
+    independent, odds = offer(legs, singles, p, sim.games)
+    return dict(p=p, singles=singles, independent=independent, odds=odds, implied=implied)
+
+
+def offer(
+    legs: list[dict], singles: list[float], p: float, games: dict[int, int]
+) -> tuple[float, float]:
+    """(independent probability, offered odds) for selections with these fair probabilities."""
     independent = float(np.prod(singles))
     priced = max(p, independent)
-    games = sim.games
     per_leg = float(
         np.prod([1 + leg_margin(leg, q, games) for leg, q in zip(legs, singles, strict=True)])
     )
@@ -273,8 +303,11 @@ def price(sim: om.Simulation, legs: list[dict]) -> dict:
         whole = per_leg  # an exact score is a long shot by design; the curve does not apply
     else:
         whole = 1 + float(margin_curve(priced, max(leg_scale(leg, games) for leg in legs)))
-    odds = max(MIN_ODDS, rounded(1 / (priced * max(per_leg, whole))))
-    return dict(p=p, singles=singles, independent=independent, odds=odds, implied=implied)
+    return independent, max(MIN_ODDS, rounded(1 / (priced * max(per_leg, whole))))
+
+
+def tilted(p: float, factor: float) -> float:
+    return min(p * factor, MAX_TILTED)
 
 
 def central_scores(mat: np.ndarray) -> list[tuple[int, int]]:
@@ -642,6 +675,110 @@ def simulation(db, odds: MatchOdds) -> om.Simulation:
     return sim
 
 
+# --------------------------------------------------------------------------- the line follows the bets
+
+
+@dataclass
+class Outcomes:
+    """Whole matches drawn from a simulation: the score and every player's goals and assists."""
+
+    white: np.ndarray  # (N,) goals of team a
+    black: np.ndarray
+    goals: dict[int, np.ndarray]  # player id -> (N,) goals
+    assists: dict[int, np.ndarray]
+    size: int  # side of the score matrix
+
+
+def draw_outcomes(sim: om.Simulation, n: int, seed: int) -> Outcomes:
+    rng = np.random.default_rng(seed)
+    n_draws, size = sim.mats.shape[0], sim.mats.shape[1]
+    draw = np.sort(rng.integers(0, n_draws, n))
+    flat = sim.mats.reshape(n_draws, -1)
+    cells = np.empty(n, dtype=np.int64)
+    start = 0
+    for d, count in enumerate(np.bincount(draw, minlength=n_draws)):
+        p = flat[d] / flat[d].sum()
+        cells[start : start + count] = rng.choice(size * size, size=count, p=p)
+        start += count
+    white, black = np.divmod(cells, size)
+    split: dict[str, dict[int, np.ndarray]] = {"player": {}, "assist": {}}
+    for kind, table in (("player", sim.shares), ("assist", sim.assists)):
+        for team, goals in (("white", white), ("black", black)):
+            if team not in table:
+                continue
+            ids, shares = table[team]
+            # The share nobody named takes the rest: unknown scorers, own goals, no assist.
+            named = shares[draw]
+            rest = np.clip(1.0 - named.sum(1, keepdims=True), 0.0, 1.0)
+            pvals = np.hstack([named, rest])
+            counts = rng.multinomial(goals, pvals / pvals.sum(1, keepdims=True))
+            for j, pid in enumerate(ids):
+                split[kind][pid] = counts[:, j]
+    return Outcomes(white, black, split["player"], split["assist"], size)
+
+
+def hits(out: Outcomes, legs: list[dict]) -> np.ndarray:
+    """Which drawn matches every selection wins in."""
+    won = score_mask(legs, out.size)[out.white, out.black]
+    for leg in legs:
+        if leg["kind"] in PLAYER_GROUP:
+            table = out.goals if leg["kind"] == "player" else out.assists
+            n = table.get(leg["player"])
+            if n is None:
+                return np.zeros_like(won)
+            won = won & ((n > leg["line"]) if leg["side"] == "over" else (n < leg["line"]))
+    return won
+
+
+def outcomes(db, odds: MatchOdds) -> Outcomes:
+    with _CACHE_LOCK:
+        out = _OUTCOMES.get(odds.id)
+    if out is None:
+        sim = simulation(db, odds)
+        out = draw_outcomes(sim, DYNAMIC_SAMPLES, odds.inputs["seed"] + 1)
+        with _CACHE_LOCK:
+            _OUTCOMES[odds.id] = out
+            while len(_OUTCOMES) > 8:
+                _OUTCOMES.popitem(last=False)
+    return out
+
+
+_OUTCOMES: OrderedDict[int, Outcomes] = OrderedDict()
+
+
+def live(db, odds: MatchOdds) -> Tilt | None:
+    """How the bets taken on this line move its probabilities; None while there are none.
+
+    The bank's loss L is computed in every drawn match; the weights exp(lambda L), normalised
+    to mean one, are the Esscher transform of the model -- the price at which a bank with
+    exponential utility is indifferent to one more small bet. A probability p becomes
+    p * E[w | outcome], capped at DYNAMIC_CAP either way. Combinations and player markets move
+    with the score markets they are correlated with."""
+    rows = db.execute(
+        select(Bet.selections, Bet.stake, Bet.odds).where(
+            Bet.odds_id == odds.id, Bet.status == "open"
+        )
+    ).all()
+    if not rows:
+        return None
+    out = outcomes(db, odds)
+    loss = np.zeros(len(out.white))
+    for selections, stake, price_ in rows:
+        won = hits(out, [parse(s) for s in selections])
+        loss += stake / UNIT * (price_ / 100 * won - 1.0)
+    lam = DYNAMIC_KAPPA / max(pool(db), MIN_POOL)
+    weights = np.exp(lam * (loss - loss.max()))
+    weights /= weights.mean()
+
+    def tilt(legs: list[dict]) -> float:
+        won = hits(out, legs)
+        if not won.any():
+            return 1.0
+        return float(np.clip(weights[won].mean(), 1 / (1 + DYNAMIC_CAP), 1 + DYNAMIC_CAP))
+
+    return tilt
+
+
 def legs_for(odds: MatchOdds, selections: list[str]) -> list[dict]:
     if not 1 <= len(selections) <= MAX_LEGS:
         raise DomainError(f"В ставке от 1 до {MAX_LEGS} исходов", 422)
@@ -657,7 +794,7 @@ def legs_for(odds: MatchOdds, selections: list[str]) -> list[dict]:
 def quote(db, odds: MatchOdds, selections: list[str]) -> dict:
     legs = legs_for(odds, selections)
     names = {int(k): v for k, v in odds.inputs["names"].items()}
-    result = price(simulation(db, odds), legs)
+    result = price(simulation(db, odds), legs, live(db, odds))
     if result["odds"] is None:
         raise DomainError("Такая комбинация невозможна", 422)
     return dict(
@@ -672,8 +809,17 @@ def quote(db, odds: MatchOdds, selections: list[str]) -> dict:
 
 def view(db, match: Match, odds: MatchOdds, admin: bool = False) -> dict:
     groups: OrderedDict[str, list] = OrderedDict()
+    tilt = live(db, odds)
+    games = simulation(db, odds).games if tilt else {}
     for s in odds.markets:
-        groups.setdefault(s["group"], []).append(dict(id=s["id"], label=s["label"], odds=s["odds"]))
+        item = dict(id=s["id"], label=s["label"], odds=s["odds"])
+        if tilt:
+            leg = parse(s["id"])
+            q = tilted(s["p"], tilt([leg]))
+            moved = offer([leg], [q], q, games)[1]
+            if moved != s["odds"]:
+                item |= dict(odds=moved, base=s["odds"])  # base: the model's price
+        groups.setdefault(s["group"], []).append(item)
     return dict(
         odds_id=odds.id,
         match_id=match.id,

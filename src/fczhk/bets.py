@@ -14,7 +14,8 @@ Rules:
   without a named assistant is a goal without an assist); a combination with a void selection is
   refunded as a whole;
 - nobody may bet on "under" for his own goals or assists: it would be his to decide;
-- otherwise a bet wins when every selection wins, and pays stake times odds.
+- otherwise a bet wins when every selection wins, and pays stake times odds;
+- the odds of a bet are fixed when it is placed, though the line keeps moving with later bets.
 """
 
 from __future__ import annotations
@@ -58,7 +59,9 @@ def place(db, actor: int, match: Match, body) -> Bet:
     ):
         raise DomainError("Нельзя ставить на «меньше» по своим голам и передачам", 422)
     quote = od.quote(db, odds, body.selections)
-    if round(body.odds, 2) != quote["odds"]:
+    # The line moves with every bet: a price that went up since the quote is taken as it is now,
+    # a price that went down needs the player to look again.
+    if round(body.odds, 2) > quote["odds"]:
         raise DomainError(f"Коэффициент изменился: теперь {quote['odds']:g}", 409)
     stake = round(body.stake * UNIT)
     if stake < MIN_STAKE:
