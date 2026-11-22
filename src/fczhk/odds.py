@@ -751,9 +751,9 @@ def live(db, odds: MatchOdds) -> Tilt | None:
 
     The bank's loss L is computed in every drawn match; the weights exp(lambda L), normalised
     to mean one, are the Esscher transform of the model -- the price at which a bank with
-    exponential utility is indifferent to one more small bet. A probability p becomes
-    p * E[w | outcome], capped at DYNAMIC_CAP either way. Combinations and player markets move
-    with the score markets they are correlated with."""
+    exponential utility is indifferent to one more small bet. The weights are capped at
+    DYNAMIC_CAP either way and a probability p becomes p * E[w | outcome]. Combinations and
+    player markets move with the score markets they are correlated with."""
     rows = db.execute(
         select(Bet.selections, Bet.stake, Bet.odds).where(
             Bet.odds_id == odds.id, Bet.status == "open"
@@ -769,12 +769,20 @@ def live(db, odds: MatchOdds) -> Tilt | None:
     lam = DYNAMIC_KAPPA / max(pool(db), MIN_POOL)
     weights = np.exp(lam * (loss - loss.max()))
     weights /= weights.mean()
+    # The cap is on the weights, not on each price: the moved probabilities still add up to
+    # one over any set of exclusive outcomes, so a capped line keeps its margin.
+    low, high = 1 / (1 + DYNAMIC_CAP), 1 + DYNAMIC_CAP
+    for _ in range(50):
+        weights = np.clip(weights, low, high)
+        mean = weights.mean()
+        if abs(mean - 1.0) < 1e-9:
+            break
+        weights /= mean
+    weights = np.clip(weights, low, high)
 
     def tilt(legs: list[dict]) -> float:
         won = hits(out, legs)
-        if not won.any():
-            return 1.0
-        return float(np.clip(weights[won].mean(), 1 / (1 + DYNAMIC_CAP), 1 + DYNAMIC_CAP))
+        return float(weights[won].mean()) if won.any() else 1.0
 
     return tilt
 

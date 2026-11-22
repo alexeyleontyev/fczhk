@@ -744,18 +744,85 @@ def test_a_player_bet_moves_that_players_line(env, call, club):
     assert after[under]["odds"] >= before[under]["odds"]
 
 
-def test_the_move_is_capped_and_scaled_by_the_points_players_hold(env, call, club):
+def test_the_move_is_capped_and_the_capped_line_keeps_its_margin(env, call, club):
     mid = club["match"]
+    _, before = _line(call, mid)
     _grant(env, "player", 5000)
-    _bet(call, mid, ["1x2:a"], 4000)
+    _bet(call, mid, ["1x2:draw"], 4000)  # a huge bet on the long shot hits the cap
+    _, after = _line(call, mid)
     _, factory, _, _, _ = env
     with factory() as db:
         snapshot = db.scalar(select(MatchOdds).where(MatchOdds.match_id == mid))
+        fair = {s["id"]: s["p"] for s in snapshot.markets}
         tilt = odds.live(db, snapshot)
-        up = tilt([odds.parse("1x2:a")])
-        down = tilt([odds.parse("1x2:b")])
-    assert up == pytest.approx(1 + odds.DYNAMIC_CAP)  # a huge bet hits the cap
-    assert 1 / (1 + odds.DYNAMIC_CAP) <= down < 1
+        moved = {sid: p * tilt([odds.parse(sid)]) for sid, p in fair.items()}
+        factor = {sid: moved[sid] / fair[sid] for sid in fair}
+    low, high = 1 / (1 + odds.DYNAMIC_CAP), 1 + odds.DYNAMIC_CAP
+    assert factor["1x2:draw"] == pytest.approx(high)
+    assert all(low - 1e-9 <= v <= high + 1e-9 for v in factor.values())
+    # The cap is on the weights: exclusive outcomes still add up to one, the book keeps its margin.
+    outcome = ("1x2:a", "1x2:draw", "1x2:b")
+    assert sum(moved[s] for s in outcome) == pytest.approx(1, abs=0.01)
+    assert sum(1 / after[s]["odds"] for s in outcome) == pytest.approx(
+        sum(1 / before[s]["odds"] for s in outcome), abs=0.02
+    )
+    for over in (s for s in fair if ":over:" in s):
+        under = over.replace(":over:", ":under:")
+        assert moved[over] + moved[under] == pytest.approx(1, abs=0.02), over
+        assert 1 / after[over]["odds"] + 1 / after[under]["odds"] > 1.03, over
+
+
+def test_every_market_and_combination_moves_the_right_way(env, call, club):
+    mid = club["match"]
+    o, before = _line(call, mid)
+    total = sorted(float(s.rsplit(":", 1)[1]) for s in before if s.startswith("total:over:"))
+    over, under = (f"total:{side}:{total[len(total) // 2]:g}" for side in ("over", "under"))
+    scorer = next(s for s in before if s.startswith("player:") and s.endswith(":over:0.5"))
+    white = int(scorer.split(":")[1]) in club["field"][:8]
+
+    def quoted(*selections):
+        body = dict(odds_id=o["odds_id"], selections=list(selections))
+        return call("POST", f"/matches/{mid}/odds/quote", body, role="player")["odds"]
+
+    combos = {
+        name: quoted(*legs)
+        for name, legs in dict(
+            with_it=("1x2:b", over), against=("1x2:a", under), half=("1x2:b", under)
+        ).items()
+    }
+    _grant(env, "player", 1000)
+    _bet(call, mid, ["1x2:b", over], 300)  # one combination: Black to win a high-scoring match
+    _, after = _line(call, mid)
+
+    def moved(sid):
+        return after[sid]["odds"] - before[sid]["odds"]
+
+    # Both selections of the combination get cheaper as singles, their opposites dearer.
+    assert moved("1x2:b") < 0 < moved("1x2:a") and moved("1x2:draw") > 0
+    assert moved(over) < 0 < moved(under)
+    # Correlated score markets follow: Black's handicaps and totals down, White's handicaps up.
+    for sid in before:
+        kind, team, *rest = sid.split(":")
+        if kind == "handicap":
+            assert moved(sid) <= 0 if team == "b" else moved(sid) >= 0, sid
+        if kind == "team" and team == "b":
+            assert moved(sid) <= 0 if rest[0] == "over" else moved(sid) >= 0, sid
+    # A scorer follows his team.
+    assert moved(scorer) >= 0 if white else moved(scorer) <= 0
+    # Ladders stay ordered: a higher line pays more on over, less on under.
+    for prefix, sign in (("total:over:", 1), ("total:under:", -1)):
+        ladder = [
+            after[s]["odds"]
+            for s in sorted(
+                (s for s in after if s.startswith(prefix)), key=lambda s: float(s.rsplit(":", 1)[1])
+            )
+        ]
+        assert all((b - a) * sign >= 0 for a, b in zip(ladder, ladder[1:], strict=False)), prefix
+    # The same combination gets cheaper, the opposite one dearer, and it moves more than a
+    # combination sharing only one selection with the bet.
+    assert quoted("1x2:b", over) < combos["with_it"]
+    assert quoted("1x2:a", under) > combos["against"]
+    assert quoted("1x2:b", over) / combos["with_it"] < quoted("1x2:b", under) / combos["half"]
 
 
 def test_pool_counts_balances_and_unclaimed_freebets(env, call, club):
