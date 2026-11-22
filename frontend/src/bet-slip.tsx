@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, X } from 'lucide-react'
 
 import { ApiError, api } from './api'
 import { points } from './betting'
 
-export type Selection = { id: string; label: string; odds: number }
+// base: the model's price when the bets taken have moved the line away from it.
+export type Selection = { id: string; label: string; odds: number; base?: number }
 
 export type MatchOdds =
   | { available: false; reason: string; bets: Bet[] }
@@ -140,7 +141,8 @@ export function MatchLine({
     return () => {
       active = false
     }
-  }, [matchId, oddsId, picked])
+    // The line moves with every bet: a reloaded line brings a fresh quote.
+  }, [matchId, oddsId, picked, line])
 
   function toggle(id: string) {
     setNotice('')
@@ -154,13 +156,13 @@ export function MatchLine({
     setBusy(true)
     setError('')
     try {
-      await api(`/matches/${matchId}/bets`, 'POST', {
+      const placed = await api<{ bet: Bet }>(`/matches/${matchId}/bets`, 'POST', {
         odds_id: oddsId,
         selections: picked,
         stake: Number(stake.replace(',', '.')),
         odds: quote.odds,
       })
-      setNotice(`Ставка принята: ${quote.labels.join(' + ')} · коэффициент ${odd(quote.odds)}`)
+      setNotice(`Ставка принята: ${quote.labels.join(' + ')} · коэффициент ${odd(placed.bet.odds)}`)
       setPicked([])
       setRevision((value) => value + 1)
       onPlaced()
@@ -188,7 +190,7 @@ export function MatchLine({
         <>
           <p className="muted caption">
             {line.open
-              ? 'Приём ставок до начала игры. Коэффициенты рассчитаны по утверждённым составам и не меняются.'
+              ? 'Приём ставок до начала игры. Коэффициенты рассчитаны по утверждённым составам и двигаются вместе со ставками: на что ставят больше, то дешевеет. Коэффициент ставки фиксируется в момент ставки.'
               : 'Приём ставок на эту игру закрыт.'}
           </p>
           {line.groups.map((group) => (
@@ -210,12 +212,25 @@ export function MatchLine({
                         type="button"
                         className={`odds-button ${picked.includes(s.id) ? 'picked' : ''}`}
                         aria-pressed={picked.includes(s.id)}
-                        aria-label={text === s.label ? undefined : `${s.label} ${odd(s.odds)}`}
+                        aria-label={
+                          text === s.label && !s.base
+                            ? undefined
+                            : `${s.label} ${odd(s.odds)}${s.base ? `, было ${odd(s.base)}` : ''}`
+                        }
+                        title={s.base ? `Было ${odd(s.base)}` : undefined}
                         disabled={!line.open || busy}
                         onClick={() => toggle(s.id)}
                       >
                         <span>{text}</span>
-                        <strong>{odd(s.odds)}</strong>
+                        <strong>
+                          {s.base &&
+                            (s.odds > s.base ? (
+                              <ArrowUp size={12} className="odds-up" aria-hidden="true" />
+                            ) : (
+                              <ArrowDown size={12} className="odds-down" aria-hidden="true" />
+                            ))}
+                          {odd(s.odds)}
+                        </strong>
                       </button>
                     ))}
                   </div>

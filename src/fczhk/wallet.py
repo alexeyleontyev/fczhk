@@ -191,6 +191,25 @@ def wallet_data(db, viewer: int, at: datetime | None = None) -> dict:
     )
 
 
+def pool(db, at: datetime | None = None) -> float:
+    """Points the players could still stake: every balance plus this week's freebets not yet
+    claimed by those who hold points. The dynamic line measures the bank's risk against it."""
+    week = week_key(at or now())
+    _, canonical = identities(db)
+    balances: dict[int, int] = {}
+    for player_id, amount in db.execute(
+        select(WalletEntry.player_id, func.sum(WalletEntry.amount)).group_by(WalletEntry.player_id)
+    ):
+        pid = canonical[player_id]
+        balances[pid] = balances.get(pid, 0) + amount
+    claimed = {
+        canonical[pid]
+        for pid in db.scalars(select(WalletEntry.player_id).where(WalletEntry.freebet_week == week))
+    }
+    unclaimed = len(balances.keys() - claimed)
+    return points(sum(max(b, 0) for b in balances.values()) + unclaimed * FREEBET_POINTS * UNIT)
+
+
 def leaderboard(db) -> dict:
     """Every player who has ever held points, by balance; and the bank's side of all bets."""
     people, canonical = identities(db)
