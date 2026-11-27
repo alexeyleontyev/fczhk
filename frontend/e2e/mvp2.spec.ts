@@ -255,7 +255,6 @@ test('mobile: temporary guest rating, 3 distinct teams, keepers, manual editing 
   expect(await api('GET', `/matches/${m.id}/balance`)).toHaveLength(1)
   await page.screenshot({ path: 'test-results/mobile-tactical-board.png', fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.getByText('Действия и подробности', { exact: true }).click()
   await page.getByRole('button', { name: 'Очистить команды', exact: true }).click()
   await expect(page.locator('.tactics-token')).toHaveCount(0)
   expect((await api('GET', `/matches/${m.id}`)).status).toBe('approved')

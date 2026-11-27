@@ -116,8 +116,19 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin: 0 0 14px;
+}
+.lineup-team-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-1);
+}
+.lineup-team-actions > .button {
+  width: var(--control-compact);
+  min-height: var(--control-compact);
+  padding: 0;
 }
 .lineup-table-intro p {
   font-size: var(--font-body);
@@ -132,6 +143,7 @@
   font-size: var(--font-caption);
   color: var(--muted);
   white-space: nowrap;
+  margin-inline-start: auto;
 }
 .lineup-strength-key i {
   width: 70px;
@@ -447,9 +459,6 @@
 .lineup-workspace .lineup-ratings {
   margin: 18px 0 0;
 }
-.lineup-workspace .tactics-details {
-  margin-top: 14px;
-}
 @media (max-width: 700px) {
   .panel.lineup-variant-picker {
     padding: 13px;
@@ -472,6 +481,10 @@
     min-height: var(--control-compact);
     justify-content: center;
   }
+  .lineup-withdraw-proposal {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
   .lineup-proposal-note,
   .lineup-variant-status {
     font-size: var(--font-caption);
@@ -479,7 +492,10 @@
   .lineup-table-intro {
     gap: var(--space-2);
     margin-bottom: 12px;
-    align-items: start;
+  }
+  .lineup-team-actions > .button {
+    width: 44px;
+    min-height: 44px;
   }
   .lineup-table-intro p {
     font-size: var(--font-caption);
@@ -488,7 +504,6 @@
   .lineup-strength-key {
     gap: var(--space-1);
     font-size: var(--font-micro);
-    margin-top: 4px;
   }
   .lineup-strength-key i {
     width: 34px;
@@ -3217,13 +3232,11 @@ footer > span:first-child {
   background: var(--green);
   color: white;
 }
-.tactics-roster,
-.tactics-details {
+.tactics-roster {
   padding: 14px 16px;
   margin: 0;
 }
-.tactics-roster summary,
-.tactics-details summary {
+.tactics-roster summary {
   cursor: pointer;
   font-size: var(--font-control);
   font-weight: 600;
@@ -3305,12 +3318,6 @@ footer > span:first-child {
   gap: 10px;
   text-align: center;
 }
-.tactics-details p {
-  margin: 12px 0;
-}
-.tactics-details .inline {
-  flex-wrap: wrap;
-}
 .tactics-drag-ghost {
   position: fixed;
   transform: translate(-50%, -140%);
@@ -3327,8 +3334,7 @@ footer > span:first-child {
   .tactics-pitch {
     height: 420px;
   }
-  .tactics-roster,
-  .tactics-details {
+  .tactics-roster {
     padding: 12px;
   }
   .tactics-scores {
@@ -3337,6 +3343,13 @@ footer > span:first-child {
   .tactics-scores > div {
     gap: 5px;
     font-size: var(--font-small);
+  }
+}
+@media (max-width: 380px) {
+  .lineup-strength-key {
+    order: 1;
+    flex-basis: 100%;
+    justify-content: flex-end;
   }
 }
 

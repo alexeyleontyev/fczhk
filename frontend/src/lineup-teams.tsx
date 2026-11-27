@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent, CSSProperties } from 'react'
+import type { PointerEvent, CSSProperties, ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, GripVertical } from 'lucide-react'
 import { PlayerName } from './player-name'
 import { TeamDots } from './team-board'
@@ -52,6 +52,7 @@ export function LineupTeams({
   onChange,
   color,
   onExchange,
+  actions,
 }: {
   people: Person[]
   assignments: Assignments
@@ -59,6 +60,7 @@ export function LineupTeams({
   onChange: (id: number, team: Team | null) => void
   onExchange: (first: number, second: number) => void
   color: (p: Person) => CSSProperties
+  actions: ReactNode
 }) {
   const [exchanging, setExchanging] = useState(false)
   const [first, setFirst] = useState<number | null>(null)
@@ -119,6 +121,9 @@ export function LineupTeams({
         <span className="lineup-strength-key">
           Ниже <i /> Выше
         </span>
+        <div className="lineup-team-actions" role="group" aria-label="Действия с составом">
+          {actions}
+        </div>
       </div>
       {exchanging && (
         <p className="lineup-exchange-hint" role="status">

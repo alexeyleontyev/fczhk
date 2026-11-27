@@ -327,13 +327,27 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
     await page.reload()
     await page.getByLabel('Вариант состава').selectOption('draft')
     await page.getByRole('tab', { name: 'Команды', exact: true }).click()
-    await page.getByText('Действия и подробности', { exact: true }).click()
-    const share = page.getByRole('button', {
-      name: 'Поделиться в чат',
-      exact: true,
-      includeHidden: true,
-    })
+    const actions = page.getByRole('group', { name: 'Действия с составом', exact: true })
+    const share = actions.getByRole('button', { name: 'Поделиться в чат', exact: true })
+    const clear = actions.getByRole('button', { name: 'Очистить команды', exact: true })
+    await expect(page.getByText('Действия и подробности', { exact: true })).toHaveCount(0)
     await expect(share).toBeEnabled()
+    for (const width of [320, 390, 1440]) {
+      await page.setViewportSize({ width, height: 844 })
+      const teamsTop = (await page.locator('.lineup-sticky-totals').boundingBox())!.y
+      for (const button of [share, clear]) {
+        await expect(button).toBeVisible()
+        const box = (await button.boundingBox())!
+        expect(box.y + box.height).toBeLessThanOrEqual(teamsTop)
+        expect(box.x).toBeGreaterThanOrEqual(0)
+        expect(box.x + box.width).toBeLessThanOrEqual(width)
+        if (width <= 390) {
+          expect(box.width).toBeGreaterThanOrEqual(44)
+          expect(box.height).toBeGreaterThanOrEqual(44)
+        }
+      }
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
     const beforeShare = await send(`/matches/${m.id}`)
     await answerConfirmation(share, false, 'в чат для составов?')
     expect(publicationState(await send(`/matches/${m.id}`))).toEqual(publicationState(beforeShare))
@@ -355,13 +369,13 @@ test('tactical positions follow ratings; member drag/tap drafts are private, per
     expect(
       beforeClear.publications.filter((p: { kind: string }) => p.kind === 'lineup_share'),
     ).toHaveLength(1)
-    await page.getByRole('button', { name: 'Очистить команды', exact: true }).click()
+    await clear.click()
+    await expect(share).toBeDisabled()
     await expect(page.locator('.tactics-token')).toHaveCount(0)
     await page.getByRole('tab', { name: 'Поле', exact: true }).click()
     await expect(
       page.getByText('Сформируйте команды на вкладке «Команды»', { exact: true }),
     ).toBeVisible()
-    await expect(share).toBeDisabled()
     await page.reload()
     await page.getByLabel('Вариант состава').selectOption('draft')
     await expect(page.locator('.tactics-empty')).toBeVisible()

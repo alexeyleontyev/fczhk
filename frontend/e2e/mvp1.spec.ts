@@ -47,7 +47,6 @@ test('mobile admin: create, enroll, payment, finalize, teams and publish', async
   await page.getByRole('button', { name: 'Михаил: чёрные', exact: true }).click()
   await page.getByRole('button', { name: 'Утвердить состав', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Состав утверждён' })).toBeVisible()
-  await page.getByText('Действия и подробности', { exact: true }).click()
   await page.getByRole('button', { name: 'Поменять цвета команд' }).click()
   await expect(
     page.getByLabel('Чёрная команда').getByRole('button', { name: 'Алексей', exact: true }),

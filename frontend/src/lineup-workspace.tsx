@@ -584,6 +584,18 @@ export function TacticsScreen({
       'Состав поставлен в очередь отправки в чат',
     )
   }
+  function clearTeams() {
+    edit({
+      version: data!.version,
+      roster_version: data!.roster_version,
+      fingerprint: data!.fingerprint,
+      assignments: Object.fromEntries(data!.players.map((p) => [p.registration_id, null])),
+      placements: {},
+      source: 'manual',
+      variant: 0,
+    })
+    setPreview(null)
+  }
   return (
     <div className="tactics-screen lineup-workspace">
       {error && (
@@ -656,6 +668,11 @@ export function TacticsScreen({
                   {proposal.author} · {proposalDate(proposal.updated_at)} МСК
                 </small>
               )}
+              {data.auction && (
+                <Button className="ghost compact" onClick={onAuction}>
+                  Открыть аукцион
+                </Button>
+              )}
             </div>
           </div>
           {data.editable && (
@@ -675,6 +692,15 @@ export function TacticsScreen({
               >
                 {mine ? 'Обновить предложение' : 'Предложить состав'}
               </Button>
+              {mine && proposals.editable && (
+                <Button
+                  className="ghost compact lineup-withdraw-proposal"
+                  disabled={busy || working}
+                  onClick={() => void withdraw()}
+                >
+                  Отозвать предложение
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -702,26 +728,37 @@ export function TacticsScreen({
           </div>
         )}
         {preview && ['community', 'game'].includes(choice) && (
-          <div className="tactics-variants" role="group" aria-label="Варианты составов">
-            <span className="muted caption">Вариант</span>
-            {preview.result.variants.map((_, i) => (
-              <button
-                key={i}
-                aria-label={`Показать вариант ${i + 1}`}
-                aria-pressed={candidate?.variant === i}
-                disabled={disabled}
-                onClick={() => loadVariant(preview, i)}
-              >
-                {i + 1}
-              </button>
+          <>
+            <div className="tactics-variants" role="group" aria-label="Варианты составов">
+              <span className="muted caption">Вариант</span>
+              {preview.result.variants.map((_, i) => (
+                <button
+                  key={i}
+                  aria-label={`Показать вариант ${i + 1}`}
+                  aria-pressed={candidate?.variant === i}
+                  disabled={disabled}
+                  onClick={() => loadVariant(preview, i)}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+            {preview.result.warnings.map((warning) => (
+              <p className="muted caption lineup-proposal-note" key={warning}>
+                {warning}
+              </p>
             ))}
-          </div>
+          </>
         )}
         <details className="lineup-help compact-explanation">
           <summary>Как работать с составами</summary>
           <p className="muted caption">
             {title}. Перенос игрока создаёт личную прикидку. Нажмите «Предложить состав», чтобы её
             увидело сообщество. Отмена и возврат меняют только вашу прикидку.
+          </p>
+          <p className="muted caption">
+            Σ — сумма атаки и защиты полевых. Знак ≥ означает, что часть оценок отсутствует. Баллы
+            утверждённого состава сохранены на игру.
           </p>
           {!proposals.editable && data.editable && (
             <p className="muted caption">
@@ -753,6 +790,40 @@ export function TacticsScreen({
           onChange={setTeam}
           onExchange={exchangePlayers}
           color={color}
+          actions={
+            <>
+              <button
+                type="button"
+                className="button secondary"
+                aria-label="Поделиться в чат"
+                title="Поделиться в чат"
+                disabled={
+                  busy ||
+                  working ||
+                  stale ||
+                  !people.every((p) => assignments[p.registration_id]) ||
+                  !people.some((p) => assignments[p.registration_id] === 'white') ||
+                  !people.some((p) => assignments[p.registration_id] === 'black') ||
+                  !data.share_available
+                }
+                onClick={() => void share()}
+              >
+                <Share2 size={16} aria-hidden="true" />
+              </button>
+              {data.editable && (
+                <button
+                  type="button"
+                  className="button secondary"
+                  aria-label="Очистить команды"
+                  title="Очистить команды"
+                  disabled={busy || working}
+                  onClick={clearTeams}
+                >
+                  <Eraser size={16} aria-hidden="true" />
+                </button>
+              )}
+            </>
+          }
         />
         {data.editable && !complete && (
           <p className="alert muted caption" role="status">
@@ -803,79 +874,6 @@ export function TacticsScreen({
             )}
           </div>
         )}
-        <details className="panel tactics-details">
-          <summary>Действия и подробности</summary>
-          <p className="muted caption">
-            Суммы атаки и защиты — только полевые, без вратарей. Σ — атака + защита. Знак ≥ означает
-            неполные оценки. Индивидуальные оценки текущие; баллы утверждённого состава сохранены на
-            игру. Публикация предложения и отправка в чат — отдельные действия.
-          </p>
-          <div className="inline wrap">
-            <Button
-              className="ghost compact"
-              disabled={
-                busy ||
-                working ||
-                stale ||
-                !people.length ||
-                !people.every((p) => assignments[p.registration_id]) ||
-                !people.some((p) => assignments[p.registration_id] === 'white') ||
-                !people.some((p) => assignments[p.registration_id] === 'black') ||
-                !data.share_available
-              }
-              onClick={() => void share()}
-            >
-              <Share2 size={15} />
-              Поделиться в чат
-            </Button>
-            {data.editable && (
-              <>
-                <Button
-                  className="ghost compact"
-                  disabled={busy || working}
-                  onClick={() => {
-                    edit({
-                      version: data.version,
-                      roster_version: data.roster_version,
-                      fingerprint: data.fingerprint,
-                      assignments: Object.fromEntries(
-                        data.players.map((p) => [p.registration_id, null]),
-                      ),
-                      placements: {},
-                      source: 'manual',
-                      variant: 0,
-                    })
-                    setPreview(null)
-                  }}
-                >
-                  <Eraser size={15} />
-                  Очистить команды
-                </Button>
-                {mine && proposals.editable && (
-                  <Button
-                    className="ghost compact"
-                    disabled={busy || working}
-                    onClick={() => void withdraw()}
-                  >
-                    Отозвать предложение
-                  </Button>
-                )}
-              </>
-            )}
-            {data.auction && (
-              <Button className="ghost compact" onClick={onAuction}>
-                Открыть аукцион
-              </Button>
-            )}
-          </div>
-          {preview &&
-            ['community', 'game'].includes(choice) &&
-            preview.result.warnings.map((w) => (
-              <p className="muted caption" key={w}>
-                {w}
-              </p>
-            ))}
-        </details>
       </section>
       <section hidden={view !== 'field'} aria-label="Расстановка на поле">
         <div
