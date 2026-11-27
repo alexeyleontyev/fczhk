@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import timedelta
+from html import escape
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
@@ -10,7 +11,7 @@ from sqlalchemy import case, or_, select
 from .bets import worker_tick as betting_tick
 from .db import database, now
 from .models import PostImage, Publication
-from .notifications import SCHEDULED_KINDS, delivery_allowed
+from .notifications import ROSTER_KINDS, SCHEDULED_KINDS, delivery_text
 from .operations import cleanup_sessions, heartbeat
 from .services import schedule_tick
 
@@ -52,6 +53,15 @@ def app_link(cfg, match_id=None, screen=None):
     return cfg.public_url
 
 
+def publication_markup(cfg, match_id, kind):
+    buttons = [InlineKeyboardButton(text="Открыть игру", url=app_link(cfg, match_id))]
+    if kind == "teams":
+        buttons.append(
+            InlineKeyboardButton(text="Сделать прогноз", url=app_link(cfg, match_id, "prediction"))
+        )
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
+
 def publication_parts(kind, content, photo=False):
     if photo:
         # Reserve room for the stale warning, keeping photo captions below Telegram's limit.
@@ -63,7 +73,10 @@ def publication_parts(kind, content, photo=False):
     return (
         [(content, "HTML")]
         if kind == "auction_start"
-        else [(part, None) for part in chunks(content, utf16=kind in ("result", "lineup_share"))]
+        else [
+            (part, None)
+            for part in chunks(content, utf16=kind in ("result", "lineup_share", *ROSTER_KINDS))
+        ]
     )
 
 
@@ -89,21 +102,25 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
                 Publication.stale.is_(False),
                 Publication.next_attempt_at <= now(),
             )
-            .order_by(case((Publication.kind.in_(SCHEDULED_KINDS), 0), else_=1), Publication.id)
+            .order_by(
+                case((Publication.kind.in_((*SCHEDULED_KINDS, *ROSTER_KINDS)), 0), else_=1),
+                Publication.id,
+            )
             .with_for_update(skip_locked=True)
             .limit(1)
         )
         if not pub:
             return False
-        if not delivery_allowed(db, pub):
+        content = delivery_text(db, pub, cfg)
+        if content is None:
             pub.status, pub.error = "cancelled", None
             return True
+        pub.text = content
         pub.status, pub.claimed_at = "sending", now()
         pub.attempts += 1
-        pub_id, chat, content, match_id, kind = (
+        pub_id, chat, match_id, kind = (
             pub.id,
             pub.chat_id,
-            pub.text,
             pub.match_id,
             pub.kind,
         )
@@ -128,21 +145,7 @@ async def deliver_one(cfg, factory, bot=None) -> bool:
             if i < len(already_sent):
                 continue
             markup = (
-                InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(text="Открыть игру", url=app_link(cfg, match_id))]
-                        + (
-                            [
-                                InlineKeyboardButton(
-                                    text="Сделать прогноз",
-                                    url=app_link(cfg, match_id, "prediction"),
-                                )
-                            ]
-                            if kind == "teams"
-                            else []
-                        )
-                    ]
-                )
+                publication_markup(cfg, match_id, kind)
                 if i == len(parts) - 1 or (photo is not None and i == 0)
                 else None
             )
@@ -210,18 +213,28 @@ async def mark_stale(cfg, factory, bot=None):
             pub.stale_marked = True
             return
         try:
-            prefix = (
-                "⚠️ НЕАКТУАЛЬНО — результат исправлен\n\n"
+            heading = pub.stale_heading or (
+                "⚠️ НЕАКТУАЛЬНО — результат исправлен"
                 if pub.kind == "result"
-                else "⚠️ НЕАКТУАЛЬНО — состав или параметры изменились\n\n"
+                else "⚠️ НЕАКТУАЛЬНО — состав или параметры изменились"
             )
+            parts = publication_parts(pub.kind, pub.text, photo=pub.image_id is not None)
+            if pub.stale_heading:
+                parts = parts[: len(pub.message_ids)]
             for index, (mid, (part, parse_mode)) in enumerate(
-                zip(
-                    pub.message_ids,
-                    publication_parts(pub.kind, pub.text, photo=pub.image_id is not None),
-                    strict=True,
-                )
+                zip(pub.message_ids, parts, strict=True)
             ):
+                if pub.stale_heading and index == 0:
+                    part = part.partition("\n")[2].lstrip("\n")
+                body = part if parse_mode == "HTML" else escape(part, quote=False)
+                content = f"<b>{escape(heading)}</b>"
+                if body:
+                    content += f"\n\n<s>{body}</s>"
+                markup = (
+                    publication_markup(cfg, pub.match_id, pub.kind)
+                    if pub.stale_heading and index == len(pub.message_ids) - 1
+                    else None
+                )
                 try:
                     edit = (
                         bot.edit_message_caption
@@ -230,13 +243,14 @@ async def mark_stale(cfg, factory, bot=None):
                     )
                     await edit(
                         **(
-                            {"caption": prefix + part}
+                            {"caption": content}
                             if pub.image_id and index == 0
-                            else {"text": prefix + part}
+                            else {"text": content}
                         ),
                         chat_id=pub.chat_id,
                         message_id=mid,
-                        parse_mode=parse_mode,
+                        parse_mode="HTML",
+                        reply_markup=markup,
                     )
                 except TelegramBadRequest as exc:
                     if "message is not modified" not in str(exc):

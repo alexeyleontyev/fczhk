@@ -378,6 +378,13 @@ def confirm_payment(db: Session, actor: int, match: Match, r: Registration, paid
     match.version += 1
 
 
+def confirm_reported_payments(db: Session, actor: int, match: Match):
+    ensure_pregame(db, match)
+    for r in entries(db, match.id):
+        if r.position == "field" and r.payment_reported and not r.paid:
+            confirm_payment(db, actor, match, r, True)
+
+
 def report_payment(db: Session, actor: int, match: Match, r: Registration, reported: bool):
     if r.player_id != actor:
         raise DomainError("Можно отметить только свою оплату", 403)
@@ -694,9 +701,10 @@ def schedule_tick(db: Session, cfg: Settings, at: datetime | None = None) -> int
     if not template:
         return None
     local = (at or now()).astimezone(MOSCOW)
-    from .notifications import schedule_notifications
+    from .notifications import schedule_notifications, schedule_roster_notifications
 
     schedule_notifications(db, template, local)
+    schedule_roster_notifications(db, template, cfg, local)
     if not template.enabled:
         return None
     # A prepared collection keeps its own dates even if the weekly template changes.

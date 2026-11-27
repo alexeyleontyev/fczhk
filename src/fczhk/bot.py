@@ -13,6 +13,7 @@ from sqlalchemy import select
 from .auth import check_member, player_for_telegram
 from .db import database, now
 from .models import BotCallbackReceipt, GameTemplate, Match, MatchResult, Registration
+from .notifications import payment_circles
 from .results import player_stats, result_data, result_text
 from .scheduling import schedule_description
 from .services import MOSCOW, DomainError, cancel, get_match, match_data, register, report_payment
@@ -36,9 +37,8 @@ def game_text(data):
             role = "🧤 " if approved else ""
             line = f"{number}. {role}{registration['alias']} · бесплатно"
         else:
-            reported = "🟢" if registration["payment_reported"] else "🔴"
-            confirmed = "🟢" if registration["paid"] else "🔴"
-            line = f"{number}. {registration['alias']} · {reported}{confirmed}"
+            marks = payment_circles(registration["payment_reported"], registration["paid"])
+            line = f"{number}. {registration['alias']} · {marks}"
         if not approved:
             line += f" · {registration['registered_at'].astimezone(MOSCOW):%d.%m %H:%M:%S}"
         return line

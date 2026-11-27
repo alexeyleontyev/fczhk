@@ -146,7 +146,11 @@ async def test_worker_sends_photo_with_caption_and_marks_caption_stale(env, call
     await mark_stale(env[0], env[1], bot)
     bot.edit_message_caption.assert_awaited_once()
     bot.edit_message_text.assert_not_awaited()
-    assert "НЕАКТУАЛЬНО" in bot.edit_message_caption.await_args.kwargs["caption"]
+    edited = bot.edit_message_caption.await_args.kwargs
+    assert edited["parse_mode"] == "HTML"
+    assert edited["caption"].startswith("<b>⚠️ НЕАКТУАЛЬНО")
+    assert "\n\n<s>⚽ Открыта запись" in edited["caption"]
+    assert edited["caption"].endswith("</s>")
     assert (
         len(bot.edit_message_caption.await_args.kwargs["caption"].encode("utf-16-le")) // 2 <= 1024
     )

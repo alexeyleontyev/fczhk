@@ -430,7 +430,7 @@ async def test_auction_result_is_delivered_once_by_existing_worker(env, call, au
         db.scalar(select(Publication).where(Publication.kind == "auction_start")).stale = True
     await mark_stale(cfg, factory, bot)
     assert len(bot.edited) == 1 and bot.edited[0]["parse_mode"] == "HTML"
-    assert "tg://user?id=101" in bot.edited[0]["text"]
+    assert f"<s>{bot.sent[0][1]}</s>" in bot.edited[0]["text"]
 
 
 def test_ties_rounds_then_free_assignment_and_approval(env, call, auction_game):

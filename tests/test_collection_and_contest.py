@@ -7,7 +7,7 @@ from alembic.config import Config
 from sqlalchemy import func, select, text
 
 from fczhk.db import database, now
-from fczhk.models import Match, Player, PredictionBaseline, Publication, Registration
+from fczhk.models import Audit, Match, Player, PredictionBaseline, Publication, Registration
 from fczhk.predictions import category, points
 from fczhk.worker import app_link, deliver_one
 from tests.test_telegram import callback_replies, command_replies, payment_button
@@ -68,6 +68,50 @@ def test_goalkeeper_registration_rejects_payment_marks(call, game):
     assert call("GET", path) == joined
     moved = call("POST", path + "/join", {"position": "field"}, role="player")
     assert not moved["registrations"][0]["selected"]
+
+
+def test_confirm_all_payments_includes_reported_reserve_and_requires_current_admin_version(
+    env, call, game
+):
+    mid = game["id"]
+    populate(env[1], mid, fields=18, keepers=1)
+    with env[1]() as db, db.begin():
+        rows = list(db.scalars(select(Registration).order_by(Registration.id)))
+        for i in (0, 1, 16, 17, 18):
+            rows[i].paid = False
+        for i in (0, 2, 16, 17, 18):
+            rows[i].payment_reported = True
+        rows[17].active = False
+        already_confirmed = rows[2].id
+        paid_at = now() - timedelta(days=1)
+        reported_at = paid_at - timedelta(minutes=10)
+        rows[2].paid_at, rows[2].payment_reported_at = paid_at, reported_at
+        expected = {rows[0].id, rows[16].id}
+        untouched = {rows[1].id, rows[17].id, rows[18].id}
+        match = db.get(Match, mid)
+        version = match.version
+    path = f"/matches/{mid}/payments/confirm-all"
+    call("POST", path, {"version": version}, role="player", expected=403)
+    call("POST", path, {"version": version - 1}, expected=409)
+    updated = call("POST", path, {"version": version})
+    assert updated["roster_version"] == game["roster_version"]
+    confirmed = next(r for r in updated["registrations"] if r["id"] == already_confirmed)
+    assert confirmed["payment_reported"] and confirmed["paid"]
+    assert confirmed["payment_status"] == "confirmed"
+    assert call("POST", path, {"version": updated["version"]}) == updated
+    with env[1]() as db:
+        for row in db.scalars(select(Registration)):
+            if row.id in expected:
+                assert row.paid and row.paid_at and row.payment_reported
+            elif row.id in untouched:
+                assert not row.paid and row.paid_at is None
+            elif row.id == already_confirmed:
+                assert row.paid and row.payment_reported
+                assert row.paid_at == paid_at and row.payment_reported_at == reported_at
+        audits = list(db.scalars(select(Audit).where(Audit.action == "payment.changed")))
+        assert {a.data["registration_id"] for a in audits} == expected
+        assert len(audits) == len(expected)
+        assert all(a.actor_id == env[4]["admin"] for a in audits)
 
 
 def test_finalization_and_reserve_require_confirmation_only_for_field_players(env, call, game):

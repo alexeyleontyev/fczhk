@@ -334,6 +334,17 @@ def router(ctx):
         db.flush()
         return svc.match_data(db, m)
 
+    @app.post("/api/matches/{match_id}/payments/confirm-all")
+    def confirm_all_payments(
+        match_id: int,
+        body: S.Version,
+        p: Player = Depends(admin),
+        db: Session = Depends(db_dep, scope="function"),
+    ):
+        m = svc.get_match(db, match_id, body.version, lock=True)
+        svc.confirm_reported_payments(db, p.id, m)
+        return svc.match_data(db, m)
+
     @app.put("/api/matches/{match_id}/registrations/{reg_id}/payment")
     def payment(
         match_id: int,

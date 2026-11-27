@@ -23,6 +23,9 @@ export function Roster({
   ]
   const mainPlayers = registrations.filter(main)
   const mainField = mainPlayers.filter((r) => r.position === 'field')
+  const hasReportedPayments = registrations.some(
+    (r) => r.position === 'field' && r.payment_reported && !r.paid,
+  )
   const groups = [
     { title: 'Основной список', className: 'roster-main', rows: mainPlayers },
     { title: 'Резерв', className: 'roster-reserve', rows: registrations.filter((r) => !main(r)) },
@@ -69,13 +72,32 @@ export function Roster({
             {group.title} · {group.rows.length}
           </h3>
           {group.className === 'roster-main' && (
-            <p className="muted caption">
-              Полевые: {mainField.length} / {m.field_limit} · Вратари:{' '}
-              {mainPlayers.length - mainField.length} / {m.keeper_limit}
-              <br />
-              Отметили оплату: {mainField.filter((r) => r.payment_reported).length} · Подтверждено:{' '}
-              {mainField.filter((r) => r.paid).length}
-            </p>
+            <div className={admin ? 'inline' : undefined}>
+              <p className="muted caption">
+                Полевые: {mainField.length} / {m.field_limit} · Вратари:{' '}
+                {mainPlayers.length - mainField.length} / {m.keeper_limit}
+                <br />
+                Отметили оплату: {mainField.filter((r) => r.payment_reported).length} ·
+                Подтверждено: {mainField.filter((r) => r.paid).length}
+              </p>
+              {admin && (
+                <Button
+                  className="secondary compact"
+                  disabled={busy || !hasReportedPayments}
+                  onClick={() =>
+                    void run(
+                      () =>
+                        api(`/matches/${m.id}/payments/confirm-all`, 'POST', {
+                          version: m.version,
+                        }),
+                      'Отмеченные оплаты подтверждены',
+                    )
+                  }
+                >
+                  Подтвердить всех
+                </Button>
+              )}
+            </div>
           )}
           {!group.rows.length && (
             <p className="muted empty-small">

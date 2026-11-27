@@ -215,6 +215,7 @@ class Publication(Base):
     chat_id: Mapped[str] = mapped_column(String(100), default="")
     error: Mapped[str | None] = mapped_column(Text)
     stale: Mapped[bool] = mapped_column(Boolean, default=False)
+    stale_heading: Mapped[str | None] = mapped_column(String(100))
     stale_marked: Mapped[bool] = mapped_column(Boolean, default=False)
     claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     next_attempt_at: Mapped[datetime] = mapped_column(UTCDateTime, default=now)

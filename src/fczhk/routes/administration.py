@@ -120,7 +120,7 @@ def router(ctx):
         pub = db.scalar(select(Publication).where(Publication.id == pub_id).with_for_update())
         if not pub or pub.stale or pub.status not in ("failed", "uncertain"):
             raise svc.DomainError("Повторная публикация недоступна")
-        if not delivery_allowed(db, pub):
+        if not delivery_allowed(db, pub, cfg=cfg):
             raise svc.DomainError(
                 "Сообщение отключено в настройках или время отправки истекло", 409
             )

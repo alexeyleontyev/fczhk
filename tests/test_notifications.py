@@ -1,15 +1,17 @@
 from datetime import datetime, timedelta
+from html import escape
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
 
-from fczhk.models import Match, Publication, SkippedGameDay
+from fczhk.models import Match, Player, Publication, Registration, SkippedGameDay
 from fczhk.notifications import delivery_allowed, next_collection
 from fczhk.scheduling import MOSCOW
 from fczhk.services import schedule_tick
-from fczhk.worker import deliver_one
+from fczhk.worker import deliver_one, mark_stale
+from tests.test_workflows import populate
 
 OPENING = datetime(2032, 6, 1, 12, tzinfo=MOSCOW)
 
@@ -214,3 +216,243 @@ async def test_disabling_type_also_cancels_queued_notifications(env, call, game)
     assert not await deliver_one(env[0], env[1], bot)
     bot.send_message.assert_not_awaited()
     assert notices(env, "registration")[0].status == "cancelled"
+
+
+async def test_full_roster_posts_once_per_destination_even_without_confirmed_payments(
+    env, call, monkeypatch
+):
+    env[0].community_chat_id = "-1003333333"
+    configure(call, announcement_enabled=False, payment_reminder_enabled=False)
+    mid = tick(env, OPENING)
+    populate(env[1], mid, fields=15, keepers=2)
+    with env[1]() as db, db.begin():
+        for row in db.scalars(select(Registration)):
+            row.paid = False
+    at = OPENING + timedelta(hours=2)
+    monkeypatch.setattr("fczhk.notifications.now", lambda: at)
+    monkeypatch.setattr("fczhk.worker.now", lambda: at)
+    tick(env, at)
+    assert not notices(env, "roster_full")
+
+    path = f"/matches/{mid}/join"
+    call("POST", path, {"position": "field"}, role="player")
+    tick(env, at)
+    call("DELETE", path, role="player")
+    bot = SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=20)))
+    for _ in range(2):
+        assert await deliver_one(env[0], env[1], bot)
+    bot.send_message.assert_not_awaited()
+
+    call("POST", path, {"position": "field"}, role="player")
+    for _ in range(3):
+        tick(env, at)
+    for _ in range(2):
+        assert await deliver_one(env[0], env[1], bot)
+    assert bot.send_message.await_count == 2
+    chat, content = bot.send_message.await_args_list[0].args
+    assert chat == "-1003333333"
+    assert bot.send_message.await_args_list[1].args == ("-1001111111", content)
+    assert content.startswith("⚽ Состав на игру 04.06 в 20:00 МСК набран!")
+    assert "Полевые (16/16)" in content and "Вратари (2/2)" in content
+    assert "16. Игрок" in content and "2. Участник 16" in content
+    call("DELETE", path, role="player")
+    call("POST", path, {"position": "field"}, role="player")
+    at = OPENING + timedelta(days=2, hours=8)
+    tick(env, at)
+    for kind in ("roster_full", "roster_full_ch"):
+        posts = notices(env, kind)
+        assert len(posts) == 1 and posts[0].status == "sent"
+    assert not notices(env, "roster_notice_1")
+
+
+async def test_roster_reminders_have_separate_windows_and_use_fresh_registration_statuses(
+    env, call, monkeypatch
+):
+    configure(
+        call,
+        announcement_enabled=False,
+        payment_reminder_enabled=False,
+        cost=70000,
+        payment_details="Перевод по номеру телефона",
+    )
+    mid = tick(env, OPENING)
+    populate(env[1], mid, fields=12, keepers=1)
+    starts = OPENING + timedelta(days=3, hours=8)
+    at = starts - timedelta(days=2)
+    tick(env, at - timedelta(seconds=1))
+    assert not notices(env, "roster_notice_2")
+    monkeypatch.setattr("fczhk.notifications.now", lambda: at)
+    monkeypatch.setattr("fczhk.worker.now", lambda: at)
+    for _ in range(3):
+        tick(env, at)
+    assert len(notices(env, "roster_notice_2")) == 1
+    assert not notices(env, "roster_notice_1")
+
+    path = f"/matches/{mid}"
+    call("POST", path + "/join", {"position": "field"}, role="player")
+    call("PUT", path + "/payment-report", {"reported": True}, role="player")
+    with env[1]() as db, db.begin():
+        fields = list(db.scalars(select(Registration).order_by(Registration.id).limit(3)))
+        fields[0].paid = False
+        fields[2].payment_reported = True
+    bot = SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=21)))
+    assert await deliver_one(env[0], env[1], bot)
+    chat, content = bot.send_message.await_args.args
+    assert chat == "-1001111111"
+    assert "3 полевых игрока и 1 вратарь" in content
+    assert "04.06 в 20:00 МСК" in content
+    assert "Манеж" not in content and "Перевод по номеру телефона" not in content
+    assert "Участник 00 🔴🔴" in content
+    assert "Участник 01 🔴🟢" in content
+    assert "Участник 02 🟢🟢" in content
+    assert "Игрок 🟢🔴" in content
+    assert "1. Участник 12\n\nПервый кружок" in content
+
+    at = starts - timedelta(days=1)
+    for _ in range(3):
+        tick(env, at)
+    assert await deliver_one(env[0], env[1], bot)
+    assert bot.send_message.await_count == 2
+    assert len(notices(env, "roster_notice_1")) == 1
+    assert len(notices(env, "roster_notice_2")) == 1
+
+
+@pytest.mark.parametrize("confirmed_at_fill", [False, True])
+async def test_channel_reminders_are_edited_in_place_as_roster_fills_and_payments_are_confirmed(
+    env, call, monkeypatch, confirmed_at_fill
+):
+    configure(
+        call,
+        announcement_enabled=False,
+        payment_reminder_enabled=False,
+        extended_registration_enabled=False,
+    )
+    mid = tick(env, OPENING)
+    populate(env[1], mid, fields=15, keepers=2)
+    with env[1]() as db, db.begin():
+        player = db.scalar(select(Player).where(Player.alias == "Участник 00"))
+        player.alias = "Игрок <A> & B"
+    starts = OPENING + timedelta(days=3, hours=8)
+    at = starts - timedelta(days=2)
+    monkeypatch.setattr("fczhk.notifications.now", lambda: at)
+    monkeypatch.setattr("fczhk.worker.now", lambda: at)
+    bot = SimpleNamespace(
+        send_message=AsyncMock(side_effect=[SimpleNamespace(message_id=i) for i in (24, 25)]),
+        edit_message_text=AsyncMock(),
+    )
+    for days in (2, 1):
+        at = starts - timedelta(days=days)
+        tick(env, at)
+        assert await deliver_one(env[0], env[1], bot)
+        await mark_stale(env[0], env[1], bot)
+    bot.edit_message_text.assert_not_awaited()
+
+    path = f"/matches/{mid}"
+    match = call("POST", path + "/join", {"position": "field"}, role="player")
+    reg = next(r for r in match["registrations"] if r["player_id"] == env[4]["player"])
+    for confirmed in (True,) if confirmed_at_fill else (False, True):
+        if confirmed:
+            call(
+                "PUT",
+                path + f"/registrations/{reg['id']}/payment",
+                {"version": match["version"], "paid": True},
+            )
+        heading = "Набор окончен" if confirmed else "Состав набран, ожидание оплаты"
+        bot.edit_message_text.reset_mock()
+        for _ in range(3):
+            tick(env, at)
+            await mark_stale(env[0], env[1], bot)
+        assert bot.send_message.await_count == 2
+        assert bot.edit_message_text.await_count == 2
+        for days, message_id, edit in zip(
+            (2, 1), (24, 25), bot.edit_message_text.await_args_list, strict=True
+        ):
+            post = notices(env, f"roster_notice_{days}")[0]
+            assert post.stale and post.stale_marked and post.message_ids == [message_id]
+            assert edit.kwargs["chat_id"] == "-1001111111"
+            assert edit.kwargs["message_id"] == message_id and edit.kwargs["parse_mode"] == "HTML"
+            assert edit.kwargs["reply_markup"].inline_keyboard[0][0].text == "Открыть игру"
+            original_body = post.text.partition("\n")[2].lstrip("\n")
+            assert "Игрок <A> & B" in original_body
+            assert edit.kwargs["text"] == f"<b>{heading}</b>\n\n<s>{escape(original_body)}</s>"
+
+
+async def test_payment_milestones_use_first_team_and_route_verification_to_chat_only(
+    env, call, monkeypatch
+):
+    env[0].community_chat_id = "-1003333333"
+    configure(call, announcement_enabled=False, payment_reminder_enabled=False)
+    mid = tick(env, OPENING)
+    populate(env[1], mid, fields=3, keepers=1)
+    with env[1]() as db, db.begin():
+        match = db.get(Match, mid)
+        match.field_limit, match.keeper_limit = 2, 1
+        for row in db.scalars(select(Registration)):
+            row.paid = False
+    at = OPENING + timedelta(hours=2)
+    monkeypatch.setattr("fczhk.notifications.now", lambda: at)
+    monkeypatch.setattr("fczhk.worker.now", lambda: at)
+    tick(env, at)
+    bot = SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=22)))
+    for _ in range(2):
+        assert await deliver_one(env[0], env[1], bot)
+    assert not notices(env, "roster_reported")
+    assert not notices(env, "roster_closed")
+
+    path = f"/matches/{mid}"
+    match = call("GET", path)
+    for entry in match["registrations"][:2]:
+        match = call(
+            "PUT",
+            path + f"/registrations/{entry['id']}/payment",
+            {"version": match["version"], "paid": False, "reported": True},
+        )
+    for _ in range(3):
+        tick(env, at)
+    assert await deliver_one(env[0], env[1], bot)
+    assert len(notices(env, "roster_reported")) == 1
+    assert not notices(env, "roster_closed")
+    chat, content = bot.send_message.await_args.args
+    assert chat == "-1003333333"
+    assert content == (
+        "🟢 Все полевые отметили оплату игры 04.06 в 20:00 МСК. "
+        "@xohsap, проверьте переводы и подтвердите оплаты в Mini App."
+    )
+
+    match = call("POST", path + "/payments/confirm-all", {"version": match["version"]})
+    assert not match["registrations"][2]["paid"]
+    for _ in range(3):
+        tick(env, at)
+    for _ in range(2):
+        assert await deliver_one(env[0], env[1], bot)
+    assert bot.send_message.await_count == 5
+    chat, content = bot.send_message.await_args_list[3].args
+    assert chat == "-1003333333"
+    assert bot.send_message.await_args_list[4].args == ("-1001111111", content)
+    assert "Набор на игру 04.06 в 20:00 МСК окончен. Все оплаты подтверждены." in content
+    assert "Участник 00" in content and "Участник 01" in content and "Участник 03" in content
+    assert "Участник 02" not in content
+
+
+async def test_fully_confirmed_roster_skips_obsolete_posts_and_duplicate_destination(
+    env, call, monkeypatch
+):
+    env[0].community_chat_id = "-1001111111"
+    configure(call, announcement_enabled=False, payment_reminder_enabled=False)
+    mid = tick(env, OPENING)
+    at = OPENING + timedelta(days=2, hours=8)
+    monkeypatch.setattr("fczhk.notifications.now", lambda: at)
+    monkeypatch.setattr("fczhk.worker.now", lambda: at)
+    tick(env, at)
+    assert notices(env, "roster_notice_1")[0].status == "pending"
+    populate(env[1], mid, fields=16, keepers=2)
+    tick(env, at)
+    assert len(notices(env, "roster_closed")) == 1
+    for kind in ("roster_close_ch", "roster_reported", "roster_full"):
+        assert not notices(env, kind)
+    bot = SimpleNamespace(send_message=AsyncMock(return_value=SimpleNamespace(message_id=23)))
+    assert await deliver_one(env[0], env[1], bot)
+    bot.send_message.assert_not_awaited()
+    assert notices(env, "roster_notice_1")[0].status == "cancelled"
+    assert await deliver_one(env[0], env[1], bot)
+    bot.send_message.assert_awaited_once()
